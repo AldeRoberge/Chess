@@ -11,7 +11,7 @@ const COL_W = 330, ROW_H = 340, PAD = 24, HEAD = 40, GAP = 56, WRAP = 5;
 
 /** What a node is for. Sections follow this when the patch is organised. */
 const ROLES: { title: string; color: string; match: RegExp }[] = [
-  { title: "Demo & input", color: GROUP_COLORS[0], match: /^(sim|source)\./ },
+  { title: "Demo & input", color: GROUP_COLORS[0], match: /^(sim|source|world)\./ },
   { title: "Analysis", color: GROUP_COLORS[1], match: /^(vision|clock\.reader)/ },
   { title: "Game & experience", color: GROUP_COLORS[2], match: /^(game|experience|tracking)\./ },
   { title: "Output: sound & narration", color: GROUP_COLORS[3], match: /^(narration|scene|clock\.overlay)/ },

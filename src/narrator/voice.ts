@@ -53,6 +53,15 @@ async function fetchEleven(text: string, voiceId: string, s: VoiceSettings): Pro
   return r.blob();
 }
 
+/** Plays one line through ElevenLabs and resolves when it ends; rejects on any failure (no browser fallback), so a setup test can report it. */
+export async function previewEleven(text: string, who: "A" | "B", s: VoiceSettings): Promise<void> {
+  const id = (who === "A" ? s.voiceIdA : s.voiceIdB).trim() || (who === "A" ? ELEVENLABS_DEFAULTS.voiceIdA : ELEVENLABS_DEFAULTS.voiceIdB);
+  const blob = await fetchEleven(text, id, s);
+  stopSpeaking();
+  const url = URL.createObjectURL(blob), a = new Audio(url); a.volume = s.volume; current = a;
+  try { await new Promise<void>((res, rej) => { a.onended = () => res(); a.onerror = () => rej(new Error("playback failed")); a.play().catch(rej); }); } finally { URL.revokeObjectURL(url); }
+}
+
 function speakEleven(text: string, who: "A" | "B", s: VoiceSettings) {
   const id = (who === "A" ? s.voiceIdA : s.voiceIdB).trim() || (who === "A" ? ELEVENLABS_DEFAULTS.voiceIdA : ELEVENLABS_DEFAULTS.voiceIdB);
   const my = epoch;

@@ -5,24 +5,30 @@
  */
 /* a centered dialog over the node graph; the huge spread shadow dims (but does not hide or block) the patch behind it */
 .halo{position:fixed;z-index:100;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1100px,94vw);height:min(920px,96vh);display:grid;grid-template-rows:auto 1fr auto;color:var(--text);font:500 var(--t-md)/1.35 var(--font-ui);user-select:text;overflow:hidden;
-  background:var(--halo-bg);border:1px solid var(--line-hi);border-radius:8px;box-shadow:0 0 0 100vmax var(--scrim),0 24px 80px var(--shadow)}
+  background:var(--halo-bg);-webkit-backdrop-filter:blur(18px) saturate(1.1);backdrop-filter:blur(18px) saturate(1.1);border:1px solid var(--line-hi);border-radius:8px;box-shadow:0 0 0 100vmax var(--scrim),0 24px 80px var(--shadow)}
 .halo-bg{display:none}
 .halo header{display:flex;align-items:baseline;justify-content:space-between;gap:24px;padding:20px 32px 8px;background:none;border:0}
 .halo-close{margin-left:auto;align-self:center;width:30px;height:30px;padding:0;border-radius:50%;background:transparent;border:1px solid var(--line-hi);color:var(--text-dim);font-size:14px;line-height:1;cursor:pointer}
 .halo-close:hover{color:var(--text);border-color:var(--signal)}
+.halo-brand{display:flex;align-items:center;gap:10px}
+.halo-brand-ic{display:inline-grid;place-items:center;color:var(--signal-hi)}
 .halo-logo{font:700 var(--t-xl)/1 var(--font-ui);letter-spacing:.02em;color:var(--signal-hi)}
 .halo-progress{display:flex;align-items:center;gap:7px;font:400 var(--t-sm) var(--font-mono);color:var(--text-dim)}
 .halo-progress i{width:8px;height:8px;border-radius:50%;background:var(--line-hi);opacity:.5;transition:all .25s cubic-bezier(.2,.7,.2,1)}
 .halo-progress i.done{background:var(--signal);opacity:1}
 .halo-progress i.cur{width:22px;border-radius:4px;background:var(--signal-hi);opacity:1;box-shadow:0 0 10px color-mix(in srgb,var(--signal) 53%,transparent)}
 .halo-progress span{margin-left:8px}
-.halo-body{display:grid;grid-template-columns:minmax(220px,280px) 1fr;gap:24px;padding:8px 32px 16px;min-height:0}
+.halo-body{display:grid;grid-template-columns:var(--steps-w,280px) 14px 1fr;gap:10px;padding:8px 32px 16px;min-height:0}
+/* draggable divider: a thin line, a wider invisible grab area, col-resize cursor */
+.halo-split{position:relative;cursor:col-resize;touch-action:none;user-select:none;align-self:stretch}
+.halo-split::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line-hi);transform:translateX(-50%);transition:background .15s,width .15s}
+.halo-split:hover::before,.halo-split:active::before{width:3px;background:var(--signal)}
 .halo-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;align-self:start;border-top:1px solid var(--line-hi)}
 .halo-step{padding:12px 16px;min-height:44px;cursor:pointer;color:var(--text-dim);border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
 .halo-step:hover{color:var(--text)}
 .halo-step.cur{color:var(--text);box-shadow:inset 3px 0 var(--signal);background:var(--ink-2)}
 .halo-step.cur.sel{color:var(--signal-hi);background:var(--ink-3)}
-.halo-pane{position:relative;overflow:auto;display:flex;flex-direction:column;padding:24px 30px 28px;background:linear-gradient(180deg,#0e2a4acc,#081a2fcc);border:1px solid var(--line-hi);
+.halo-pane{position:relative;overflow:auto;display:flex;flex-direction:column;padding:24px 30px 28px;background:linear-gradient(180deg,var(--ink-2),var(--ink-1));border:1px solid var(--line-hi);
   clip-path:polygon(0 0,calc(100% - 24px) 0,100% 24px,100% 100%,24px 100%,0 calc(100% - 24px))}
 .halo-pane h2{margin:0 0 6px;font:700 var(--t-lg)/1.2 var(--font-ui);letter-spacing:0;color:var(--text)}
 .halo-pane h2::before{content:"";display:inline-block;width:4px;height:.9em;background:var(--amber);margin-right:12px;vertical-align:-.08em}
@@ -49,7 +55,7 @@
 .halo-extra{margin:6px 0 16px}.halo-extra:empty{margin:0}
 .halo-canvas{display:block;width:100%;max-width:640px;border:1px solid var(--line-hi);background:var(--ink-0);touch-action:none}
 .halo-hint{margin-top:14px;color:var(--amber);font:400 var(--t-md)/1.5 var(--font-ui);min-height:1.5em;max-width:62ch}
-.halo-keys{display:flex;gap:28px;padding:10px 32px 14px;color:var(--text-dim);font-size:var(--t-sm);border-top:1px solid var(--line);background:#050f1ccc}
+.halo-keys{display:flex;gap:28px;padding:10px 32px 14px;color:var(--text-dim);font-size:var(--t-sm);border-top:1px solid var(--line);background:color-mix(in srgb,var(--ink-0) 80%,transparent)}
 .halo-keys b{color:var(--text);font-weight:600;margin-right:6px}
 
 /* one orchestrated entrance, then stillness */
@@ -59,7 +65,7 @@
 .halo-step:nth-child(2){animation-delay:.04s}.halo-step:nth-child(3){animation-delay:.08s}.halo-step:nth-child(4){animation-delay:.12s}
 .halo-step:nth-child(5){animation-delay:.16s}.halo-step:nth-child(6){animation-delay:.2s}.halo-step:nth-child(7){animation-delay:.24s}.halo-step:nth-child(8){animation-delay:.28s}
 @media (prefers-reduced-motion:reduce){.halo-pane,.halo-step{animation:none}}
-@media (max-width:760px){.halo{width:100vw;height:100vh;border-radius:0}.halo-body{grid-template-columns:1fr;padding:12px 16px}.halo header{padding:16px}.halo-keys{display:none}}
+@media (max-width:760px){.halo{width:100vw;height:100vh;border-radius:0}.halo-body{grid-template-columns:1fr;padding:12px 16px}.halo-split{display:none}.halo header{padding:16px}.halo-keys{display:none}}
 
 .halo-navrow{display:flex;justify-content:space-between;gap:12px;margin-top:auto;padding-top:22px}
 .halo-nav{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;color:var(--text-dim)}
@@ -68,21 +74,33 @@
 .halo-nav .ic{flex:none}
 
 /* action buttons: bordered, with icon */
-.halo-item.action{justify-content:flex-start;align-self:flex-start;gap:12px;min-width:280px;min-height:42px;margin-top:8px;padding:8px 18px 8px 14px;border:1px solid var(--line-hi);background:#0a223d;color:var(--text);font-weight:600}
+.halo-item.action{justify-content:flex-start;align-self:flex-start;gap:12px;min-width:280px;min-height:42px;margin-top:8px;padding:8px 18px 8px 14px;border:1px solid color-mix(in srgb,var(--signal) 45%,var(--line-hi));background:color-mix(in srgb,var(--signal) 28%,var(--ink-2));color:var(--text);font-weight:600}
+/* every row: icon | label | value */
+.halo-item:not(.info):not(.action) .halo-ic{display:inline-grid;color:var(--signal);flex:none;margin-right:-8px}
+.halo-item:not(.info):not(.action) .halo-label{flex:1}
+.halo-item.sel .halo-ic{color:var(--ink-0)}
+/* real sliders */
+.halo-item.slider .halo-num{flex:none;width:4.5em;text-align:right}
+.halo-range{-webkit-appearance:none;appearance:none;flex:0 1 260px;min-width:120px;height:4px;margin:0;border-radius:2px;background:var(--line-hi);cursor:pointer}
+.halo-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--signal);border:2px solid var(--ink-0);box-shadow:0 0 0 1px var(--signal)}
+.halo-range::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--signal);border:2px solid var(--ink-0)}
+.halo-item.sel .halo-range{background:color-mix(in srgb,var(--ink-0) 33%,transparent)}
+.halo-item.sel .halo-range::-webkit-slider-thumb{background:var(--ink-0);border-color:var(--signal-hi);box-shadow:0 0 0 1px var(--ink-0)}
+.halo-item.sel .halo-range::-moz-range-thumb{background:var(--ink-0)}
 .halo-item.action .halo-ic{display:inline-grid;color:var(--signal);flex:none}
-.halo-item.action:hover{border-color:var(--signal);background:#0e2e52}
+.halo-item.action:hover{border-color:var(--signal);background:color-mix(in srgb,var(--signal) 40%,var(--ink-2))}
 .halo-item.action.sel .halo-ic{color:var(--ink-0)}
 .halo-item.action.disabled{border-style:dashed}
 /* remove camera: trash can at the right of the toggle value */
 .halo-trash{display:inline-grid;place-items:center;flex:none;width:34px;height:34px;margin-left:4px;border:1px solid var(--line);background:transparent;color:var(--text-dim);cursor:pointer;padding:0}
 .halo-trash:hover,.halo-trash:focus-visible{color:var(--bad);border-color:var(--bad);background:#ff4d5e14;outline:none}
-.halo-item.sel .halo-trash{color:var(--ink-0);border-color:#001a3366}
+.halo-item.sel .halo-trash{color:var(--ink-0);border-color:color-mix(in srgb,var(--ink-0) 40%,transparent)}
 .halo-item.sel .halo-trash:hover{color:var(--bad);background:#fff}
 /* system check table */
 .halo-sys{width:100%;border-collapse:collapse;margin:6px 0 12px;font:400 var(--t-md)/1.4 var(--font-ui)}
 .halo-sys th{text-align:left;font:600 var(--t-sm,.85em) var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);padding:6px 12px;border-bottom:1px solid var(--line-hi)}
 .halo-sys td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
-.sys-row.has{cursor:pointer}.sys-row.has:hover td{background:#14385f55}
+.sys-row.has{cursor:pointer}.sys-row.has:hover td{background:color-mix(in srgb,var(--signal) 14%,transparent)}
 .sys-badge{width:38px;text-align:center}
 .sys-dot{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:currentColor;vertical-align:middle}
 .sys-dot svg{stroke:var(--ink-0);stroke-width:3}
@@ -91,9 +109,9 @@
 .sys-act{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line-hi);border-radius:var(--radius);background:var(--ink-2);color:var(--signal);font:600 var(--t-sm,.85em) var(--font-ui);cursor:pointer;white-space:nowrap}
 .sys-act:hover:not(:disabled),.sys-act:focus-visible{border-color:var(--signal);background:var(--ink-3);outline:none}
 .sys-act.hot{background:var(--amber);border-color:var(--amber);color:var(--ink-0)}.sys-act.hot:hover:not(:disabled){filter:brightness(1.1);background:var(--amber)}
-.sys-act:disabled{opacity:.6;cursor:progress}.sys-act.busy svg{animation:sys-spin 1s linear infinite}
+.sys-act:disabled{opacity:.6;cursor:progress}.sys-act.busy>svg.ic{animation:sys-spin 1s linear infinite}
 @keyframes sys-spin{to{transform:rotate(360deg)}}
-.sys-bar{display:flex;align-items:center;gap:10px;margin:6px 0 0;padding:8px 12px;border:1px solid var(--line);border-left:3px solid var(--ok);background:#06152699;color:var(--ok)}
+.sys-bar{display:flex;align-items:center;gap:10px;margin:6px 0 0;padding:8px 12px;border:1px solid var(--line);border-left:3px solid var(--ok);background:color-mix(in srgb,var(--ink-0) 60%,transparent);color:var(--ok)}
 .sys-bar.bad{border-left-color:var(--amber);color:var(--amber)}
 .sys-sum{flex:1;color:var(--text);font-weight:600}
 .sys-row.warn td{background:#ffb02012}.sys-row.fail td{background:#ff4d5e14}
@@ -106,7 +124,46 @@
 .sys-btn{display:inline-grid;place-items:center;width:28px;height:28px;border:1px solid var(--line);background:transparent;color:var(--text-dim);cursor:pointer;padding:0;transition:transform .15s}
 .sys-btn:hover,.sys-btn:focus-visible{color:var(--signal);border-color:var(--signal);outline:none}
 .sys-row.open .sys-btn{transform:rotate(90deg);color:var(--signal)}
-.sys-detail td{background:#06152699;padding:6px 12px 14px 46px}
+.sys-detail td{background:color-mix(in srgb,var(--ink-0) 60%,transparent);padding:6px 12px 14px 46px}
 .sys-detail dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 24px;margin:0}
 .sys-detail dt{color:var(--text-dim)}.sys-detail dd{margin:0;color:var(--text);overflow-wrap:anywhere}
 .sys-note{margin:0 0 8px;color:var(--amber)}.sys-detail.fail .sys-note{color:var(--bad)}
+
+/* strength picture under a slider row (Computer strength): a distribution curve of rated players */
+.halo-item.has-visual{flex-wrap:wrap;row-gap:8px}
+/* Own panel, so the text stays readable whether the row above is selected (light signal gradient) or not. */
+.elo-visual{flex-basis:100%;box-sizing:border-box;padding:10px 14px 12px;margin-top:4px;background:var(--ink-1);border:1px solid var(--line);border-radius:4px;color:var(--text-dim);font:400 var(--t-xs)/1.4 var(--font-ui)}
+.elo-svg{display:block;width:100%;height:auto;overflow:visible}
+.elo-area{fill:var(--signal);opacity:.16}
+.elo-curve{stroke:var(--signal);stroke-width:1.6}
+.elo-axis{stroke:var(--line-hi);stroke-width:1}
+.elo-band{fill:var(--line-hi)}
+.elo-band.alt{fill:var(--signal);opacity:.45}
+.elo-tier{fill:var(--text-dim);font:500 11px var(--font-ui)}
+.elo-top{fill:var(--text);stroke:var(--ink-0);stroke-width:1;cursor:help}
+.elo-now{stroke:var(--signal-hi);stroke-width:1.2;stroke-dasharray:3 3}
+.elo-dot{fill:var(--signal-hi);stroke:var(--ink-0);stroke-width:1.5}
+.elo-nowlab{fill:var(--signal-hi);font:600 11px var(--font-ui)}
+.elo-leader{fill:none;stroke:var(--text-dim);stroke-width:1;stroke-dasharray:1.5 2.5;opacity:.8}
+.elo-name{fill:var(--text);font:500 11px var(--font-ui)}
+.elo-name-elo{fill:var(--text);font-weight:600}
+.elo-read{margin:6px 0 0}
+.elo-read b{color:var(--signal-hi);font-weight:600}
+
+/* value steppers: ◂ value ▸ in fixed columns, so the arrows line up down the list */
+.halo-stepper{display:inline-grid;grid-template-columns:18px 7em 18px;align-items:center;justify-items:center;white-space:nowrap}
+.halo-num{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-align:center}
+.halo-arr{color:var(--signal)}
+
+/* collapsible sections (Corners, and each corner in it): a bordered header with its icon, summary and chevron */
+.halo-item.group{justify-content:flex-start;gap:12px;margin-top:6px;padding:10px 16px;border:1px solid var(--line-hi);border-left:3px solid var(--signal);background:#0a223d99;font-weight:600}
+.halo-item.group.open{border-left-color:var(--signal-hi);background:#0e2e5299}
+.halo-item.group .halo-ic{display:inline-grid;color:var(--signal);flex:none}
+.halo-item.group .halo-label{flex:1}
+.halo-item.group .halo-value{color:var(--text-dim);font-weight:400;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.halo-chev{display:inline-grid;color:var(--text-dim);transition:transform .15s;flex:none}
+.halo-item.group.open .halo-chev{transform:rotate(90deg);color:var(--signal)}
+.halo-item.group.sel .halo-ic,.halo-item.group.sel .halo-chev{color:var(--ink-0)}
+/* nested rows sit under their section */
+.halo-item.halo-d1{padding-left:34px}
+.halo-item.halo-d2{padding-left:58px;padding-top:6px;padding-bottom:6px}

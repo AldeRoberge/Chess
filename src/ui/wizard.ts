@@ -9,8 +9,10 @@ import { fmtCorners, parseCorners } from "../plugins/shared";
 import { CornerPicker } from "./cornerPicker";
 import { activate, adjust, isFocusable, valueText, type Item } from "./menu";
 import { GamepadPoller, keyToAction, type NavAction } from "./nav";
+import type { VoiceSettings } from "../narrator/voice";
 import type { Sfx } from "./sfx";
 import { icon } from "./icons";
+import { spinnerHTML } from "./spinner";
 import { STEPS, sceneStateFor, type StepCtx, type WizardState } from "./wizardSteps";
 
 export interface WizardDeps {
@@ -67,16 +69,17 @@ export class SetupWizard {
 
   constructor(public cfg: SetupConfig, private deps: WizardDeps, startStep = 0) {
     this.step = Math.max(0, Math.min(STEPS.length - 1, Math.floor(startStep) || 0));
-    this.state = { checks: null, detected: [], scanning: false, boardCam: 0, scenePreview: sceneStateFor(cfg) };
+    this.state = { checks: null, detected: [], scanning: false, boardCam: 0, scenePreview: sceneStateFor(cfg), tests: {}, groups: {} };
     this.canvas.width = FRAME_W; this.canvas.height = FRAME_H;
-    const head = el("header"); head.append(el("div", "halo-logo", "CE"), this.progress);
+    const brand = el("div", "halo-brand"); brand.innerHTML = `<span class="halo-brand-ic">${icon("knight", 22)}</span>`; brand.append(el("span", "halo-logo", "Chess XP"));
+    const head = el("header"); head.append(brand, this.progress);
     if (deps.canCancel?.() !== false) { // first run can't be skipped, so there is nothing to close back to
       const x = el("button", "halo-close", "✕"); x.type = "button"; x.title = "Close setup (Esc)"; x.setAttribute("aria-label", "Close setup");
       x.onclick = () => this.cancel(); head.append(x);
     }
     const foot = el("footer", "halo-keys"); foot.innerHTML = "<span><b>↑↓</b> Select</span><span><b>←→</b> Adjust</span><span><b>Enter / A</b> Confirm</span><span><b>Esc / B</b> Back</span>";
     this.pane.append(this.title, this.blurb, this.extra, this.list, this.hint, this.nav); // previews first: they are what you drag
-    const body = el("div", "halo-body"); body.append(this.stepsEl, this.pane);
+    const body = el("div", "halo-body"); body.append(this.stepsEl, this.splitter(), this.pane);
     this.root.append(el("div", "halo-bg"), head, body, foot);
     this.canvas.addEventListener("pointerdown", (e) => this.pointer("down", e));
     this.canvas.addEventListener("pointermove", (e) => this.pointer("move", e));
@@ -86,6 +89,19 @@ export class SetupWizard {
   }
 
   mount(parent: HTMLElement) { parent.append(this.root); window.addEventListener("keydown", this.onKey); }
+
+  /** Vertical bar between the step list and the pane; dragging it sets the list's width (--steps-w). */
+  private splitter() {
+    const s = el("div", "halo-split"); s.setAttribute("role", "separator"); s.setAttribute("aria-orientation", "vertical"); s.setAttribute("aria-label", "Resize step list"); s.title = "Drag to resize";
+    s.addEventListener("pointerdown", (e) => {
+      const body = s.parentElement!, r = body.getBoundingClientRect(), pl = parseFloat(getComputedStyle(body).paddingLeft) || 0;
+      s.setPointerCapture(e.pointerId); e.preventDefault();
+      const move = (ev: PointerEvent) => { const w = Math.round(Math.min(480, Math.max(180, ev.clientX - r.left - pl))); body.style.setProperty("--steps-w", `${w}px`); };
+      const up = () => { s.removeEventListener("pointermove", move); s.removeEventListener("pointerup", up); s.removeEventListener("pointercancel", up); };
+      s.addEventListener("pointermove", move); s.addEventListener("pointerup", up); s.addEventListener("pointercancel", up);
+    });
+    return s;
+  }
   get stepId() { return STEPS[this.step].id; }
   /** Jump to a step by id (from the URL); ignored when unknown. Does not notify `onStep`. */
   setStep(id: string) {
@@ -103,6 +119,12 @@ export class SetupWizard {
       scan: () => void this.scan(),
       runChecks: () => void this.runChecks(),
       speak: (t, v) => this.deps.speak(t, v, this.cfg.narrator.volume),
+      open: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
+      test: (id, job) => {
+        this.state.tests[id] = { tone: "warn", text: "Testing…" }; this.renderList();
+        void job().then((r) => { this.state.tests[id] = r; }).catch(() => { this.state.tests[id] = { tone: "fail", text: "The test failed unexpectedly." }; }).finally(() => { if (this.root.isConnected) this.renderList(); });
+      },
+      voiceSettings: (): VoiceSettings => ({ provider: "elevenlabs", lang: "fr", volume: this.cfg.narrator.volume, browserA: "", browserB: "", apiKey: this.cfg.voice.apiKey, voiceIdA: this.cfg.voice.voiceIdA, voiceIdB: this.cfg.voice.voiceIdB, model: "" }),
       thunder: () => this.deps.thunder(),
       finish: () => { this.deps.sfx.play("launch"); this.deps.onFinish({ ...this.cfg, completed: true }); },
       go: (n) => { this.step = n; this.focus = 0; this.zone = "pane"; this.enterStep(); this.render(); },
@@ -110,7 +132,19 @@ export class SetupWizard {
     };
   }
 
-  private items(): Item[] { return STEPS[this.step].items(this.ctx()); }
+  /** Nesting depth of each listed item (0 = top level). Open groups are flattened into the list, so focus and keys walk them like any row. */
+  private depth = new WeakMap<Item, number>();
+  private items(): Item[] {
+    const out: Item[] = [];
+    const walk = (list: Item[], d: number) => {
+      for (const it of list) {
+        out.push(it); this.depth.set(it, d);
+        if (it.kind === "group" && it.get()) walk(it.children, d + 1);
+      }
+    };
+    walk(STEPS[this.step].items(this.ctx()), 0);
+    return out;
+  }
   private focusables() { return this.items().map((it, i) => ({ it, i })).filter((x) => isFocusable(x.it)); }
 
   private async scan() {
@@ -308,7 +342,7 @@ export class SetupWizard {
     bar.innerHTML = `<span class="sys-dot">${icon(bad ? "warn" : "check", 14)}</span>`;
     bar.append(el("span", "sys-sum", bad ? `${bad} of ${checks.length} need attention` : `All ${checks.length} checks passed`));
     const re = el("button", "sys-act"); re.type = "button"; re.dataset.tip = "Re-run checks"; re.dataset.tipBody = "Test cameras, graphics, sound and the engine again, for example after plugging something in."; re.innerHTML = `${icon("refresh", 14)}<span>Re-run checks</span>`;
-    re.onclick = () => { re.disabled = true; re.classList.add("busy"); void this.runChecks(); };
+    re.onclick = () => { re.disabled = true; re.classList.add("busy"); re.innerHTML = `${spinnerHTML("rook", 14)}<span>Re-running…</span>`; void this.runChecks(); };
     bar.append(re);
     this.extra.replaceChildren(bar, t);
   }
@@ -318,7 +352,7 @@ export class SetupWizard {
     const mk = (to: number, dir: "prev" | "next") => {
       const s = STEPS[to]; if (!s) return;
       const b = el("button", `halo-nav ${dir}`); b.type = "button";
-      b.innerHTML = dir === "prev" ? `${icon("back")}<span>${s.title}</span>` : `<span>${s.title}</span>${icon("arrow")}`;
+      b.innerHTML = dir === "prev" ? `${icon("back")}<span>${s.title}</span>` : `<span>Next</span>${icon("arrow")}`;
       b.onclick = () => this.stepTo(to);
       this.nav.append(b);
     };
@@ -339,15 +373,45 @@ export class SetupWizard {
         li.onmouseenter = () => { if (this.zone !== "pane" || this.focus !== idx) { this.zone = "pane"; this.focus = idx; this.deps.sfx.play("tick"); this.renderList(); } };
       } else if (it.kind === "info" && it.tone) li.classList.add(it.tone);
       if (it.kind === "info" && it.tone) li.append(el("span", "halo-badge", it.tone === "ok" ? "✓" : it.tone === "warn" ? "!" : "✕"));
-      if (it.kind === "action") { const ic = el("span", "halo-ic"); ic.innerHTML = icon(it.icon ?? "arrow", 18); li.append(ic); }
+      if (it.kind !== "info") {
+        const ic = el("span", "halo-ic"); ic.innerHTML = icon(it.icon ?? (it.kind === "action" ? "arrow" : LABEL_ICON[it.label] ?? KIND_FALLBACK[it.kind]), 18); li.append(ic);
+      }
+      const depth = this.depth.get(it) ?? 0;
+      if (depth) li.classList.add(`halo-d${depth}`);
       li.append(el("span", "halo-label", it.label));
-      if (it.kind === "text") {
-        const inp = el("input"); inp.value = it.get(); inp.onchange = () => { it.set(inp.value); this.deps.sfx.play("ok"); };
+      if (it.kind === "group") {
+        const open = it.get();
+        li.classList.add(open ? "open" : "closed"); li.setAttribute("aria-expanded", String(open));
+        const ch = el("span", "halo-chev"); ch.innerHTML = icon("chevron", 14);
+        li.append(el("span", "halo-value", valueText(it)), ch);
+      } else if (it.kind === "text") {
+        const inp = el("input"); inp.value = it.get();
+        if (it.secret) { inp.type = "password"; inp.autocomplete = "off"; inp.spellcheck = false; inp.placeholder = "Paste your key"; } inp.onchange = () => { it.set(inp.value); this.deps.sfx.play("ok"); };
         inp.onclick = (e) => e.stopPropagation();
         li.append(inp);
       } else {
-        li.append(el("span", "halo-value", it.kind === "slider" || it.kind === "choice" ? `◂ ${valueText(it)} ▸` : valueText(it)));
+        if (it.kind === "slider") {
+          const rng = el("input", "halo-range"); rng.type = "range";
+          rng.min = String(it.min); rng.max = String(it.max); rng.step = String(it.step); rng.value = String(it.get());
+          rng.setAttribute("aria-label", it.label);
+          // the value keeps its ◂ ▸ stepper, in fixed columns so the arrows line up down the list
+          const num = el("span", "halo-value halo-stepper");
+          num.innerHTML = `<span class="halo-arr">◂</span> <span class="halo-num"></span> <span class="halo-arr">▸</span>`;
+          const txt = num.querySelector(".halo-num")!; txt.textContent = valueText(it);
+          rng.onclick = (e) => e.stopPropagation();
+          rng.oninput = () => { it.set(Number(rng.value)); txt.textContent = valueText(it); it.visual?.update(Number(rng.value)); this.deps.sfx.play("tick"); };
+          rng.onchange = () => this.afterChange();
+          li.append(rng, num);
+          if (it.visual) { li.classList.add("has-visual"); li.append(it.visual.el); }
+        } else if (it.kind === "choice") {
+          const s = el("span", "halo-value halo-stepper");
+          s.innerHTML = `<span class="halo-arr">◂</span> <span class="halo-num"></span> <span class="halo-arr">▸</span>`;
+          s.querySelector(".halo-num")!.textContent = valueText(it);
+          li.append(s);
+        } else li.append(el("span", "halo-value", valueText(it)));
         if (it.kind === "action" && it.disabled) li.classList.add("disabled");
+        // a disabled action explains itself on hover (the bottom hint line does the same for keyboard focus)
+        if (it.kind === "action" && it.disabled && it.hint) { li.dataset.tip = "Unavailable"; li.dataset.tipBody = it.hint; }
         if (it.kind === "action" && it.danger) li.classList.add("danger");
         if (it.kind === "toggle" && it.remove) {
           const rm = it.remove, b = el("button", "halo-trash"); b.type = "button"; b.title = rm.label; b.setAttribute("aria-label", rm.label); b.innerHTML = icon("trash", 18);
@@ -362,6 +426,15 @@ export class SetupWizard {
     this.hint.textContent = this.zone === "pane" && cur && "hint" in cur && cur.hint ? cur.hint : "";
   }
 }
+
+/** Row icons by label, so every setting has one; anything unlisted falls back to its kind's icon. */
+const LABEL_ICON: Record<string, string> = {
+  "Camera": "camera", "Channel": "palette", "Trust": "scale", "Field of view": "eye", "Across (x)": "board", "Down (y)": "board",
+  "Scene": "scene", "Rain": "scene", "Snow": "scene", "Time of day": "clock",
+  "Speak aloud": "sound", "Volume": "sound", "Opponent for each game": "opponent", "Computer strength": "knight",
+  "Projectors": "lamp", "People tracking": "people", "DMX lighting": "lamp", "Autoplay demo game": "play", "Demo game": "film",
+};
+const KIND_FALLBACK: Record<string, string> = { toggle: "toggle", choice: "list", slider: "sliders", text: "text" };
 
 const SYS_ICON: Record<string, string> = { system: "setup", webgl: "cube", camera: "camera", audio: "sound", speech: "voice", stockfish: "knight", gamepad: "bolt" };
 

@@ -27,7 +27,8 @@ import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
 import { clearPrefs, loadPrefs, patchPrefs } from "./setup/prefs";
 import { History } from "./core/history";
-import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, openSession, parseImport, type Backup } from "./setup/backups";
+import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, openSession, type Backup } from "./setup/backups";
+import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { KNIGHT_SVG } from "./ui/brandIcon";
@@ -105,7 +106,7 @@ export function boot(root: HTMLElement): Boot {
   const app = root;
   app.innerHTML = `
     <header>
-      <a class="brand" id="home" href="#/table" aria-label="CE home" data-tip="CE" data-tip-body="Back to the start page.">${KNIGHT_SVG}<span>CE</span></a>
+      <a class="brand" id="home" href="#/table" aria-label="Chess XP home" data-tip="Chess XP" data-tip-body="Back to the start page.">${KNIGHT_SVG}<span>Chess XP</span></a>
       <nav class="rtabs" role="tablist" aria-label="Ribbon">
         <button role="tab" class="on" data-rtab="home" aria-selected="true">Home</button>
         <button role="tab" data-rtab="view" aria-selected="false">View</button>
@@ -249,7 +250,7 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("audio")!.onclick = doSound;
   for (const [id, name] of [["audio", "sound"], ["more", "sliders"], ["reset", "refresh"]]) document.querySelector(`#${id} .ic-slot`)!.outerHTML = icon(name, 22);
   document.getElementById("reset")!.onclick = () => { addBackup("Before reset", graph.toJSON(), loadSetup(), false); localStorage.removeItem(KEY); clearSetup(); clearPrefs(); location.reload(); };
-  const doExport = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: "chess-experience", graph: graph.toJSON(), setup: loadSetup() }, null, 2)], { type: "application/json" })); a.download = "chess-experience-workflow.json"; a.click(); };
+  const doExport = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([serializeCe(graph.toJSON(), loadSetup())], { type: "application/json" })); a.download = ceFileName(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
   document.getElementById("export")!.onclick = doExport;
 
   // ---- undo / redo, backups, crash recovery
@@ -279,7 +280,7 @@ export function boot(root: HTMLElement): Boot {
     edits.record(graph.toJSON(), Date.now(), "restore" + Math.random());
     syncUndo();
   };
-  const importFile = (f: File) => { void f.text().then((t) => { const p = parseImport(t); if (p) restore(p.graph, p.setup, "Before import"); else notify("That file is not a workflow export.", [], "warn"); }); };
+  const importFile = (f: File) => { void f.text().then((t) => { const p = parseCe(t); if (p.ok) restore(p.graph, p.setup, "Before import"); else notify(p.error, [], "warn"); }); };
   const panel = () => openBackupPanel({
     list: listBackups,
     restore: (b) => restore(b.graph, b.setup, "Before restore"),
@@ -292,7 +293,7 @@ export function boot(root: HTMLElement): Boot {
   installContextMenus(); registerContextMenu(document.body, appMenu);
   // ---- ribbon actions: File, Start, Edit, Selection, Backups. Their state follows the editor's selection.
   const wfApi = { registry, current: () => graph.toJSON(), apply: restore, openFile: importFile };
-  const openInput = document.createElement("input"); openInput.type = "file"; openInput.accept = "application/json,.json"; openInput.hidden = true;
+  const openInput = document.createElement("input"); openInput.type = "file"; openInput.accept = `${CE_EXTENSION},application/json,.json`; openInput.hidden = true;
   openInput.onchange = () => { const f = openInput.files?.[0]; openInput.value = ""; if (f) importFile(f); };
   document.body.append(openInput);
   document.getElementById("openfile")!.onclick = () => openInput.click();

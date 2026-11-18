@@ -2,6 +2,7 @@ import type { GraphJSON, Registry } from "../core/types";
 import type { SetupConfig } from "../setup/config";
 import { AiSession, loadAiSettings, saveAiSettings, type Built } from "../workflows/ai";
 import { WORKFLOWS } from "../workflows";
+import { withSpinner } from "./spinner";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return b; };
@@ -31,7 +32,7 @@ function modal(title: string, label: string) {
 /** Demo workflows, "build with AI", and open-from-file. */
 export function openWorkflowPanel(api: WorkflowApi) {
   const m = modal("Workflow", "Workflow");
-  const file = el("input"); file.type = "file"; file.accept = "application/json,.json"; file.hidden = true;
+  const file = el("input"); file.type = "file"; file.accept = ".ce.json,application/json,.json"; file.hidden = true;
   file.onchange = () => { const f = file.files?.[0]; if (f) { api.openFile(f); m.close(); } };
   const ai = el("div", "wf-ai");
   const aiText = el("div"); aiText.append(el("b", "", "Build your own with AI"), el("span", "", "Describe what you want and a model drafts the workflow. You review it before anything changes."));
@@ -66,7 +67,7 @@ export function openAiWizard(api: WorkflowApi) {
       if (!key.value.trim()) { status.textContent = "Enter an OpenAI API key."; return; }
       saveAiSettings({ apiKey: key.value, model: model.value.trim(), remember: remember.checked });
       session = new AiSession(api.registry, { apiKey: key.value, model: model.value.trim() }, from.value === "current" ? api.current() : undefined, api.fetchImpl);
-      go.disabled = true; status.textContent = "Thinking… this usually takes 5 to 20 seconds.";
+      go.disabled = true; status.replaceChildren(withSpinner("Thinking… this usually takes 5 to 20 seconds.", "pawn", 20));
       try { review(await session.ask(ask.value.trim())); } catch (e) { status.textContent = (e as Error).message; go.disabled = false; }
     }, "primary");
     const field = (label: string, input: HTMLElement) => { const l = el("label", "wf-field"); l.append(el("span", "", label), input); return l; };
@@ -85,7 +86,7 @@ export function openAiWizard(api: WorkflowApi) {
     const status = el("p", "wf-status"); status.setAttribute("role", "status");
     const revise = btn("Revise", async () => {
       if (!tweak.value.trim() || !session) return;
-      revise.disabled = true; status.textContent = "Revising…";
+      revise.disabled = true; status.replaceChildren(withSpinner("Revising…", "orbit", 20));
       try { review(await session.ask(tweak.value.trim())); } catch (e) { status.textContent = (e as Error).message; revise.disabled = false; }
     });
     const bar = el("div", "bk-bar"); bar.append(btn("Apply workflow", () => { api.apply(b.graph, null, `Before AI workflow: ${b.name}`); m.close(); }, "primary"), btn("Start over", describe, "ghost"));

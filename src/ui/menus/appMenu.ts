@@ -11,8 +11,8 @@ export function appMenu(ev: MouseEvent): CtxItem[] {
   const heat = document.getElementById("heat");
   return [
     ...(copy ? [{ kind: "action" as const, label: sel ? "Copy" : "Copy value", run: () => void navigator.clipboard?.writeText(copy.trim()) }] : []),
-    { kind: "action", label: "Undo", disabled: off("undo"), run: click("undo") },
-    { kind: "action", label: "Redo", disabled: off("redo"), run: click("redo") },
+    { kind: "action", label: "Undo", disabled: off("undo"), hint: off("undo") ? "Nothing to undo yet. Edits to the workflow are recorded here as you make them." : undefined, run: click("undo") },
+    { kind: "action", label: "Redo", disabled: off("redo"), hint: off("redo") ? "Nothing to redo. Redo brings back an edit you just undid." : undefined, run: click("redo") },
     ...(heat ? [{ kind: "toggle" as const, label: "Node timings", get: () => heat.classList.contains("on"), set: () => heat.click() }] : []),
     {
       kind: "submenu", label: "Workflow", items: [

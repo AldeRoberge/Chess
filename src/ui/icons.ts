@@ -18,6 +18,11 @@ const P: Record<string, string> = {
   log: '<path d="M4 6h16M4 12h16M4 18h10"/>',
   perf: '<path d="M3 20h18M5 20v-6h3v6M10.5 20V9h3v11M16 20V4h3v16"/>',
   setup: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+  // board corners: a small board frame with the corner square marked (a8 top-left, h8 top-right, h1 bottom-right, a1 bottom-left, from white's side)
+  "corner-tl": '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="7.5" cy="7.5" r="2.5" fill="currentColor" stroke="none"/>',
+  "corner-tr": '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="16.5" cy="7.5" r="2.5" fill="currentColor" stroke="none"/>',
+  "corner-br": '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="16.5" cy="16.5" r="2.5" fill="currentColor" stroke="none"/>',
+  "corner-bl": '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="7.5" cy="16.5" r="2.5" fill="currentColor" stroke="none"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   board: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><circle cx="12" cy="12" r="2"/>',
   scene: '<path d="M7 17a4 4 0 0 1 .5-8A5.5 5.5 0 0 1 18 10.5a3.3 3.3 0 0 1-.5 6.5z"/><path d="M9 20l1-2M13 20l1-2"/>',
@@ -45,6 +50,11 @@ const P: Record<string, string> = {
   layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 12.5 9 5 9-5M3 16.5l9 5 9-5"/>',
   wave: '<path d="M3 12h3l2-6 4 12 3-9 2 3h4"/>',
   cube: '<path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+  pawn: '<circle cx="12" cy="7" r="3"/><path d="M10 11h4M10.5 11c0 3-2.5 4-2.5 9h8c0-5-2.5-6-2.5-9M6.5 20h11"/>',
+  rook: '<path d="M6 20h12M7.5 20l1-9h7l1 9M8.5 11 8 7.5h8L15.5 11M8 7.5V4h2v2h4V4h2v3.5"/>',
+  bishop: '<path d="M7 20h10M9 20c0-2 1-4 1.5-6h3c.5 2 1.5 4 1.5 6M12 4c-3 2.5-4 6-1.5 10h3C16 10 15 6.5 12 4z"/><path d="M12 7v3M10.5 8.5h3"/>',
+  queen: '<path d="M6 20h12M7 20 5.5 9l4 3.5L12 6l2.5 6.5 4-3.5L17 20z"/><circle cx="5.5" cy="7.5" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="18.5" cy="7.5" r="1"/>',
+  king: '<path d="M6 20h12M7.5 20 6.5 14c0-2 2-3.5 5.5-3.5s5.5 1.5 5.5 3.5L16.5 20zM12 10.5V3.5M9.5 6h5"/>',
   knight: '<path d="M7 20h11M8 20c0-4 1-5 2-7-2 0-4 1-5 3 0-4 3-8 7-9l1-3 2 2c2 1 3 4 3 7 0 3-1 5-1 7"/><circle cx="13.5" cy="8.5" r=".6"/>',
   brain: '<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 4 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 4 3 3 0 0 1-6 1"/>',
   film: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4"/>',
@@ -91,6 +101,9 @@ const NODE_ICON: Record<string, string> = {
 };
 const CAT_ICON: Record<string, string> = { Source: "camera", Vision: "eye", Game: "knight", Narration: "chat", Scene: "lamp", Output: "sound", Tracking: "people", Experience: "spark" };
 export const nodeIcon = (type: string, category: string, size = 16): string => icon(NODE_ICON[type] ?? CAT_ICON[category] ?? "spark", size);
+
+/** Raw inner SVG (24x24 stroke paths) of a known icon, for composing larger drawings such as spinners. */
+export const glyph = (name: string): string => P[name];
 
 export const icon = (name: string, size = 16): string =>
   `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] ?? P.spark}</svg>`;

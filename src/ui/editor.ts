@@ -1,5 +1,6 @@
 import type { Graph } from "../core/graph";
 import { nodeIcon, paramIcon } from "./icons";
+import { onPieceStyle, pieceImage } from "./pieceSets";
 import { pixelRatio, viewSettings } from "./viewSettings";
 import { registerContextMenu, type CtxItem } from "./contextMenu";
 import { renderItems } from "./menus/viewMenu";
@@ -217,7 +218,20 @@ export class NodeEditor {
         s.value = cur;
       };
       fill(); s.onpointerdown = () => fill(); s.onchange = () => commit(s.value);
-      sync.set(p.id, (v) => { if (document.activeElement !== s) fill(); }); row.append(s);
+      sync.set(p.id, (v) => { if (document.activeElement !== s) fill(); });
+      if (p.icons) {
+        // The piece icon for the chosen option sits beside the select; it follows the selection and the piece set.
+        const cv = h("canvas"); cv.width = cv.height = 40; cv.style.cssText = "width:20px;height:20px;flex:none";
+        const draw = (tries = 0) => {
+          const code = p.icons![p.options.indexOf(String(n.params[p.id]))], g = cv.getContext("2d"); if (!code || !g) return;
+          const img = pieceImage(code); g.clearRect(0, 0, 40, 40);
+          if (img) g.drawImage(img, 0, 0, 40, 40); else if (tries < 30) setTimeout(() => draw(tries + 1), 60); // image still loading
+        };
+        const off: () => void = onPieceStyle(() => { if (!cv.isConnected) { off(); return; } draw(); });
+        const oc = s.onchange; s.onchange = (e) => { oc?.call(s, e as any); draw(); };
+        const wrap = h("span", ""); wrap.style.cssText = "display:inline-flex;align-items:center;gap:4px;min-width:0"; wrap.append(cv, s); row.append(wrap);
+        queueMicrotask(() => draw());
+      } else row.append(s);
       if (p.pick) {
         const pick = p.pick, b = h("button", "ne-qbtn", "◫ Compare"); b.type = "button"; b.dataset.tip = "Compare options"; b.dataset.tipBody = "See each option's price per token on a chart and pick one.";
         b.onpointerdown = (e) => e.stopPropagation();
@@ -311,7 +325,7 @@ export class NodeEditor {
         { kind: "toggle", label: "Bypass", get: () => !!n.bypass, set: (b) => { n.bypass = b; v?.el.classList.toggle("bypass", b); this.onChange(); } },
         { kind: "action", label: big ? "Collapse" : "Expand", run: () => { if (big) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); } },
         { kind: "action", label: "Duplicate", run: () => this.duplicate(n.id) },
-        { kind: "action", label: "Reset parameters", disabled: !spec.params?.length, run: () => { for (const p of spec.params ?? []) n.params[p.id] = p.value; this.dirty = true; this.onChange(); } },
+        { kind: "action", label: "Reset parameters", disabled: !spec.params?.length, hint: spec.params?.length ? undefined : "This node has no parameters to reset.", run: () => { for (const p of spec.params ?? []) n.params[p.id] = p.value; this.dirty = true; this.onChange(); } },
         ...(spec.preview ? [{ kind: "submenu" as const, label: "Preview quality", items: renderItems }] : []),
         { kind: "action", label: "Copy node id", run: () => void navigator.clipboard?.writeText(n.id) },
         { kind: "action", label: "Delete node", danger: true, run: () => this.removeNode(n.id) },

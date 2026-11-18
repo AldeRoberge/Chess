@@ -10,7 +10,7 @@
 .cm-label{flex:1}
 .cm-val{color:var(--text-dim);font:500 var(--t-xs) var(--font-mono,monospace);min-width:1ch;text-align:right}
 .cm-row.on .cm-val{color:var(--signal-hi)}
-.cm-row.disabled{opacity:.4;pointer-events:none}
+.cm-row.disabled{opacity:.4;cursor:not-allowed} /* no pointer-events:none: a disabled row still shows its reason on hover */
 .cm-row.danger .cm-label{color:var(--bad)}
 .cm-row.info{opacity:.75}
 .cm-sep{height:1px;margin:5px 4px;background:var(--line)}

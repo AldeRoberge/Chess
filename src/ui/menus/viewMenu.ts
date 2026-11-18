@@ -18,7 +18,7 @@ export function styleItems(): CtxItem[] {
     radioMenu("Piece set", PIECE_SETS.map((s) => ({ value: s.id, label: `${s.name} · ${s.license}` })), () => pieceSet().id, setPieceSet),
     { kind: "color", label: "White pieces colour", get: () => pieceColors().white ?? "#ffffff", set: (v) => setPieceColors({ white: v }) },
     { kind: "color", label: "Black pieces colour", get: () => pieceColors().black ?? "#262421", set: (v) => setPieceColors({ black: v }) },
-    { kind: "action", label: "Original piece colours", run: () => setPieceColors({ white: null, black: null }), disabled: !pieceColors().white && !pieceColors().black },
+    { kind: "action", label: "Original piece colours", run: () => setPieceColors({ white: null, black: null }), disabled: !pieceColors().white && !pieceColors().black, hint: !pieceColors().white && !pieceColors().black ? "Already showing the original piece colours. Change a colour above to enable this." : undefined },
   ];
 }
 

@@ -84,12 +84,14 @@ export class SceneRenderer {
     const snowy = s.snow > 0.05 || s.scene !== "fire-watchtower";
     for (let l = 0; l < 3; l++) {
       const shade = 10 + l * 14 + day * 40;
-      ctx.fillStyle = `rgb(${shade * 0.5},${shade * 0.8},${shade * 0.7})`;
+      // far rows are hazier and bluer: a little more sky mixed in each step back
+      const haze = (2 - l) * 0.12;
+      const lit = mix([shade * 0.55, shade * 0.95, shade * 0.75], [120, 150, 190], haze);
+      const dark = lit.map((v) => v * 0.6);
       for (const tr of this.trees[l]) {
         const sway = Math.sin(t * (0.6 + s.wind) + tr.x * 9) * s.wind * 6;
         const bx = tr.x * w, by = h * (0.78 + l * 0.05), th = tr.h * h * 1.4, tw = tr.w * w;
-        ctx.beginPath(); ctx.moveTo(bx + sway, by - th); ctx.lineTo(bx - tw, by); ctx.lineTo(bx + tw, by); ctx.closePath(); ctx.fill();
-        if (snowy) { ctx.fillStyle = "rgba(230,240,255,.35)"; ctx.beginPath(); ctx.moveTo(bx + sway, by - th); ctx.lineTo(bx - tw * 0.4, by - th * 0.55); ctx.lineTo(bx + tw * 0.4, by - th * 0.55); ctx.closePath(); ctx.fill(); ctx.fillStyle = `rgb(${shade * 0.5},${shade * 0.8},${shade * 0.7})`; }
+        this.spruce(ctx, bx, by, th, tw, sway, lit, dark, snowy);
         if (s.decor.includes("christmas") && l === 2) {
           for (const li of tr.lights) {
             const on = Math.sin(t * 3 + li.a * 20 + li.c) > -0.2;
@@ -97,7 +99,6 @@ export class SceneRenderer {
             const yy = by - th * (0.15 + li.a * 0.75), xx = bx + (li.b - 0.5) * tw * (1.6 * (1 - (by - yy) / th)) + sway * (1 - (by - yy) / th);
             ctx.fillStyle = ["#ff4040", "#ffd34d", "#4de0ff", "#7dff6a"][li.c]; ctx.beginPath(); ctx.arc(xx, yy, Math.max(2, w / 300), 0, 7); ctx.fill();
           }
-          ctx.fillStyle = `rgb(${shade * 0.5},${shade * 0.8},${shade * 0.7})`;
         }
       }
     }
@@ -109,6 +110,33 @@ export class SceneRenderer {
       ctx.fillRect(x - w * 0.02, base - h * 0.5, w * 0.012, h * 0.5); ctx.fillRect(x + w * 0.02, base - h * 0.5, w * 0.012, h * 0.5);
       ctx.fillRect(x - w * 0.035, base - h * 0.56, w * 0.085, h * 0.07);
       ctx.beginPath(); ctx.moveTo(x - w * 0.045, base - h * 0.56); ctx.lineTo(x + w * 0.0075, base - h * 0.66); ctx.lineTo(x + w * 0.06, base - h * 0.56); ctx.fill();
+    }
+  }
+
+  /**
+   * A conifer: a short trunk, three stacked tiers that get narrower toward the top, each split into a lit
+   * side and a shaded side, with snow on the upper edge of every tier when it is winter.
+   */
+  private spruce(ctx: CanvasRenderingContext2D, bx: number, by: number, th: number, tw: number, sway: number, lit: number[], dark: number[], snowy: boolean) {
+    // ground shadow
+    ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.beginPath(); ctx.ellipse(bx, by + th * 0.02, tw * 1.3, tw * 0.28, 0, 0, 7); ctx.fill();
+    // trunk
+    ctx.fillStyle = rgb(dark); ctx.fillRect(bx - tw * 0.1, by - th * 0.1, tw * 0.2, th * 0.12);
+    const tiers = 3, step = th * 0.3, tierH = th * 0.36;
+    for (let i = 0; i < tiers; i++) {
+      const yb = by - th * 0.02 - i * step;               // tier base
+      const ya = yb - tierH - (i === tiers - 1 ? th * 0.02 : 0); // tier apex
+      const hw = tw * (1 - i * 0.26);                        // half width
+      const ax = bx + sway * (1 - i * 0.25);                 // branches sway more toward the top
+      // lit side (left) and shaded side (right)
+      ctx.fillStyle = rgb(lit); ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(bx - hw, yb); ctx.lineTo(ax, yb); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = rgb(dark); ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(ax, yb); ctx.lineTo(bx + hw, yb); ctx.closePath(); ctx.fill();
+      if (snowy) { // snow settles on the upper part of each tier
+        const f = 0.4, sy = ya + (yb - ya) * f; // snow reaches 40% down the tier
+        const xl = ax + (bx - hw - ax) * f, xr = ax + (bx + hw - ax) * f;
+        ctx.fillStyle = "rgba(236,243,255,.75)";
+        ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(xl, sy); ctx.lineTo(ax, sy + tierH * 0.04); ctx.lineTo(xr, sy); ctx.closePath(); ctx.fill();
+      }
     }
   }
 

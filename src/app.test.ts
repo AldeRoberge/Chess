@@ -86,10 +86,12 @@ describe("running", () => {
     bus.lines = [{ speaker: "B", name: "Margot", text: "Quel coup !", t: 0, priority: 1 }]; frames(app, 5000, 6, 70); expect(root.querySelector("#sub")!.textContent).toBe("Margot: Quel coup !"); expect(root.querySelector("#sub")!.className).toBe("AB");
     bus.lines = []; frames(app, 9000, 6); expect(root.querySelector("#sub")!.textContent).toBe(""); expect(root.querySelector("#sub")!.className).toBe("");
   });
-  it("shows warning chips while the fidelity is low and good ones when high", () => {
+  it("shows red fidelity chips on the bar while the fidelity is low and green ones when high", () => {
+    // Tone classes come from chipTone: g green, y yellow, o orange, r red. Healthy chips move under ⋯.
     finishSetup(); const app = quiet(boot(root)); app.step(1000);
-    bus.board = { fidelity: 0.2 } as any; bus.game = { moveFidelity: 0.2, history: [] } as any; frames(app, 2000, 5); expect(root.querySelectorAll("#hud .chip.warn:not([data-tip=\"Frame rate\"])").length).toBe(2);
-    bus.board = { fidelity: 0.95 } as any; bus.game = { moveFidelity: 0.95, history: [] } as any; frames(app, 4000, 5); expect(root.querySelectorAll("#hud .chip.ok").length).toBe(2);
+    const fidelity = '[data-tip="Board fidelity"],[data-tip="Move confidence"]';
+    bus.board = { fidelity: 0.2 } as any; bus.game = { moveFidelity: 0.2, history: [] } as any; frames(app, 2000, 5); expect(root.querySelectorAll(`#hud .chip.r:is(${fidelity})`).length).toBe(2);
+    bus.board = { fidelity: 0.95 } as any; bus.game = { moveFidelity: 0.95, history: [] } as any; frames(app, 4000, 5); expect(root.querySelectorAll(`.chip.g:is(${fidelity})`).length).toBe(2);
   });
   it("moves healthy readings under ⋯ and keeps only the ones that need attention on the bar", () => {
     finishSetup(); const app = quiet(boot(root));
@@ -235,7 +237,7 @@ describe("history, backups and recovery", () => {
     (document.getElementById("backups") as HTMLButtonElement).click();
     const bad = document.querySelector<HTMLInputElement>(".bk input")!; Object.defineProperty(bad, "files", { value: [new File(["nope"], "b.json")] });
     bad.dispatchEvent(new Event("change")); await new Promise((r) => setTimeout(r, 30));
-    expect(document.querySelector(".notice")!.textContent).toContain("not a workflow");
+    expect(document.querySelector(".notice")!.textContent).toContain("not a Chess Experience file");
     (document.getElementById("backups") as HTMLButtonElement).click();
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); expect(document.querySelector(".bk")).toBeNull();
     (document.getElementById("backups") as HTMLButtonElement).click();

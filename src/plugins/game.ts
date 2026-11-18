@@ -59,7 +59,7 @@ const engine: NodeSpec<EngState> = {
   inputs: [{ id: "game", type: "game" }, { id: "director", type: "any" }],
   outputs: [{ id: "events", type: "event" }],
   params: [
-    { id: "color", kind: "select", label: "Engine plays", options: ["b", "w"], labels: ["♛ Black", "♕ White"], value: "b" },
+    { id: "color", kind: "select", label: "Engine plays", options: ["b", "w"], labels: ["Black", "White"], icons: ["bq", "wq"], value: "b" },
     { id: "virtualHand", kind: "bool", label: "Virtual hand", value: true },
   ],
   init: () => ({ engine: null, loading: false, thinkingFen: "", hintFen: "", out: [], info: "", now: 0 }),

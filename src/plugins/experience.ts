@@ -15,7 +15,7 @@ const director: NodeSpec<DirState> = {
     { id: "introMs", kind: "number", label: "Intro (ms)", min: 1000, max: 20000, step: 500, value: 6000 },
     { id: "outroMs", kind: "number", label: "Outro (ms)", min: 1000, max: 30000, step: 500, value: 8000 },
     { id: "preset", kind: "select", label: "Opponent", options: ["menu", "engine", "human"], value: "menu" },
-    { id: "presetElo", kind: "select", label: "Preset Elo", options: ["500", "1000", "1500"], value: "1000" },
+    { id: "presetElo", kind: "number", label: "Preset Elo", min: 500, max: 2800, step: 50, value: 1000 },
   ],
   init: () => ({ dir: new Director(), out: null }),
   process({ seats, pointers, events }, { params, state, now, setFidelity, span }) {

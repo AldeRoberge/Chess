@@ -1,4 +1,6 @@
 import type { Graph } from "../core/graph";
+import { LLM_DEFAULT_MODEL } from "../narrator/llm";
+import { ELEVENLABS_DEFAULTS } from "../narrator/voice";
 import { fmtCorners, parseCorners } from "../plugins/shared";
 import { poseString } from "../vision/boardPose";
 import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
@@ -32,7 +34,11 @@ export interface SetupConfig {
   hour: number; // -1 = scene default
   narrator: { voices: 1 | 2; nameA: string; nameB: string; speak: boolean; volume: number };
   /** "menu" = the player picks by hovering a hand over the table menu; otherwise a fixed opponent (kiosk). */
-  opponent: { mode: "menu" | "engine" | "human"; elo: 500 | 1000 | 1500 };
+  /** Who writes the commentary: the built-in lines, or OpenAI (needs an API key). */
+  ai: { engine: "builtin" | "openai"; apiKey: string; model: string };
+  /** Who speaks the lines: the system (browser) voices, or ElevenLabs (needs an API key). */
+  voice: { engine: "browser" | "elevenlabs"; apiKey: string; voiceIdA: string; voiceIdB: string };
+  opponent: { mode: "menu" | "engine" | "human"; elo: number };
   projectors: { count: number; dmx: boolean; dmxUrl: string };
   /** pose = track people in 3D (MediaPipe) and use them for seating and hand pointers, instead of the virtual player */
   tracking: { pose: boolean };
@@ -51,6 +57,8 @@ export const defaultSetup = (): SetupConfig => ({
   cameras: [virtualCamera("A"), virtualCamera("B")],
   scene: "auto", rain: -1, snow: -1, hour: -1,
   narrator: { voices: 2, nameA: "Jean", nameB: "Margot", speak: true, volume: 0.9 },
+  ai: { engine: "builtin", apiKey: "", model: LLM_DEFAULT_MODEL },
+  voice: { engine: "browser", apiKey: "", voiceIdA: ELEVENLABS_DEFAULTS.voiceIdA, voiceIdB: ELEVENLABS_DEFAULTS.voiceIdB },
   opponent: { mode: "menu", elo: 1000 },
   projectors: { count: 0, dmx: false, dmxUrl: "ws://127.0.0.1:8787" },
   tracking: { pose: false },
@@ -74,6 +82,11 @@ export function validateSetup(c: SetupConfig): Issue[] {
   if (c.cameras.length && online === 0) err("cameras", "No camera is online.");
   if (online === 1) warn("cameras", "Only one camera online: occlusion by hands cannot be bridged. Two or more is recommended.");
   if (!c.narrator.nameA.trim() || !c.narrator.nameB.trim()) err("narrator", "Both commentators need a name.");
+  if (c.ai.engine === "openai") {
+    if (!c.ai.apiKey.trim()) warn("ai", "AI commentary is set to OpenAI but no API key is entered: the built-in commentary will be used.");
+    else if (!/^sk-/.test(c.ai.apiKey.trim())) warn("ai", "OpenAI keys start with \"sk-\": check that you copied the whole key.");
+  }
+  if (c.voice.engine === "elevenlabs" && !c.voice.apiKey.trim()) warn("voice", "The voice engine is set to ElevenLabs but no API key is entered: the system voices will be used.");
   if (c.projectors.dmx && !/^wss?:\/\//.test(c.projectors.dmxUrl)) err("projectors", "DMX bridge URL must start with ws:// or wss://.");
   if (c.tracking.pose && online < 2) warn("tracking", "People tracking with one camera can only place feet on the floor. Two or more cameras give full 3D.");
   if (c.scene !== "auto" && !(c.scene in SCENES)) err("scene", `Unknown scene "${c.scene}".`);
@@ -127,8 +140,8 @@ export function buildGraphFromConfig(g: Graph, c: SetupConfig) {
   const dir = g.addNode("experience.director", 1160, 520, { preset: c.opponent.mode, presetElo: String(c.opponent.elo) });
   const eng = g.addNode("game.engine", 1440, 520);
   const nar = g.addNode("narration.narrator", 1700, 30, { voices: String(c.narrator.voices), nameA: c.narrator.nameA, nameB: c.narrator.nameB });
-  const ai = g.addNode("narration.ai", 1840, 30, { voices: String(c.narrator.voices), nameA: c.narrator.nameA, nameB: c.narrator.nameB });
-  const spk = g.addNode("narration.speech", 2100, 30, { enabled: c.narrator.speak, volume: c.narrator.volume });
+  const ai = g.addNode("narration.ai", 1840, 30, { voices: String(c.narrator.voices), nameA: c.narrator.nameA, nameB: c.narrator.nameB, provider: c.ai.engine, aiKey: c.ai.apiKey.trim(), aiModel: c.ai.model || LLM_DEFAULT_MODEL });
+  const spk = g.addNode("narration.speech", 2100, 30, { enabled: c.narrator.speak, volume: c.narrator.volume, provider: c.voice.engine, apiKey: c.voice.apiKey.trim(), voiceIdA: c.voice.voiceIdA.trim() || ELEVENLABS_DEFAULTS.voiceIdA, voiceIdB: c.voice.voiceIdB.trim() || ELEVENLABS_DEFAULTS.voiceIdB });
   const cues = g.addNode("scene.cues", 1700, 250, { scene: c.scene === "auto" ? "(auto)" : c.scene, rain: c.rain, snow: c.snow, hour: c.hour });
   const out = g.addNode("scene.output", 2000, 330, { dmx: c.projectors.dmx, dmxUrl: c.projectors.dmxUrl });
   wire(fuse, "board", stab, "board"); wire(stab, "board", trk, "board"); wire(dir, "director", trk, "director");

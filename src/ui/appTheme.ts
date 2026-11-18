@@ -38,6 +38,13 @@ export function setAppMode(m: ModePref) { mode = pickMode(m); write(MODE_KEY, mo
 export const nextMode = (m: ModePref): ModePref => MODES[(MODES.indexOf(m) + 1) % MODES.length];
 export function onAppTheme(f: () => void) { subs.add(f); return () => subs.delete(f); }
 
+/** Name of a browser extension that restyles pages (Dark Reader), or null. It recolours the app and fights the theme. */
+export function detectRestyler(): string | null {
+  const d = document.documentElement;
+  if (d.hasAttribute("data-darkreader-mode") || d.hasAttribute("data-darkreader-scheme") || document.querySelector("meta[name=darkreader], style.darkreader")) return "Dark Reader";
+  return null;
+}
+
 /** Re-resolve when the OS scheme flips while the mode is "system". */
 export function watchSystemScheme() {
   if (typeof matchMedia !== "function") return;

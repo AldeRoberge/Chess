@@ -30,8 +30,9 @@ export type ParamDef =
   /** `action` marks a one-shot trigger: it shows as a button, and the node resets the param to false after running. */
   | { id: string; kind: "bool"; label: string; value: boolean; action?: true }
   /** `labels`, when given, is the display text for each option (same order); the stored value stays `options[i]`. */
+  /** `icons`, when given, is a piece code per option (e.g. "bq") drawn beside the select. */
   /** `pick`, when given, adds a "Compare" button that opens a cost chart of `models()`; choosing a bar sets this param. */
-  | { id: string; kind: "select"; label: string; options: string[]; labels?: string[]; value: string; pick?: { title: string; models: () => ModelInfo[] } }
+  | { id: string; kind: "select"; label: string; options: string[]; labels?: string[]; icons?: string[]; value: string; pick?: { title: string; models: () => ModelInfo[] } }
   /** `quad` marks a "x,y;x,y;x,y;x,y" camera-pixel value that gets a drag-the-corners editor (needs the node's `frameOf`). */
   | { id: string; kind: "text"; label: string; value: string; quad?: { names: string[]; grid: number } }
   /** A non-editable heading row that groups the params below it. `value` is unused (kept so defaults stay uniform). */
