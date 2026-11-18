@@ -11,18 +11,18 @@ export const parseCorners = (s: string): Pt[] | null => {
 };
 export const fmtCorners = (c: Pt[]) => c.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(";");
 
-/** Tinted copy of a frame, built once per frame object and shared by every preview that shows it (camera + reader previews, 15x/s). */
-const tintCache = new WeakMap<GrayFrame, HTMLCanvasElement>();
+/** Plain grey copy of a frame, built once per frame object and shared by every preview that shows it (camera + reader previews, 15x/s). */
+const frameCache = new WeakMap<GrayFrame, HTMLCanvasElement>();
 let scratch: ImageData | null = null;
-function tinted(f: GrayFrame): HTMLCanvasElement {
-  let c = tintCache.get(f);
+function frameCanvas(f: GrayFrame): HTMLCanvasElement {
+  let c = frameCache.get(f);
   if (c) return c;
   if (!scratch || scratch.width !== f.width || scratch.height !== f.height) scratch = new ImageData(f.width, f.height);
   const d = new Uint32Array(scratch.data.buffer); // one 32-bit write per pixel (little-endian ABGR)
-  for (let i = 0; i < f.data.length; i++) { const v = f.data[i]; d[i] = 0xff000000 | ((v * 0.8) << 16) | (v << 8) | ((v * 0.7) & 255); }
+  for (let i = 0; i < f.data.length; i++) { const v = f.data[i]; d[i] = 0xff000000 | (v << 16) | (v << 8) | v; } // R = G = B: neutral grey
   c = document.createElement("canvas"); c.width = f.width; c.height = f.height;
   c.getContext("2d")!.putImageData(scratch, 0, 0);
-  tintCache.set(f, c);
+  frameCache.set(f, c);
   return c;
 }
 
@@ -38,7 +38,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, w: number, h: number, f
   ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, w, h);
   if (!f) { ctx.fillStyle = "#566"; ctx.font = "12px system-ui"; ctx.fillText(off, 8, h / 2); return null; }
   const r = fitRect(f.width, f.height, w, h);
-  ctx.drawImage(tinted(f), r.x, r.y, f.width * r.s, f.height * r.s);
+  ctx.drawImage(frameCanvas(f), r.x, r.y, f.width * r.s, f.height * r.s);
   return r;
 }
 

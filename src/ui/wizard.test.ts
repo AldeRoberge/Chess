@@ -5,6 +5,7 @@ import { virtualTable } from "../sim/virtualTable";
 import { tick } from "../test/helpers";
 import { fmtCorners } from "../plugins/shared";
 import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
+import { BUILD } from "../setup/buildInfo";
 import { SetupWizard, type WizardDeps } from "./wizard";
 import { STEPS, sceneStateFor } from "./wizardSteps";
 
@@ -24,7 +25,7 @@ const focused = (w: SetupWizard) => w.root.querySelector(".halo-item.sel .halo-l
 const select = (w: SetupWizard, label: string) => { const i = (w as any).focusables().findIndex((f: any) => f.it.label === label); expect(i, `item ${label}`).toBeGreaterThanOrEqual(0); w.focus = i; w.zone = "pane"; (w as any).renderList(); };
 const V = (s: string) => `◂ ${s} ▸`; // how sliders and choices show their value
 
-beforeEach(() => { virtualTable.reset(); document.body.innerHTML = ""; });
+beforeEach(() => { virtualTable.reset(); document.body.innerHTML = ""; vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false }))); }); // no real GitHub calls from the briefing's CI check
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("wizard shell", () => {
@@ -352,5 +353,23 @@ describe("narration, opponent, room, launch steps", () => {
   it("shrinks focus when removing a camera leaves fewer rows (Delete key on the focused camera)", () => {
     const { w } = make(); go(w, 1); w.focus = 1; (w as any).key(new KeyboardEvent("keydown", { key: "Delete" }));
     expect(w.cfg.cameras).toHaveLength(1); expect(w.focus).toBeLessThan((w as any).focusables().length);
+  });
+});
+
+describe("briefing: build and CI chips", () => {
+  const briefing = () => STEPS.findIndex((s) => s.id === "briefing");
+  it("shows the build age and the latest CI run on main once GitHub answers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ workflow_runs: [{ status: "completed", conclusion: "success", head_sha: BUILD.commit, run_started_at: new Date().toISOString(), html_url: "https://github.com/AldeRoberge/Chess/actions/runs/9" }] }) })));
+    const { w } = make(); w.mount(document.body); go(w, briefing());
+    await vi.waitFor(() => expect(w.root.querySelector(".halo-build")!.textContent).toContain("CI passed"));
+    const chips = [...w.root.querySelectorAll<HTMLElement>(".halo-build .chip")];
+    expect(chips[0].textContent).toMatch(/^build .* ago · [0-9a-f]{7} · latest$/);
+    expect(chips[1].tagName).toBe("A"); expect(chips[1].getAttribute("href")).toBe("https://github.com/AldeRoberge/Chess/actions/runs/9");
+    expect(chips[1].className).toContain("ok");
+  });
+  it("says CI is unavailable when GitHub does not answer", async () => {
+    const { w } = make(); w.mount(document.body); go(w, briefing());
+    await vi.waitFor(() => expect(w.root.querySelector(".halo-build")!.textContent).toContain("CI unavailable"));
+    expect(w.root.querySelectorAll(".halo-build .chip")[1].tagName).toBe("SPAN");
   });
 });

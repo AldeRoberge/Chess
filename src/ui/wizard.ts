@@ -6,6 +6,7 @@ import { camHealth, setAutoField, type AutoField, type CameraSetup, type SetupCo
 import { CHANNEL_NAME, boardSeparation, detectChannel, estimateFov, trustFor } from "../setup/autodetect";
 import type { CameraDevice } from "../setup/devices";
 import { evaluateEnv, runCheckAction, type Env } from "../setup/system";
+import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "../setup/buildInfo";
 import { fmtCorners, parseCorners } from "../plugins/shared";
 import { CornerPicker } from "./cornerPicker";
 import { activate, adjust, isFocusable, valueText, type AutoAction, type Item } from "./menu";
@@ -156,7 +157,11 @@ export class SetupWizard {
     try { this.state.detected = await this.deps.listCameras(); } finally { this.state.scanning = false; }
     this.render();
   }
-  private async runChecks() { this.state.checks = evaluateEnv(await this.deps.detectEnv()); this.render(); }
+  private async runChecks() {
+    this.state.checks = evaluateEnv(await this.deps.detectEnv()); this.render();
+    this.ci = await latestCi(); // undefined until the first answer; null when GitHub can't be reached
+    if (this.stepId === "briefing") this.render();
+  }
 
   // ---- input
   private key(e: KeyboardEvent) {
@@ -385,6 +390,22 @@ export class SetupWizard {
   }
 
   private open = new Set<string>();
+  /** Latest ci.yml run on main: undefined while asking, null when GitHub can't say. */
+  private ci: CiRun | null | undefined;
+
+  /** Build time (relative) and commit, next to the CI state on main, so you can tell whether this copy is the latest. Styled like the top bar's chips. */
+  private buildChips(): HTMLElement {
+    const row = el("div", "halo-build"); row.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px";
+    for (const v of [buildBadge(BUILD, this.ci), ciBadge(this.ci)]) {
+      const chip = document.createElement(v.href ? "a" : "span");
+      chip.className = `chip ${v.tone}`.trim(); chip.textContent = v.text;
+      chip.dataset.tip = v.href ? "Latest CI run" : "Build"; chip.dataset.tipBody = v.tip;
+      if (v.href) { const a = chip as HTMLAnchorElement; a.href = v.href; a.target = "_blank"; a.rel = "noopener noreferrer"; }
+      row.append(chip);
+    }
+    return row;
+  }
+
   /** The system check as a table: one row per subsystem, each expanding to the facts behind it. */
   private renderSystem() {
     const checks = this.state.checks;
@@ -434,7 +455,7 @@ export class SetupWizard {
     const re = el("button", "sys-act"); re.type = "button"; re.dataset.tip = "Re-run checks"; re.dataset.tipBody = "Test cameras, graphics, sound and the engine again, for example after plugging something in."; re.innerHTML = `${icon("refresh", 14)}<span>Re-run checks</span>`;
     re.onclick = () => { re.disabled = true; re.classList.add("busy"); re.innerHTML = `${spinnerHTML("rook", 14)}<span>Re-running…</span>`; void this.runChecks(); };
     bar.append(re);
-    this.extra.replaceChildren(bar, t);
+    this.extra.replaceChildren(this.buildChips(), bar, t);
   }
 
   private renderNav() {

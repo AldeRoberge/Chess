@@ -74,7 +74,7 @@
 .halo-nav .ic{flex:none}
 
 /* action buttons: bordered, with icon */
-.halo-item.action{justify-content:flex-start;align-self:flex-start;gap:12px;min-width:280px;min-height:42px;margin-top:8px;padding:8px 18px 8px 14px;border:1px solid color-mix(in srgb,var(--signal) 45%,var(--line-hi));background:color-mix(in srgb,var(--signal) 28%,var(--ink-2));color:var(--text);font-weight:600}
+.halo-item.action{justify-content:flex-start;align-self:flex-start;gap:12px;min-width:280px;min-height:42px;margin-top:8px;padding:8px 18px 8px 14px;border:1px solid color-mix(in srgb,var(--signal) 70%,var(--line-hi));background:color-mix(in srgb,var(--signal) 50%,var(--ink-2));color:var(--text);font-weight:600}
 /* every row: icon | label | value */
 .halo-item:not(.info):not(.action) .halo-ic{display:inline-grid;color:var(--signal);flex:none;margin-right:-8px}
 .halo-item:not(.info):not(.action) .halo-label{flex:1}
@@ -88,8 +88,10 @@
 .halo-item.sel .halo-range::-webkit-slider-thumb{background:var(--ink-0);border-color:var(--signal-hi);box-shadow:0 0 0 1px var(--ink-0)}
 .halo-item.sel .halo-range::-moz-range-thumb{background:var(--ink-0)}
 .halo-item.action .halo-ic{display:inline-grid;color:var(--signal);flex:none}
-.halo-item.action:hover{border-color:var(--signal);background:color-mix(in srgb,var(--signal) 40%,var(--ink-2))}
-.halo-item.action.sel .halo-ic{color:var(--ink-0)}
+.halo-item.action:hover{border-color:var(--signal);background:color-mix(in srgb,var(--signal) 62%,var(--ink-2))}
+/* selected action: the bright bar, with dark text. Must be spelled out here: the base .action rule outranks .sel */
+.halo-item.action.sel{background:linear-gradient(90deg,var(--signal-hi),var(--signal));border-color:var(--signal-hi);color:var(--ink-0)}
+.halo-item.action.sel .halo-label,.halo-item.action.sel .halo-ic{color:var(--ink-0)}
 .halo-item.action.disabled{border-style:dashed}
 /* remove camera: trash can at the right of the toggle value */
 .halo-trash{display:inline-grid;place-items:center;flex:none;width:34px;height:34px;margin-left:4px;border:1px solid var(--line);background:transparent;color:var(--text-dim);cursor:pointer;padding:0}
