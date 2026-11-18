@@ -15,6 +15,7 @@ export type PortType =
   | "world" // the virtual table the cameras look at (VirtualTable)
   | "player" // an AI player seated at the world
   | "action" // TableAction[]: what the scenario asks the players to do
+  | "fx" // board effect cues and calls (FxCue[] / FxCall[])
   | "any";
 
 export interface PortDef {
@@ -71,7 +72,7 @@ export interface NodeSpec<S = any> {
   title: string;
   /** One or two plain sentences shown in the node tooltip. */
   desc?: string;
-  category: "Source" | "Vision" | "Game" | "Narration" | "Scene" | "Output" | "Tracking" | "Experience";
+  category: "Source" | "Vision" | "Game" | "Narration" | "Scene" | "Output" | "Tracking" | "Experience" | "Effects";
   inputs: PortDef[];
   outputs: PortDef[];
   params?: ParamDef[];

@@ -10,6 +10,8 @@ export interface OverlayInput {
   /** Both default to shown; the on-screen preview can hide them. */
   lastMove?: boolean; hints?: boolean;
   clock?: ClockOverlay | null;
+  /** Board effects to paint in light on top (the output page keeps its own engine). */
+  fx?: { draw(ctx: CanvasRenderingContext2D, px: number, now: number): void } | null;
 }
 
 /**
@@ -34,6 +36,8 @@ export function drawTableOverlay(ctx: CanvasRenderingContext2D, px: number, marg
     ctx.strokeStyle = "rgba(60,255,160,.8)"; ctx.lineWidth = px * 0.09; ctx.lineCap = "round";
     ctx.beginPath(); ctx.moveTo(a.x + px / 2, a.y + px / 2); ctx.lineTo(b.x + px / 2, b.y + px / 2); ctx.stroke();
   }
+
+  o.fx?.draw(ctx, px, t * 1000);
 
   const d = o.director;
   if (d?.phase === "menu") {

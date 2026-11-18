@@ -15,6 +15,7 @@ import { bus } from "./core/bus";
 import { Graph } from "./core/graph";
 import { createRegistry } from "./plugins";
 import { startAudio } from "./plugins/scene";
+import { startFxAudio } from "./plugins/fx";
 import { AudioEngine } from "./scene/audio";
 import { mixer, type Bus, type MixState } from "./scene/mixer";
 import { speakLine } from "./plugins/narration";
@@ -253,7 +254,7 @@ export function boot(root: HTMLElement): Boot {
   table.seatCb = (seated) => { for (const n of graph.nodes.values()) if (n.type === "sim.person") n.params.seated = seated; };
   let soundOn = false;
   const soundLabel = () => { document.getElementById("audio")!.querySelector(".lbl")!.textContent = soundOn && !mixer.get().muted ? "Sound on" : "Sound off"; };
-  const doSound = () => { if (!soundOn) { startAudio(graph); soundOn = true; } mixer.setMuted(false); patchPrefs({ sound: true }); soundLabel(); refreshNext(true); };
+  const doSound = () => { if (!soundOn) { startAudio(graph); startFxAudio(graph); soundOn = true; } mixer.setMuted(false); patchPrefs({ sound: true }); soundLabel(); refreshNext(true); };
   const toggleSound = () => { if (!soundOn) { doSound(); return; } const muted = mixer.toggleMuted(); patchPrefs({ sound: !muted }); soundLabel(); refreshNext(true); };
   document.getElementById("audio")!.onclick = toggleSound;
 
@@ -416,7 +417,7 @@ export function boot(root: HTMLElement): Boot {
     if (now - lastPost > 33 && bus.scene) {
       lastPost = now;
       const g = bus.game;
-      profiler.span("scene.post", () => world.post({ type: "state", scene: bus.scene, overlay: { game: g ? { last: g.last, lifted: g.lifted, diff: g.diff, status: g.status } : null, director: bus.director, hint: bus.engineHint, clock: bus.clockView } }));
+      profiler.span("scene.post", () => world.post({ type: "state", scene: bus.scene, overlay: { game: g ? { last: g.last, lifted: g.lifted, diff: g.diff, status: g.status } : null, director: bus.director, hint: bus.engineHint, clock: bus.clockView }, fx: bus.fxSpawns.splice(0) }));
     }
     if (now - lastHud > 250) {
       profiler.begin("hud");

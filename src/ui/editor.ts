@@ -17,10 +17,10 @@ import { previewPoint, setPreviewPointer, setPreviewSize } from "./previewHover"
 
 export const PORT_COLOR: Record<PortType, string> = {
   frame: "#5aa9ff", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
-  seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", world: "#4fd1c5", player: "#f472b6", action: "#fde047", any: "#9aa4b8",
+  seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", world: "#4fd1c5", player: "#f472b6", action: "#fde047", fx: "#5cf2ff", any: "#9aa4b8",
 };
 export const CAT_COLOR: Record<string, string> = {
-  Source: "#4a8fd9", Vision: "#3fb59a", Game: "#d98c4a", Narration: "#4fb0d0", Scene: "#62c27a", Output: "#7c8aa0", Tracking: "#c76fb0", Experience: "#9a78e0",
+  Source: "#4a8fd9", Vision: "#3fb59a", Game: "#d98c4a", Narration: "#4fb0d0", Scene: "#62c27a", Output: "#7c8aa0", Tracking: "#c76fb0", Experience: "#9a78e0", Effects: "#2fd3e6",
 };
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };

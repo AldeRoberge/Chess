@@ -10,6 +10,13 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 const ROW = 20;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** A rounded card with a title row; `tools` sit on the right of the title. */
+const card = (title: string, tools: HTMLElement | null, ...body: HTMLElement[]) => {
+  const c = el("section", "perf-card"), h = el("header", "perf-card-h");
+  h.append(el("h3", "", title)); if (tools) h.append(tools);
+  c.append(h, ...body);
+  return c;
+};
 /** Small stroke icons for the flamegraph toolbar (24x24 grid). */
 const svgIcon = (body: string) => `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const ICON = {
@@ -51,6 +58,8 @@ export class PerfPanel {
   private crumbText = el("span");
   private crumbPath = el("span", "perf-crumb-path");
   private mini = el("canvas", "perf-mini");
+  private status = el("span", "perf-status");
+  private modeSeg: HTMLElement | null = null;
   private hits: { x: number; y: number; w: number; box: FlameBox }[] = [];
   private tlHits: { x: number; w: number; i: number }[] = [];
   private tlOver = -1; // frame index under the pointer on the timeline
@@ -68,7 +77,7 @@ export class PerfPanel {
   private baseBtn = el("button", "", "Set baseline");
 
   constructor(private graph: Graph, private hooks: PerfHooks) {
-    const bar = el("div", "bar perf-bar");
+    const bar = el("div", "perf-actions");
     this.pauseBtn.onclick = () => { profiler.paused = !profiler.paused; this.pauseBtn.textContent = profiler.paused ? "Resume" : "Pause"; this.pauseBtn.classList.toggle("on", profiler.paused); this.draw(true); };
     const clear = el("button", "", "Clear"); clear.onclick = () => { profiler.reset(); this.selected = null; this.resetView(); this.draw(true); };
     const worst = el("button", "", "Slowest frame"); worst.title = "Pin the slowest captured frame";
@@ -94,10 +103,13 @@ export class PerfPanel {
       for (const [label, v] of items) { const b = el("button", "", label); b.onclick = () => { set(v); for (const x of g.children) x.classList.toggle("on", x === b); }; b.classList.toggle("on", get() === v); g.append(b); }
       return g;
     };
-    bar.append(this.pauseBtn, clear, worst, save, this.baseBtn, bud,
-      seg([["Window", "window"], ["Frame", "frame"]], () => this.mode, (v) => { this.mode = v; this.resetView(); this.draw(true); }),
-      seg(DETAIL.map(([l, d]) => [l, d] as const), () => this.depth, (v) => { this.depth = v; this.resetView(); this.draw(true); }),
-      heat);
+    bar.append(this.pauseBtn, clear, worst, save, this.baseBtn, bud, heat);
+    const modeSeg = seg([["Window", "window"], ["Frame", "frame"]], () => this.mode, (v) => { this.mode = v; this.resetView(); this.draw(true); });
+    modeSeg.dataset.role = "mode";
+    const depthSeg = seg(DETAIL.map(([l, d]) => [l, d] as const), () => this.depth, (v) => { this.depth = v; this.resetView(); this.draw(true); });
+    const head = el("div", "perf-head"), title = el("div", "perf-title");
+    title.append(el("h2", "", "Performance"), this.status);
+    head.append(title, bar);
 
     this.tip.hidden = true;
     this.flame.tabIndex = 0;
@@ -116,10 +128,13 @@ export class PerfPanel {
     this.crumb.append(this.crumbText, this.crumbPath);
     crumbRow.append(this.crumb, zbar);
     const flameWrap = el("div", "perf-flame-wrap"); flameWrap.append(this.flame, this.tip, this.mini);
-    this.search.type = "text"; this.search.placeholder = "Filter nodes…"; this.search.className = "perf-search";
+    this.search.type = "search"; this.search.placeholder = "Filter nodes…"; this.search.className = "perf-search";
     this.search.oninput = () => this.drawTable(true);
-    const tbar = el("div", "perf-tbar"); tbar.append(el("h4", "", "Nodes"), this.search);
-    this.root.append(bar, this.kpis, el("h4", "", "Frame timeline"), this.timeline, el("h4", "", "Flamegraph"), crumbRow, flameWrap, tbar, this.table);
+    const flameTools = el("div", "perf-card-tools"); flameTools.append(modeSeg, depthSeg, zbar);
+    const flameCard = card("Flamegraph", flameTools, crumbRow, flameWrap);
+    const nodesCard = card("Nodes", this.search, this.table);
+    this.root.append(head, this.kpis, card("Frame timeline", null, this.timeline), flameCard, nodesCard);
+    this.modeSeg = modeSeg;
 
     this.timeline.onclick = (e) => {
       const r = this.timeline.getBoundingClientRect(), x = e.clientX - r.left;
@@ -255,7 +270,7 @@ export class PerfPanel {
     return null;
   };
 
-  private syncModeButtons() { const segs = this.root.querySelectorAll(".perf-bar .seg"); segs[0]?.querySelectorAll("button").forEach((b, i) => b.classList.toggle("on", (i === 0) === (this.mode === "window"))); }
+  private syncModeButtons() { this.modeSeg?.querySelectorAll("button").forEach((b, i) => b.classList.toggle("on", (i === 0) === (this.mode === "window"))); }
 
   private frames(): FrameRecord[] { return profiler.frames; }
 
@@ -266,6 +281,9 @@ export class PerfPanel {
 
   private draw(force: boolean) {
     const cb = this.currentBoxes(); this.boxes = cb.boxes; this.total = cb.total;
+    const n = this.frames().length;
+    this.status.className = "perf-status" + (profiler.paused ? " paused" : profiler.enabled ? " live" : "");
+    this.status.textContent = profiler.paused ? `Paused · ${n} frames` : profiler.enabled ? `Live · ${n} frames` : n ? `Stopped · ${n} frames` : "Idle";
     this.drawKpis();
     this.drawTimeline();
     this.paint();

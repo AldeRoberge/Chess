@@ -21,6 +21,7 @@ const PORT_INFO: Record<PortType, string> = {
   world: "The virtual table the virtual cameras look at: pieces, hands and arms.",
   player: "An AI player seated at the virtual table.",
   action: "What the scenario asks the players to do: moves, handshakes and the fist.",
+  fx: "Board effect cues and the lights and sounds built from them.",
   any: "Accepts or carries any signal type.",
 };
 
@@ -33,6 +34,7 @@ const CAT_INFO: Record<string, string> = {
   Output: "Sends results out of the workflow.",
   Tracking: "Follows hands, people and seats.",
   Experience: "Directs the show around the game.",
+  Effects: "Projected light and sound that react to the game.",
 };
 
 /** Short, honest description of a live signal value. */

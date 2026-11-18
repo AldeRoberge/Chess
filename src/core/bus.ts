@@ -5,6 +5,7 @@ import type { SceneState } from "../scene/types";
 import type { BoardBelief } from "../vision/types";
 import type { ClockEstimate } from "../clock/types";
 import type { ExperienceEvent } from "./events";
+import type { FxCall } from "../fx/types";
 
 export interface ClockView { mode: "digits" | "circle" | "square"; showCert: boolean; clock: ClockEstimate }
 export interface PoseData { id: string; joints: ([number, number, number] | null)[]; seat?: string }
@@ -23,6 +24,8 @@ export const bus = {
   /** What the projector should show of the clock; set by the Clock Overlay node. */
   clockView: null as ClockView | null,
   cameras: [] as { id: string; online: boolean; quality: number; reliability: number }[],
+  /** Board effects started since the last post to the projector windows (drained by the app loop). */
+  fxSpawns: [] as FxCall[],
   /** Set from the top-bar Pause button: holds the scenario player between moves without resetting it. */
   scenarioPaused: false,
 };

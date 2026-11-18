@@ -14,6 +14,7 @@ import { projectorCamera } from "./blend";
 import { drawTableOverlay } from "./overlay";
 import { pieceGeometry } from "./pieces";
 import { projectableSurfaces, surfaceMesh } from "./surfaces";
+import { fxEngine } from "../fx/engine";
 
 /** The simulation model: room, table + board, chairs, people, projector frusta, live projected content. */
 export class WorldView {
@@ -26,6 +27,14 @@ export class WorldView {
   private contentTex: THREE.CanvasTexture;
   private room = new THREE.Group();
   private frusta = new THREE.Group();
+  /** Light cones from each projector down to the table, pulsing with the board effects. */
+  private beams = new THREE.Group();
+  private beamMats: THREE.Material[] = [];
+  private fxCanvas = document.createElement("canvas");
+  private fctx = this.fxCanvas.getContext("2d")!;
+  private fxTex: THREE.CanvasTexture;
+  private fxPlane!: THREE.Mesh;
+  private fxWasOn = false;
   private pieces = new THREE.Group();
   private people = new THREE.Group();
   private arms = new THREE.Group();
@@ -69,7 +78,9 @@ export class WorldView {
     lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.0004; lamp.shadow.radius = 4;
     this.lamp = lamp; this.scene.add(lamp, lamp.target);
     this.applySettings(); onViewSettings(() => this.applySettings());
-    this.scene.add(this.room, this.frusta, this.pieces, this.people, this.arms);
+    this.fxCanvas.width = this.fxCanvas.height = 14 * 48;
+    this.fxTex = new THREE.CanvasTexture(this.fxCanvas); this.fxTex.colorSpace = THREE.SRGBColorSpace;
+    this.scene.add(this.room, this.frusta, this.beams, this.pieces, this.people, this.arms);
     this.buildTable();
     this.setMapping(cfg);
   }
@@ -87,6 +98,35 @@ export class WorldView {
       const body = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.22), new THREE.MeshStandardMaterial({ color: colors[i % 4] }));
       body.position.set(...p.pos); this.frusta.add(body);
     });
+    this.buildBeams();
+  }
+
+  /**
+   * What a projector aimed at the table really does: a cone of light from the lens down to the table, and the outline of the
+   * lit patch where it lands. Corner rays are intersected with the table top, so an angled projector shows its keystone shape.
+   */
+  private buildBeams() {
+    for (const c of [...this.beams.children]) { this.beams.remove(c); (c as THREE.Mesh).geometry?.dispose(); }
+    this.beamMats = [];
+    const colors = [0xff6b6b, 0x6bd0ff, 0xb8ff6b, 0xffd36b];
+    this.cfg.projectors.forEach((p, i) => {
+      const cam = projectorCamera(p), apex = cam.position.clone(), pts: THREE.Vector3[] = [];
+      for (const [nx, ny] of [[-1, 1], [1, 1], [1, -1], [-1, -1]]) {
+        const dir = new THREE.Vector3(nx, ny, 0.5).unproject(cam).sub(apex).normalize();
+        const t = dir.y < -0.02 ? (TABLE_Y - apex.y) / dir.y : 2.5; // a ray that never reaches the table just fades out in the room
+        pts.push(apex.clone().addScaledVector(dir, Math.min(Math.max(t, 0.1), 6)));
+      }
+      const pos: number[] = [], shade: number[] = [];
+      const push = (v: THREE.Vector3, k: number) => { pos.push(v.x, v.y, v.z); shade.push(k, k, k); };
+      for (let k = 0; k < 4; k++) { push(apex, 1); push(pts[k], 0.25); push(pts[(k + 1) % 4], 0.25); }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute("color", new THREE.Float32BufferAttribute(shade, 3));
+      const mat = new THREE.MeshBasicMaterial({ color: colors[i % 4], vertexColors: true, transparent: true, opacity: 0.05, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+      this.beams.add(new THREE.Mesh(geo, mat));
+      const edge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts.map((v) => v.clone().setY(Math.max(v.y, TABLE_Y + 0.004)))), new THREE.LineBasicMaterial({ color: colors[i % 4], transparent: true, opacity: 0.55 }));
+      this.beams.add(edge);
+      this.beamMats.push(mat);
+    });
   }
 
   private buildTable() {
@@ -101,6 +141,9 @@ export class WorldView {
     board.receiveShadow = true; board.rotation.x = -Math.PI / 2; board.position.y = TABLE_Y + 0.001; this.scene.add(board);
     const ov = new THREE.Mesh(new THREE.PlaneGeometry(SQUARE * 14, SQUARE * 14), new THREE.MeshBasicMaterial({ map: this.overlayTex, transparent: true, depthWrite: false }));
     ov.rotation.x = -Math.PI / 2; ov.position.y = TABLE_Y + 0.003; this.scene.add(ov);
+    // projected effects add light like a real projector: bright on the dark wood and squares, never darker than what is there
+    this.fxPlane = new THREE.Mesh(new THREE.PlaneGeometry(SQUARE * 14, SQUARE * 14), new THREE.MeshBasicMaterial({ map: this.fxTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.fxPlane.rotation.x = -Math.PI / 2; this.fxPlane.position.y = TABLE_Y + 0.004; this.scene.add(this.fxPlane);
     const chairMat = new THREE.MeshStandardMaterial({ color: 0x38404f });
     for (const s of [1, -1]) {
       const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.05, 0.45), chairMat); seat.position.set(0, 0.45, s * 0.85);
@@ -191,6 +234,19 @@ export class WorldView {
     this.lastDraw = now;
     if (now - this.lastOverlay > 66) { this.lastOverlay = now; drawTableOverlay(this.octx, 48, 3, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView }, now / 1000); this.overlayTex.needsUpdate = true; }
     this.frusta.visible = this.showFrusta;
+    // the table projection: only when a projector is installed to throw it
+    const lit = this.cfg.projectors.length > 0 && this.showProjection;
+    this.beams.visible = lit; this.fxPlane.visible = lit;
+    if (lit) {
+      const busy = fxEngine.active(now);
+      if (busy || this.fxWasOn) {
+        this.fctx.clearRect(0, 0, this.fxCanvas.width, this.fxCanvas.height);
+        this.fctx.save(); this.fctx.translate(3 * 48, 3 * 48); fxEngine.draw(this.fctx, 48, now); this.fctx.restore();
+        this.fxTex.needsUpdate = true; this.fxWasOn = busy;
+      }
+      const pulse = fxEngine.level(now);
+      for (const m of this.beamMats) (m as THREE.MeshBasicMaterial).opacity = 0.05 + 0.2 * pulse;
+    }
     this.syncPieces(); this.syncArms(); this.syncPeople();
     this.controls.update();
     this.renderer.render(this.scene, this.cam);

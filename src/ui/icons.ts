@@ -105,7 +105,7 @@ const NODE_ICON: Record<string, string> = {
   "tracking.pose": "people", "sim.pose": "walk", "sim.person": "opponent", "sim.scenario": "film", "sim.player": "opponent", "world.virtual": "cube",
   "experience.director": "spark", "clock.reader": "clock", "clock.overlay": "projector",
 };
-const CAT_ICON: Record<string, string> = { Source: "camera", Vision: "eye", Game: "knight", Narration: "chat", Scene: "lamp", Output: "sound", Tracking: "people", Experience: "spark" };
+const CAT_ICON: Record<string, string> = { Source: "camera", Vision: "eye", Game: "knight", Narration: "chat", Scene: "lamp", Output: "sound", Tracking: "people", Experience: "spark", Effects: "spark" };
 export const nodeIcon = (type: string, category: string, size = 16): string => icon(NODE_ICON[type] ?? CAT_ICON[category] ?? "spark", size);
 
 /** Raw inner SVG (24x24 stroke paths) of a known icon, for composing larger drawings such as spinners. */

@@ -198,6 +198,12 @@ export function buildGraphFromConfig(g: Graph, c: SetupConfig) {
   wire(trk, "events", nar, "events"); wire(dir, "events", nar, "events2"); wire(eng, "events", nar, "events3"); wire(nar, "lines", ai, "lines"); wire(trk, "events", ai, "events"); wire(dir, "events", ai, "events2"); wire(eng, "events", ai, "events3"); wire(ai, "lines", spk, "lines");
   wire(trk, "events", cues, "events"); wire(dir, "events", cues, "events2"); wire(eng, "events", cues, "events3");
   wire(cues, "scene", out, "scene"); wire(cues, "fired", out, "fired");
+  // board effects: a capture of higher value sends ripples across the table, with a matching sound
+  const fxTrig = g.addNode("fx.trigger", 1700, 560), fxRipple = g.addNode("fx.effect", 1960, 520, { effect: "ripple" }), fxGrid = g.addNode("fx.effect", 1960, 780, { effect: "grid-pulse", color: "auto" });
+  const fxSnd = g.addNode("fx.sound", 2220, 520, { sound: "ripple" }), fxOut = g.addNode("fx.output", 2480, 520);
+  wire(trk, "events", fxTrig, "events"); wire(eng, "events", fxTrig, "events2");
+  wire(fxTrig, "cues", fxRipple, "cues"); wire(fxTrig, "cues", fxGrid, "cues"); wire(fxTrig, "cues", fxSnd, "cues");
+  wire(fxRipple, "calls", fxGrid, "chain"); wire(fxGrid, "calls", fxSnd, "chain"); wire(fxSnd, "calls", fxOut, "calls");
   if (world) {
     g.addNode("sim.pose", 20, 1500);
     // the scenario asks for actions; the two AI players carry them out at the world, and the world reports to the tracker's control

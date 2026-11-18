@@ -23,7 +23,7 @@ export interface EffectDef { id: string; label: string; desc: string; duration: 
 
 const ease = (t: number) => 1 - (1 - t) ** 3;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const col = (rgb: FxRGB, a: number) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${clamp01(a).toFixed(3)})`;
+const col = (rgb: FxRGB, a: number) => `rgba(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])},${clamp01(a).toFixed(3)})`;
 /** Brightened towards white, for hot cores. */
 const hot = (rgb: FxRGB, a: number, k = 0.6): string => col([rgb[0] + (255 - rgb[0]) * k, rgb[1] + (255 - rgb[1]) * k, rgb[2] + (255 - rgb[2]) * k], a);
 
