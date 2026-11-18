@@ -4,12 +4,21 @@ import { ago } from "../setup/backups";
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return b; };
 
-/** A quiet bar at the bottom of the screen with a message and optional actions. Replaces any earlier notice. */
-export function notify(message: string, actions: { label: string; run: () => void }[] = [], tone: "info" | "warn" = "info") {
+/** A centred dialog with a title, message, optional details and actions. Replaces any earlier notice. Esc, the backdrop or Dismiss closes it. */
+export function notify(message: string, actions: { label: string; run: () => void }[] = [], tone: "info" | "warn" = "info", opts: { title?: string; details?: string[] } = {}) {
   document.querySelector(".notice")?.remove();
-  const n = el("div", `notice ${tone}`); n.setAttribute("role", "status");
-  const close = () => n.remove();
-  n.append(el("span", "notice-msg", message), ...actions.map((a) => btn(a.label, () => { a.run(); close(); })), btn("Dismiss", close, "ghost"));
+  const n = el("div", `notice ${tone}`); n.setAttribute("role", "alertdialog"); n.setAttribute("aria-modal", "true");
+  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+  const close = () => { n.remove(); document.removeEventListener("keydown", onKey, true); };
+  document.addEventListener("keydown", onKey, true);
+  n.onclick = (e) => { if (e.target === n) close(); };
+  const card = el("div", "notice-card");
+  const title = opts.title ?? (tone === "warn" ? "Something needs your attention" : "Notice");
+  card.append(el("h3", "notice-title", title), el("p", "notice-msg", message));
+  if (opts.details?.length) { const ul = el("ul", "notice-details"); for (const d of opts.details) ul.append(el("li", "", d)); card.append(ul); }
+  const row = el("div", "notice-actions");
+  row.append(...actions.map((a) => btn(a.label, () => { a.run(); close(); })), btn("Dismiss", close, actions.length ? "ghost" : ""));
+  card.append(row); n.append(card);
   document.body.append(n);
   return n;
 }

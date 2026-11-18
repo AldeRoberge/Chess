@@ -130,7 +130,11 @@ export class NodeEditor {
     const params = new Map<string, (v: any) => void>();
     if (spec.params?.length) {
       const box = h("div", "ne-params");
-      for (const p of spec.params) box.append(this.paramRow(n, p, params));
+      let listed = false;
+      for (const p of spec.params) {
+        if ((p.kind === "bool" && p.optional) || (p.kind === "number" && p.group)) { if (!listed) { listed = true; box.append(this.optionalList(n, spec.params, params)); } continue; }
+        box.append(this.paramRow(n, p, params));
+      }
       body.append(box);
     }
     const err = h("div", "ne-err"); body.append(err);
@@ -182,6 +186,30 @@ export class NodeEditor {
       v.preview = h("canvas", "ne-preview"); v.generic = true; v.preview.width = 160; v.preview.height = 100;
       const body = el.querySelector(".ne-body")!; body.insertBefore(v.preview, body.querySelector(".ne-params"));
     } else if (!n.h && v.generic) { v.preview?.remove(); v.preview = undefined; v.generic = false; }
+  }
+
+  /** Optional settings as a list: only the added ones show (each as a card with its sub-settings); a dropdown adds the rest. */
+  private optionalList(n: NodeInstance, defs: ParamDef[], sync: Map<string, (v: any) => void>) {
+    const wrap = h("div", "ne-opt"), list = h("div", "ne-opt-list"), add = h("select", "ne-opt-add");
+    const items = defs.filter((p): p is Extract<ParamDef, { kind: "bool" }> => p.kind === "bool" && !!p.optional);
+    const set = (id: string, on: boolean) => { n.params[id] = on; render(); this.onChange(); };
+    const render = () => {
+      list.replaceChildren(...items.filter((it) => n.params[it.id]).map((it) => {
+        const card = h("div", "ne-opt-card"), head = h("div", "ne-opt-head", it.label), x = h("button", "ne-opt-x", "✕"); x.type = "button";
+        card.dataset.node = n.id; card.dataset.param = it.id;
+        x.dataset.tip = `Remove ${it.label}`; x.onpointerdown = (e) => e.stopPropagation(); x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); set(it.id, false); };
+        head.append(x); card.append(head);
+        for (const c of defs) if (c.kind === "number" && c.group === it.id) card.append(this.paramRow(n, c, sync));
+        return card;
+      }));
+      const rest = items.filter((it) => !n.params[it.id]);
+      add.replaceChildren(Object.assign(h("option", "", "＋ Add…"), { value: "" }), ...rest.map((it) => Object.assign(h("option", "", it.label), { value: it.id })));
+      add.value = ""; add.hidden = !rest.length;
+    };
+    add.onchange = () => { if (add.value) set(add.value, true); };
+    for (const it of items) sync.set(it.id, () => render()); // loading a graph or undo can flip an item from outside
+    render(); wrap.append(list, add);
+    return wrap;
   }
 
   private paramRow(n: NodeInstance, p: ParamDef, sync: Map<string, (v: any) => void>) {

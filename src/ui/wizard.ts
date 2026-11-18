@@ -14,6 +14,7 @@ import { GamepadPoller, keyToAction, type NavAction } from "./nav";
 import type { VoiceSettings } from "../narrator/voice";
 import type { Sfx } from "./sfx";
 import { icon } from "./icons";
+import { resizableColumns } from "./colResize";
 import { spinnerHTML } from "./spinner";
 import { STEPS, sceneStateFor, type StepCtx, type WizardState } from "./wizardSteps";
 
@@ -460,6 +461,7 @@ export class SetupWizard {
     const head = el("thead"), hr = el("tr");
     for (const h of ["", "Camera", "Preview", "Status", ""]) hr.append(el("th", "", h));
     head.append(hr); t.append(head);
+    resizableColumns(t, "cameras");
     const body = el("tbody");
     for (const cam of cams) {
       const p = this.previewFor(cam);
@@ -558,6 +560,7 @@ export class SetupWizard {
     const head = el("thead"), hr = el("tr");
     for (const h of ["", "Component", "Status", ""]) hr.append(el("th", "", h));
     head.append(hr); t.append(head);
+    resizableColumns(t, "system");
     const body = el("tbody");
     const bad = checks.filter((k) => k.status !== "ok").length, passed = checks.length - bad;
     // everything fine: collapsed behind the summary; otherwise failing rows first and the passed ones folded away

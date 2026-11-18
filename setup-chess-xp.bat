@@ -20,8 +20,8 @@ $hnd = [Vt]::GetStdHandle(-11); $mode = 0
 [void][Vt]::GetConsoleMode($hnd, [ref]$mode); [void][Vt]::SetConsoleMode($hnd, ($mode -bor 4))
 
 # ---------- look & feel ----------
-$E = [char]27
-$R = "$E[0m"; $B = "$E[1m"; $RED = "$E[91m"; $GRN = "$E[92m"; $YEL = "$E[93m"; $BLU = "$E[94m"; $MAG = "$E[95m"; $CYN = "$E[96m"; $DIM = "$E[90m"
+$ESC = [char]27
+$RST = "$ESC[0m"; $BLD = "$ESC[1m"; $RED = "$ESC[91m"; $GRN = "$ESC[92m"; $YEL = "$ESC[93m"; $BLU = "$ESC[94m"; $MAG = "$ESC[95m"; $CYN = "$ESC[96m"; $DIM = "$ESC[90m"
 $HZ = [string][char]0x2500; $VT = [string][char]0x2502
 $TL = [string][char]0x256D; $TR = [string][char]0x256E; $BL = [string][char]0x2570; $BR = [string][char]0x256F
 $TICK = [string][char]0x2714; $CROSS = [string][char]0x2718
@@ -35,13 +35,13 @@ $TokenUrl = 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=
 
 function Box([string[]]$lines, [string]$col) {
   $w = ($lines | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
-  Write-Host "$col$TL$($HZ * ($w + 4))$TR$R"
-  foreach ($l in $lines) { Write-Host "$col$VT$R  $($l.PadRight($w))  $col$VT$R" }
-  Write-Host "$col$BL$($HZ * ($w + 4))$BR$R"
+  Write-Host "$col$TL$($HZ * ($w + 4))$TR$RST"
+  foreach ($l in $lines) { Write-Host "$col$VT$RST  $l$ESC[$($w + 6)G$col$VT$RST" }
+  Write-Host "$col$BL$($HZ * ($w + 4))$BR$RST"
 }
-function Step($n, $t) { Write-Host ""; Write-Host "$BLU$B[$n/4]$R $B$t$R"; Write-Host "$DIM$($HZ * 60)$R" }
-function Ok($t)   { Write-Host "  $GRN$TICK$R $t" }
-function Note($t) { Write-Host "  $DIM$t$R" }
+function Step($n, $t) { Write-Host ""; Write-Host "$BLU$BLD[$n/4]$RST $BLD$t$RST"; Write-Host "$DIM$($HZ * 60)$RST" }
+function Ok($t)   { Write-Host "  $GRN$TICK$RST $t" }
+function Note($t) { Write-Host "  $DIM$t$RST" }
 function Say($t)  { Write-Host "  $t" }
 
 function Popup([string]$text, [string]$title = 'Chess XP setup', [string]$buttons = 'OK', [string]$icon = 'Information') {
@@ -62,17 +62,17 @@ function Popup([string]$text, [string]$title = 'Chess XP setup', [string]$button
   $hint = switch ($buttons) { 'OKCancel' { '[Enter] Continue    [Esc] Cancel' } 'YesNo' { '[Y] Yes    [N] No' } default { '[Enter] OK' } }
   $top = "$HZ $title " ; $top = $top + ($HZ * [Math]::Max(0, $w + 4 - $top.Length))
   Write-Host ""
-  Write-Host "$col$TL$top$TR$R"
-  Write-Host "$col$VT$R$(' ' * ($w + 4))$col$VT$R"
+  Write-Host "$col$TL$top$TR$RST"
+  Write-Host "$col$VT$RST$ESC[$($w + 6)G$col$VT$RST"
   $first = $true
   foreach ($l in $lines) {
-    $g = if ($first) { " $col$B$glyph$R " } else { '   ' }
-    Write-Host "$col$VT$R$g$($l.PadRight($w))$(' ')$col$VT$R"
+    $g = if ($first) { " $col$BLD$glyph$RST " } else { '   ' }
+    Write-Host "$col$VT$RST$g$l$ESC[$($w + 6)G$col$VT$RST"
     $first = $false
   }
-  Write-Host "$col$VT$R$(' ' * ($w + 4))$col$VT$R"
-  Write-Host "$col$VT$R  $B$($hint.PadRight($w + 1))$R$col$VT$R"
-  Write-Host "$col$BL$($HZ * ($w + 4))$BR$R"
+  Write-Host "$col$VT$RST$ESC[$($w + 6)G$col$VT$RST"
+  Write-Host "$col$VT$RST  $BLD$hint$RST$ESC[$($w + 6)G$col$VT$RST"
+  Write-Host "$col$BL$($HZ * ($w + 4))$BR$RST"
   while ($true) {
     $k = [Console]::ReadKey($true)
     switch ($buttons) {
@@ -88,7 +88,7 @@ function Spin([string]$text, [scriptblock]$work, [object[]]$jobArgs = @()) {
   $i = 0
   try { [Console]::CursorVisible = $false } catch {}
   while ($job.State -eq 'Running') {
-    Write-Host -NoNewline "`r  $CYN$($FRAMES[$i % $FRAMES.Count])$R $text   "
+    Write-Host -NoNewline "`r  $CYN$($FRAMES[$i % $FRAMES.Count])$RST $text   "
     $i++; Start-Sleep -Milliseconds 80
   }
   $res = Receive-Job $job -ErrorAction SilentlyContinue
@@ -113,7 +113,7 @@ $ApiWork = {
 function Api([string]$text, [string]$url, [string]$tok) { Spin $text $ApiWork @($url, $tok) }
 
 function Read-Token {
-  $s = Read-Host "  ${B}Paste the token here${R} ${DIM}(typing is hidden)${R}" -AsSecureString
+  $s = Read-Host "  ${BLD}Paste the token here${RST} ${DIM}(typing is hidden)${RST}" -AsSecureString
   $p = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
   try { return ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($p)).Trim() }
   finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p) }
@@ -152,7 +152,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 $Repo = (gh repo view --json nameWithOwner -q .nameWithOwner 2>$null)
 if (-not $Repo) { Fail-Exit 'Could not work out which GitHub repository this folder belongs to.' }
-Ok "Logged in to GitHub  ${DIM}($Repo)${R}"
+Ok "Logged in to GitHub  ${DIM}($Repo)${RST}"
 
 # ---------- 2. Cloudflare token (retry until it is right) ----------
 Step 2 'Cloudflare API token'
@@ -198,7 +198,7 @@ while ($true) {
                       fix = 'Set Zone Resources to "Include > All zones" (or the alderoberge.com zone) and the Account policy to the account that owns alderoberge.com.' }
       } else {
         $zone = @($z.data)[0].id; $acct = @($z.data)[0].account.id
-        Ok "Zone alderoberge.com found  ${DIM}(account $(@($z.data)[0].account.name))${R}"
+        Ok "Zone alderoberge.com found  ${DIM}(account $(@($z.data)[0].account.name))${RST}"
         if ($ids -notcontains $acct) {
           $problem = @{ what = 'The token is not allowed on the account that owns alderoberge.com.'; why = "alderoberge.com belongs to account $acct, but the token only sees: $($ids -join ', ')."
                         fix = 'In the Account policy, click the pencil and select the account that owns alderoberge.com.' }

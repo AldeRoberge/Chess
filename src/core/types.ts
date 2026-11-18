@@ -26,9 +26,11 @@ export interface PortDef {
 export interface ModelInfo { id: string; input?: number; output?: number }
 
 export type ParamDef =
-  | { id: string; kind: "number"; label: string; min: number; max: number; step?: number; value: number }
+  /** `group` is the id of an `optional` bool this number belongs to: it only shows inside that item's card while the item is added. */
+  | { id: string; kind: "number"; label: string; min: number; max: number; step?: number; value: number; group?: string }
   /** `action` marks a one-shot trigger: it shows as a button, and the node resets the param to false after running. */
-  | { id: string; kind: "bool"; label: string; value: boolean; action?: true }
+  /** `optional` makes the bool a list item: hidden until picked from the "Add…" dropdown (which sets it true), removable with ✕ (sets it false). */
+  | { id: string; kind: "bool"; label: string; value: boolean; action?: true; optional?: true }
   /** `labels`, when given, is the display text for each option (same order); the stored value stays `options[i]`. */
   /** `icons`, when given, is a piece code per option (e.g. "bq") drawn beside the select. */
   /** `pick`, when given, adds a "Compare" button that opens a cost chart of `models()`; choosing a bar sets this param. */

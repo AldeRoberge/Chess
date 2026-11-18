@@ -280,7 +280,7 @@ export function boot(root: HTMLElement): Boot {
     edits.record(graph.toJSON(), Date.now(), "restore" + Math.random());
     syncUndo();
   };
-  const importFile = (f: File) => { void f.text().then((t) => { const p = parseCe(t); if (p.ok) restore(p.graph, p.setup, "Before import"); else notify(p.error, [], "warn"); }); };
+  const importFile = (f: File) => { void f.text().then((t) => { const p = parseCe(t); if (p.ok) restore(p.graph, p.setup, "Before import"); else notify(p.error, [], "warn", { title: "Couldn't import file", details: [`File: ${f.name}`, "Chess Experience files are .json files exported from this app (Backups → Export file).", "Your current workflow was not changed."] }); }); };
   const panel = () => openBackupPanel({
     list: listBackups,
     restore: (b) => restore(b.graph, b.setup, "Before restore"),
@@ -322,8 +322,8 @@ export function boot(root: HTMLElement): Boot {
     const arm = () => { window.removeEventListener("pointerdown", arm, true); window.removeEventListener("keydown", arm, true); if (!soundOn) doSound(); };
     window.addEventListener("pointerdown", arm, true); window.addEventListener("keydown", arm, true);
   }
-  if (recovered) notify(`Your saved workflow could not be read, so the backup from ${ago(recovered.t)} was restored.`, [{ label: "Open backups", run: panel }], "warn");
-  else if (crashed) { addBackup("Recovered after crash", graph.toJSON(), loadSetup(), true); notify("CE did not close cleanly last time. Everything up to your last edit was autosaved.", [{ label: "Open backups", run: panel }], "warn"); }
+  if (recovered) notify(`Your saved workflow could not be read, so the backup from ${ago(recovered.t)} was restored.`, [{ label: "Open backups", run: panel }], "warn", { title: "Saved workflow restored from backup", details: ["The autosaved copy was unreadable, so the most recent backup was loaded instead.", "Edits made after that backup may be missing."] });
+  else if (crashed) { addBackup("Recovered after crash", graph.toJSON(), loadSetup(), true); notify("CE did not close cleanly last time. Everything up to your last edit was autosaved.", [{ label: "Open backups", run: panel }], "warn", { title: "Recovered after unexpected exit", details: ["A recovery backup was just created from your last autosave.", "Open backups if something looks wrong."] }); }
 
   const hud = document.getElementById("hud")!, sub = document.getElementById("sub")!;
   // ---- top bar: healthy readings live under ⋯; the Pause button holds a running scenario
