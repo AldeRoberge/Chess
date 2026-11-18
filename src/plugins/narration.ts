@@ -8,7 +8,7 @@ const langParam = { id: "language", kind: "select" as const, label: "Language", 
 const langOf = (v: unknown): Lang => (v === "en" ? "en" : "fr");
 import { commentate, LLM_DEFAULT_MODEL } from "../narrator/llm";
 import { chatModelsFrom, fetchOpenAiModelIds, OPENAI_PRICES } from "../narrator/openaiModels";
-import { BROWSER_PROVIDER, ELEVENLABS_DEFAULTS, ELEVENLABS_PROVIDER, speak as speak_, TTS_PROVIDERS, type VoiceSettings } from "../narrator/voice";
+import { BROWSER_PROVIDER, ELEVENLABS_DEFAULTS, ELEVENLABS_PROVIDER, elevenVoiceLabel, fetchElevenVoices, speak as speak_, TTS_PROVIDERS, type ElevenVoice, type VoiceSettings } from "../narrator/voice";
 
 interface NarState { n: Narrator; lines: NarrationLine[] }
 /** Newest lines at the bottom, wrapped to the width; as many as fit, so an expanded node shows more history. */
@@ -141,7 +141,19 @@ const aiNarrator: NodeSpec<AiState> = {
   preview: (ctx, w, h, s) => showLines(ctx, w, h, s.lines),
 };
 
-interface SpeakState { enabled: boolean }
+/** ElevenLabs voice dropdowns: the two default voices until a key fetches the account's list. */
+const voiceParam = (id: "voiceIdA" | "voiceIdB", label: string) => ({
+  id, kind: "select" as const, label, value: ELEVENLABS_DEFAULTS[id],
+  options: [ELEVENLABS_DEFAULTS.voiceIdA, ELEVENLABS_DEFAULTS.voiceIdB], labels: ["Adam", "Rachel"],
+});
+const voiceParamA = voiceParam("voiceIdA", "Voice A");
+const voiceParamB = voiceParam("voiceIdB", "Voice B");
+function adoptElevenVoices(vs: ElevenVoice[]) {
+  if (!vs.length) return;
+  for (const p of [voiceParamA, voiceParamB]) { p.options = vs.map((v) => v.id); p.labels = vs.map(elevenVoiceLabel); }
+}
+
+interface SpeakState { enabled: boolean; keyFetched: string }
 const speak: NodeSpec<SpeakState> = {
   type: "narration.speech", title: "Speech (TTS)", category: "Narration",
   inputs: [{ id: "lines", type: "text" }], outputs: [],
@@ -154,13 +166,16 @@ const speak: NodeSpec<SpeakState> = {
     { id: "browserB", kind: "text", label: "Voice B", value: "" },
     { id: "sepElevenlabs", kind: "separator", label: ELEVENLABS_PROVIDER.label, value: "" },
     { id: "apiKey", kind: "text", label: "API key", value: "" },
-    { id: "voiceIdA", kind: "text", label: "Voice ID A", value: ELEVENLABS_DEFAULTS.voiceIdA },
-    { id: "voiceIdB", kind: "text", label: "Voice ID B", value: ELEVENLABS_DEFAULTS.voiceIdB },
+    voiceParamA,
+    voiceParamB,
     { id: "model", kind: "text", label: "Model", value: ELEVENLABS_DEFAULTS.model },
     langParam,
   ],
-  init: () => ({ enabled: true }),
-  process({ lines }, { params }) {
+  init: () => ({ enabled: true, keyFetched: "" }),
+  process({ lines }, { params, state }) {
+    const key = String(params.apiKey ?? "").trim();
+    // One voice-list request per key; a failed request keeps the default voices.
+    if (key && key !== state.keyFetched) { state.keyFetched = key; fetchElevenVoices(key).then(adoptElevenVoices).catch(() => {}); }
     if (!params.enabled) return;
     const s: VoiceSettings = {
       provider: params.provider === ELEVENLABS_PROVIDER.id ? ELEVENLABS_PROVIDER.id : BROWSER_PROVIDER.id, lang: langOf(params.language), volume: Number(params.volume),

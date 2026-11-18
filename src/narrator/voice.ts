@@ -54,6 +54,18 @@ async function fetchEleven(text: string, voiceId: string, s: VoiceSettings): Pro
   return r.blob();
 }
 
+export interface ElevenVoice { id: string; name: string; category: string }
+
+/** Voices available to this key (premade, cloned, library): proves the key works too. */
+export async function fetchElevenVoices(apiKey: string, doFetch: typeof fetch = fetch): Promise<ElevenVoice[]> {
+  const r = await doFetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": apiKey.trim() } });
+  if (!r.ok) throw new Error(`ElevenLabs ${r.status}`);
+  const j = (await r.json()) as { voices?: { voice_id: string; name?: string; category?: string }[] };
+  return (j.voices ?? []).map((v) => ({ id: v.voice_id, name: v.name || v.voice_id, category: v.category ?? "" }));
+}
+
+export const elevenVoiceLabel = (v: ElevenVoice) => (v.category ? `${v.name} · ${v.category}` : v.name);
+
 /** Plays one line through ElevenLabs and resolves when it ends; rejects on any failure (no browser fallback), so a setup test can report it. */
 export async function previewEleven(text: string, who: "A" | "B", s: VoiceSettings): Promise<void> {
   const id = (who === "A" ? s.voiceIdA : s.voiceIdB).trim() || (who === "A" ? ELEVENLABS_DEFAULTS.voiceIdA : ELEVENLABS_DEFAULTS.voiceIdB);

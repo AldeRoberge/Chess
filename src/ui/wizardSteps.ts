@@ -6,7 +6,7 @@ import type { CameraDevice } from "../setup/devices";
 import type { Check } from "../setup/system";
 import { testElevenLabs, testOpenAiKey, type TestResult } from "../setup/keyTests";
 import { OPENAI_PRICES } from "../narrator/openaiModels";
-import type { VoiceSettings } from "../narrator/voice";
+import { elevenVoiceLabel, fetchElevenVoices, type ElevenVoice, type VoiceSettings } from "../narrator/voice";
 import { fmtCorners, parseCorners } from "../plugins/shared";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { SCENARIOS } from "../sim/scenarios";
@@ -154,6 +154,18 @@ const aiItems = (c: StepCtx): Item[] => {
   return out;
 };
 
+/** The ElevenLabs voices of the key last loaded (kept across re-renders of the step). */
+const voiceList: { key: string; voices: ElevenVoice[]; busy: boolean; error: string } = { key: "", voices: [], busy: false, error: "" };
+function loadVoices(c: StepCtx) {
+  const key = c.cfg.voice.apiKey.trim();
+  if (!key || voiceList.busy) return;
+  voiceList.busy = true; voiceList.error = "";
+  fetchElevenVoices(key).then((vs) => { voiceList.key = key; voiceList.voices = vs; if (!vs.length) voiceList.error = "This account has no voices."; })
+    .catch((e) => { voiceList.error = /401|403/.test(String(e)) ? "ElevenLabs refused the key (the key may lack the voices_read permission). Type voice IDs instead." : "Could not load voices. Check the key and connection."; })
+    .finally(() => { voiceList.busy = false; c.refresh(); });
+  c.refresh();
+}
+
 const voiceItems = (c: StepCtx): Item[] => {
   const v = c.cfg.voice;
   const out: Item[] = [
@@ -169,12 +181,30 @@ const voiceItems = (c: StepCtx): Item[] => {
     howTo(1, "Get an ElevenLabs account", "Sign up at elevenlabs.io. The free plan includes some monthly credits, and each spoken line uses a few."),
     howTo(2, "Create an API key", "Open your profile (bottom left) then API Keys, press Create API Key and name it. Switching on Text to Speech access is enough."),
     howTo(3, "Copy and paste it", "Copy the key right away and paste it below. It is kept in this browser and only ever sent to ElevenLabs."),
-    howTo(4, "Optional: pick voices", "Browse the Voice Library, press a voice then Copy voice ID, and paste an ID below. The defaults already work."),
+    howTo(4, "Optional: pick voices", "Press Load my voices to choose from your account's voices in a dropdown. Or paste a voice ID from the Voice Library. The defaults already work."),
     link(c, "Open ElevenLabs API keys", ELEVEN_KEYS_URL),
     link(c, "Open ElevenLabs voice library", ELEVEN_VOICES_URL),
-    { kind: "text", label: "ElevenLabs API key", secret: true, get: () => v.apiKey, set: (x) => { v.apiKey = x.trim(); delete c.state.tests.elevenlabs; c.refresh(); }, hint: "Paste the key you just copied, then press Enter." },
-    { kind: "text", label: "Voice ID A", get: () => v.voiceIdA, set: (x) => { v.voiceIdA = x.trim(); } },
-    { kind: "text", label: "Voice ID B", get: () => v.voiceIdB, set: (x) => { v.voiceIdB = x.trim(); } },
+    { kind: "text", label: "ElevenLabs API key", secret: true, get: () => v.apiKey, set: (x) => { v.apiKey = x.trim(); delete c.state.tests.elevenlabs; loadVoices(c); c.refresh(); }, hint: "Paste the key you just copied, then press Enter." },
+    { kind: "action", icon: "refresh", label: voiceList.busy ? "Loading voices…" : "Load my voices", disabled: voiceList.busy, run: () => loadVoices(c) },
+    ...(voiceList.error ? [{ kind: "info", label: "Voices", value: voiceList.error, tone: "fail" } as Item] : []),
+  );
+  if (voiceList.key === v.apiKey && voiceList.voices.length) {
+    // include a currently set ID that is not in the account's list, so the dropdown never shows a blank
+    const opts = (cur: string) => {
+      const o = voiceList.voices.map((x) => ({ value: x.id, label: elevenVoiceLabel(x) }));
+      return !cur || o.some((x) => x.value === cur) ? o : [{ value: cur, label: `Custom (${cur})` }, ...o];
+    };
+    out.push(
+      { kind: "choice", label: "Voice A", options: opts(v.voiceIdA), get: () => v.voiceIdA, set: (x) => { v.voiceIdA = x; } },
+      { kind: "choice", label: "Voice B", options: opts(v.voiceIdB), get: () => v.voiceIdB, set: (x) => { v.voiceIdB = x; } },
+    );
+  } else {
+    out.push(
+      { kind: "text", label: "Voice ID A", get: () => v.voiceIdA, set: (x) => { v.voiceIdA = x.trim(); } },
+      { kind: "text", label: "Voice ID B", get: () => v.voiceIdB, set: (x) => { v.voiceIdB = x.trim(); } },
+    );
+  }
+  out.push(
     { kind: "action", icon: "sound", label: "Test voice A", run: () => say("A", "Un joueur rejoint la partie.") },
     { kind: "action", icon: "sound", label: "Test voice B", run: () => say("B", "Quel coup de tonnerre !") },
     ...testLine(c, "elevenlabs"),
