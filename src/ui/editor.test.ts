@@ -188,7 +188,7 @@ describe("wiring", () => {
     ptr(dot(ed, a.id, "o", "out"), "pointerdown"); drop(null); ptr(ed.root, "pointerup"); ed.frame(1); expect(ed.root.querySelector("path.drag")).toBeNull();
   });
   it("a cancelled pointer, lost capture or window blur ends a drag, and a right-click never starts one", () => {
-    const { ed, a } = setup(); const v = () => ed.view.x;
+    const { ed, a } = setup(); const v = () => ed["view"].x;
     for (const end of [(): unknown => ptr(ed.root, "pointercancel"), (): unknown => ptr(ed.root, "lostpointercapture"), (): unknown => window.dispatchEvent(new Event("blur"))]) {
       ptr(ed.root, "pointerdown", 0, 0); ptr(ed.root, "pointermove", 20, 0); const moved = v(); end(); ptr(ed.root, "pointermove", 90, 0);
       expect(v()).toBe(moved); // the pan stopped following the mouse
