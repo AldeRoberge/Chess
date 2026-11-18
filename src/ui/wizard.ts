@@ -68,6 +68,9 @@ export class SetupWizard {
   private scr = new SceneRenderer();
   private lastFrame = 0;
   private onKey = (e: KeyboardEvent) => this.key(e);
+  /** One live thumbnail per camera on the cameras step, keyed by camera id. */
+  private camPreviews = new Map<string, CamPreview>();
+  private openCams = new Set<string>();
   /** When the board picture was last read (ms, from the frame clock): readings are taken a few times a second, not every frame. */
   private measuredAt = -Infinity;
 
@@ -113,7 +116,7 @@ export class SetupWizard {
     if (i < 0 || i === this.step) return;
     this.step = i; this.focus = 0; this.zone = "steps"; this.enterStep(); this.render();
   }
-  destroy() { window.removeEventListener("keydown", this.onKey); this.stopStream(); this.root.remove(); }
+  destroy() { window.removeEventListener("keydown", this.onKey); this.stopStream(); this.stopCamPreviews(); this.root.remove(); }
 
   // ---- context handed to the step definitions
   private ctx(): StepCtx {
@@ -225,6 +228,8 @@ export class SetupWizard {
     this.extra.replaceChildren(); // render() fills it: the camera tabs and the picture on the board step
     if (!keepStream) this.state.autoMsg = "";
     const id = STEPS[this.step].id;
+    if (id !== "cameras") this.stopCamPreviews(); // webcams are only held open while the table is on screen
+    else if (!keepStream) this.stopCamPreviews();
     if (id === "briefing" && !this.state.checks) void this.runChecks();
     if (id === "board" && this.cfg.cameras.length) {
       this.state.boardCam = Math.min(this.state.boardCam, this.cfg.cameras.length - 1);
@@ -269,6 +274,7 @@ export class SetupWizard {
     const id = STEPS[this.step].id, ctx = this.canvas.getContext("2d")!;
     if (id === "scenes") this.scr.draw(ctx, this.canvas.width, this.canvas.height, this.state.scenePreview, now, dt);
     else if (id === "board" && this.cfg.cameras.length) this.drawBoardPreview(ctx, now);
+    else if (id === "cameras") this.drawCamPreviews(now);
   }
 
   private drawBoardPreview(ctx: CanvasRenderingContext2D, now: number) {
@@ -307,6 +313,7 @@ export class SetupWizard {
     this.renderNav();
     this.renderList();
     if (this.stepId === "briefing") this.renderSystem();
+    if (this.stepId === "cameras") this.renderCameras();
     if (this.stepId === "board") this.renderBoard();
     if (this.reported !== this.stepId) { this.reported = this.stepId; this.deps.onStep?.(this.reported); }
     this.deps.onProgress?.(this.cfg, this.step);
@@ -389,7 +396,144 @@ export class SetupWizard {
     return b;
   }
 
+  // ---- cameras as a table: live preview, name, status, access, online switch, remove, details
+  private previewFor(cam: CameraSetup): CamPreview {
+    const key = cam.kind === "webcam" ? cam.deviceId : `rig:${cam.rig}`;
+    let p = this.camPreviews.get(cam.id);
+    if (p && p.key !== key) { this.dropPreview(cam.id); p = undefined; } // the device or rig behind this id changed
+    if (!p) {
+      const canvas = el("canvas", "halo-cam-thumb"); canvas.width = FRAME_W; canvas.height = FRAME_H;
+      p = { key, canvas, stream: null, video: null, pending: false, error: "", drawn: 0, lumKey: "", lum: null };
+      this.camPreviews.set(cam.id, p);
+    }
+    return p;
+  }
+
+  private openPreview(cam: CameraSetup, p: CamPreview) {
+    p.pending = true;
+    this.deps.openCamera(cam.deviceId).then((s) => {
+      p.pending = false;
+      if (this.camPreviews.get(cam.id) !== p) { s.getTracks().forEach((t) => t.stop()); return; } // camera was removed meanwhile
+      p.stream = s; p.video = document.createElement("video"); p.video.muted = true; p.video.srcObject = s; void p.video.play();
+      if (this.stepId === "cameras") this.render();
+    }).catch(() => {
+      p.pending = false; p.error = "No access";
+      if (this.camPreviews.get(cam.id) === p && this.stepId === "cameras") this.render();
+    });
+  }
+
+  private stopPreview(p: CamPreview) { p.stream?.getTracks().forEach((t) => t.stop()); p.stream = null; p.video = null; }
+  private dropPreview(id: string) { const p = this.camPreviews.get(id); if (p) this.stopPreview(p); this.camPreviews.delete(id); this.openCams.delete(id); }
+  private stopCamPreviews() { for (const id of [...this.camPreviews.keys()]) this.dropPreview(id); }
+
+  private camStatus(cam: CameraSetup, p: CamPreview): { text: string; tone: "ok" | "warn" | "fail"; action?: string } {
+    if (!cam.online) return { text: "Offline: ignored by the tracker", tone: "warn" };
+    if (cam.kind === "virtual") return { text: "Simulated 3D camera · live", tone: "ok" };
+    if (p.stream) return { text: "Live", tone: "ok" };
+    if (p.error) return { text: "No access: blocked or no signal", tone: "fail", action: "Retry" };
+    return { text: "Connecting…", tone: "warn" };
+  }
+
+  private camFacts(cam: CameraSetup, p: CamPreview): [string, string][] {
+    const access = cam.kind === "virtual" ? "Not needed" : p.stream ? "Granted" : p.error ? "Blocked or no signal: allow the camera in the address bar, then Retry" : p.pending ? "Asking…" : "Not granted yet";
+    return [
+      ["Type", cam.kind === "virtual" ? "Virtual 3D camera (simulated room)" : "Physical webcam"],
+      cam.kind === "virtual" ? ["Viewpoint", `Rig ${cam.rig}`] : ["Device", cam.label || cam.deviceId],
+      ["Access", access],
+      ["Channel", cam.channel === "luma" ? "Gray (luma)" : cam.channel],
+      ["Trust", cam.trust.toFixed(1)],
+      ["Field of view", `${cam.fov}°`],
+      ["Board corners", parseCorners(cam.corners) ? "Marked" : "Not marked: set them on the Board step"],
+      ["Secure context", window.isSecureContext ? "Yes" : "No (camera needs https or localhost)"],
+    ];
+  }
+
+  private renderCameras() {
+    const cams = this.cfg.cameras;
+    for (const id of [...this.camPreviews.keys()]) if (!cams.some((c) => c.id === id)) this.dropPreview(id);
+    if (!cams.length) { this.extra.replaceChildren(); return; } // the list below offers scan and add
+    const online = cams.filter((c) => c.online).length;
+    const bar = el("div", `sys-bar${online < cams.length ? " bad" : ""}`);
+    bar.innerHTML = `<span class="sys-dot">${icon(online ? "check" : "warn", 14)}</span>`;
+    bar.append(el("span", "sys-sum", `${online} of ${cams.length} online`));
+    const t = el("table", "halo-sys halo-cams");
+    const head = el("thead"), hr = el("tr");
+    for (const h of ["", "Camera", "Preview", "Status", ""]) hr.append(el("th", "", h));
+    head.append(hr); t.append(head);
+    const body = el("tbody");
+    for (const cam of cams) {
+      const p = this.previewFor(cam);
+      if (cam.kind === "webcam" && cam.online && !p.stream && !p.pending && !p.error) this.openPreview(cam, p);
+      if (!cam.online && cam.kind === "webcam") this.stopPreview(p);
+      const st = this.camStatus(cam, p), isOpen = this.openCams.has(cam.id);
+      const tr = el("tr", `sys-row ${st.tone} has${isOpen ? " open" : ""}`);
+      const bd = el("td", "sys-badge"); bd.innerHTML = `<span class="sys-dot">${icon(st.tone === "ok" ? "check" : st.tone === "warn" ? "warn" : "x", 14)}</span>`;
+      const nm = el("td", "sys-name"); nm.innerHTML = `<span class="sys-ico">${icon(cam.kind === "virtual" ? "world" : "camera", 16)}</span>`; nm.append(`${cam.id} · ${cam.label}`);
+      const pv = el("td", "halo-cam-cell"); pv.append(p.canvas);
+      const sv = el("td", "sys-val", st.text);
+      const tog = el("td", "sys-tog"), wrap = el("div", "sys-acts");
+
+      const on = el("button", `sys-act${cam.online ? "" : " hot"}`); on.type = "button"; on.setAttribute("aria-pressed", String(cam.online));
+      on.setAttribute("aria-label", `${cam.id}: ${cam.online ? "online" : "offline"}, switch`);
+      on.innerHTML = `<span>${cam.online ? "Online" : "Offline"}</span>`; on.dataset.tip = "Online or offline"; on.dataset.tipBody = "An offline camera is ignored by the tracker until you switch it back on.";
+      on.onclick = (e) => { e.stopPropagation(); cam.online = !cam.online; this.deps.sfx.play("tick"); this.render(); };
+      wrap.append(on);
+      if (st.action) {
+        const ab = el("button", "sys-act hot"); ab.type = "button"; ab.innerHTML = `${icon("refresh", 14)}<span>${st.action}</span>`;
+        ab.dataset.tip = st.action; ab.dataset.tipBody = "Asks the browser for this camera again. If it was blocked, unblock it from the address bar first.";
+        ab.onclick = (e) => { e.stopPropagation(); p.error = ""; this.deps.sfx.play("tick"); this.render(); };
+        wrap.append(ab);
+      }
+      const rm = el("button", "sys-btn"); rm.type = "button"; rm.setAttribute("aria-label", `Remove camera ${cam.id}`);
+      rm.dataset.tip = "Remove camera"; rm.dataset.tipBody = "Takes this camera out of the setup."; rm.dataset.tipTag = "destructive"; rm.dataset.tipColor = "#ff7070"; rm.innerHTML = icon("trash", 16);
+      rm.onclick = (e) => {
+        e.stopPropagation(); const i = this.cfg.cameras.indexOf(cam);
+        this.dropPreview(cam.id); if (i >= 0) this.cfg.cameras.splice(i, 1);
+        this.state.boardCam = 0; this.deps.sfx.play("back"); this.render();
+      };
+      const chev = el("button", "sys-btn"); chev.type = "button"; chev.setAttribute("aria-expanded", String(isOpen));
+      chev.setAttribute("aria-label", `${isOpen ? "Hide" : "Show"} details for ${cam.id}`); chev.dataset.tip = isOpen ? "Hide details" : "Show details"; chev.dataset.tipBody = `The facts behind ${cam.label}.`; chev.innerHTML = icon("chevron", 16);
+      const flip = () => { if (this.openCams.has(cam.id)) this.openCams.delete(cam.id); else this.openCams.add(cam.id); this.deps.sfx.play("tick"); this.render(); };
+      chev.onclick = (e) => { e.stopPropagation(); flip(); };
+      tr.onclick = (e) => { if (!(e.target as HTMLElement).closest("button")) flip(); };
+      wrap.append(rm, chev); tog.append(wrap);
+      tr.append(bd, nm, pv, sv, tog); body.append(tr);
+      if (isOpen) {
+        const dr = el("tr", `sys-detail ${st.tone}`), td = el("td"); td.colSpan = 5;
+        const dl = el("dl");
+        for (const [k, v] of this.camFacts(cam, p)) dl.append(el("dt", "", k), el("dd", "", v));
+        td.append(dl); dr.append(td); body.append(dr);
+      }
+    }
+    t.append(body);
+    this.extra.replaceChildren(bar, t);
+  }
+
+  /** Thumbnails: virtual cameras re-render the 3D room; webcams show their stream; both are throttled to ~8 fps. */
+  private drawCamPreviews(now: number) {
+    for (const cam of this.cfg.cameras) {
+      const p = this.camPreviews.get(cam.id);
+      if (!p || now - p.drawn < 120) continue;
+      p.drawn = now;
+      const ctx = p.canvas.getContext("2d")!, W = FRAME_W, H = FRAME_H;
+      if (!cam.online) { ctx.fillStyle = "#0a0d12"; ctx.fillRect(0, 0, W, H); ctx.fillStyle = "#5c6675"; ctx.font = "28px sans-serif"; ctx.textAlign = "center"; ctx.fillText("OFFLINE", W / 2, H / 2 + 10); ctx.textAlign = "start"; continue; }
+      if (cam.kind === "virtual") {
+        const key = `${cam.rig}|${virtualTable.sceneKey}`;
+        if (key !== p.lumKey) { p.lumKey = key; p.lum = renderLuminance(virtualTable.scene3d(), { width: W, height: H, rig: RIGS[cam.rig] }); }
+        const f = applySensor(p.lum!, { width: W, height: H, rig: RIGS[cam.rig], noise: 3 });
+        const img = ctx.createImageData(W, H);
+        for (let i = 0; i < f.data.length; i++) { img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = f.data[i]; img.data[i * 4 + 3] = 255; }
+        ctx.putImageData(img, 0, 0);
+      } else if (p.video && p.video.readyState >= 2) ctx.drawImage(p.video, 0, 0, W, H);
+      else { ctx.fillStyle = "#04101c"; ctx.fillRect(0, 0, W, H); ctx.fillStyle = "#6fb8ff"; ctx.font = "24px sans-serif"; ctx.fillText(p.error ? "No access" : "Connecting…", 20, 40); }
+    }
+  }
+
   private open = new Set<string>();
+  /** All checks passed: the summary is collapsed until clicked. */
+  private sysAllOpen = false;
+  /** Some checks failed: the passed ones fold away under the failing rows until asked for. */
+  private sysPassedOpen = false;
   /** Latest ci.yml run on main: undefined while asking, null when GitHub can't say. */
   private ci: CiRun | null | undefined;
 
@@ -415,7 +559,10 @@ export class SetupWizard {
     for (const h of ["", "Component", "Status", ""]) hr.append(el("th", "", h));
     head.append(hr); t.append(head);
     const body = el("tbody");
-    for (const k of checks) {
+    const bad = checks.filter((k) => k.status !== "ok").length, passed = checks.length - bad;
+    // everything fine: collapsed behind the summary; otherwise failing rows first and the passed ones folded away
+    const shown = bad === 0 ? (this.sysAllOpen ? checks : []) : this.sysPassedOpen ? [...checks.filter((k) => k.status !== "ok"), ...checks.filter((k) => k.status === "ok")] : checks.filter((k) => k.status !== "ok");
+    for (const k of shown) {
       const rows = k.rows ?? [], isOpen = this.open.has(k.id) && rows.length > 0;
       const tr = el("tr", `sys-row ${k.status}${rows.length ? " has" : ""}${isOpen ? " open" : ""}`);
       const bd = el("td", "sys-badge"); bd.innerHTML = `<span class="sys-dot">${icon(k.status === "ok" ? "check" : k.status === "warn" ? "warn" : "x", 14)}</span>`;
@@ -448,14 +595,28 @@ export class SetupWizard {
     }
     t.append(body);
     t.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation(); });
-    const bad = checks.filter((k) => k.status !== "ok").length;
     const bar = el("div", `sys-bar${bad ? " bad" : ""}`);
     bar.innerHTML = `<span class="sys-dot">${icon(bad ? "warn" : "check", 14)}</span>`;
-    bar.append(el("span", "sys-sum", bad ? `${bad} of ${checks.length} need attention` : `All ${checks.length} checks passed`));
+    if (bad) bar.append(el("span", "sys-sum", `${bad} of ${checks.length} need attention`));
+    else {
+      const tg = el("button", "sys-toggle"); tg.type = "button"; tg.setAttribute("aria-expanded", String(this.sysAllOpen));
+      tg.dataset.tip = this.sysAllOpen ? "Hide checks" : "Show checks"; tg.dataset.tipBody = "The individual results behind the summary.";
+      tg.innerHTML = `<span class="sys-sum">All ${checks.length} checks passed</span>${icon("chevron", 16)}`;
+      tg.onclick = () => { this.sysAllOpen = !this.sysAllOpen; this.deps.sfx.play("tick"); this.renderSystem(); };
+      bar.append(tg);
+    }
     const re = el("button", "sys-act"); re.type = "button"; re.dataset.tip = "Re-run checks"; re.dataset.tipBody = "Test cameras, graphics, sound and the engine again, for example after plugging something in."; re.innerHTML = `${icon("refresh", 14)}<span>Re-run checks</span>`;
     re.onclick = () => { re.disabled = true; re.classList.add("busy"); re.innerHTML = `${spinnerHTML("rook", 14)}<span>Re-running…</span>`; void this.runChecks(); };
     bar.append(re);
-    this.extra.replaceChildren(this.buildChips(), bar, t);
+    const parts: HTMLElement[] = [this.buildChips(), bar];
+    if (shown.length) parts.push(t);
+    if (bad && passed) {
+      const fold = el("button", "sys-fold"); fold.type = "button"; fold.setAttribute("aria-expanded", String(this.sysPassedOpen));
+      fold.innerHTML = `${icon("chevron", 14)}<span>${this.sysPassedOpen ? "Hide" : "Show"} passed checks (${passed})</span>`;
+      fold.onclick = () => { this.sysPassedOpen = !this.sysPassedOpen; this.deps.sfx.play("tick"); this.renderSystem(); };
+      parts.push(fold);
+    }
+    this.extra.replaceChildren(...parts);
   }
 
   private renderNav() {
@@ -547,6 +708,19 @@ const LABEL_ICON: Record<string, string> = {
   "Projectors": "lamp", "People tracking": "people", "DMX lighting": "lamp", "Autoplay demo game": "play", "Demo game": "film",
 };
 const KIND_FALLBACK: Record<string, string> = { toggle: "toggle", choice: "list", slider: "sliders", text: "text" };
+
+/** Per-camera live state on the cameras step. */
+interface CamPreview {
+  key: string; // device id, or the virtual rig
+  canvas: HTMLCanvasElement;
+  stream: MediaStream | null;
+  video: HTMLVideoElement | null;
+  pending: boolean;
+  error: string;
+  drawn: number; // last paint time (ms), for throttling
+  lumKey: string; // virtual cameras: scene key the cached luminance was rendered for
+  lum: Float32Array | null;
+}
 
 const SYS_ICON: Record<string, string> = { system: "setup", webgl: "cube", camera: "camera", audio: "sound", speech: "voice", stockfish: "knight", gamepad: "bolt" };
 

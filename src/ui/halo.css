@@ -193,3 +193,13 @@
 .halo-auto:hover:not(:disabled),.halo-auto:focus-visible{border-color:var(--signal);outline:none}
 .halo-auto:disabled{opacity:.5;cursor:not-allowed}
 .halo-item.sel .halo-auto{background:var(--ink-0);border-color:transparent;color:var(--signal-hi)}
+
+/* cameras table + collapsible system check (reconstructed: the original CSS was not in the transcript) */
+.halo-cams .halo-cam-cell{width:1%;padding:6px 12px}
+.halo-cam-thumb{display:block;width:128px;aspect-ratio:4/3;object-fit:cover;background:#04101c;border:1px solid var(--line)}
+.sys-toggle,.sys-fold{display:inline-flex;align-items:center;gap:8px;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0}
+.sys-toggle{flex:1;text-align:left}
+.sys-toggle svg{margin-left:auto;transition:transform .15s}
+.sys-toggle[aria-expanded="true"] svg,.sys-fold[aria-expanded="true"] svg{transform:rotate(90deg)}
+.sys-fold{margin:0 0 12px;color:var(--text-dim);font-size:var(--t-sm,.85em)}
+.sys-fold:hover{color:var(--text)}

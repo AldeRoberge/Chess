@@ -187,11 +187,8 @@ export const STEPS: Step[] = [
     ] },
   { id: "cameras", title: "Cameras", blurb: "Add webcams (IR if you have them) or virtual 3D cameras. An offline camera is simply ignored.",
     items: (c) => {
+      // the cameras themselves (preview, status, online switch, remove) are the table the wizard draws above this list
       const out: Item[] = [];
-      c.cfg.cameras.forEach((cam, i) => {
-        out.push({ kind: "toggle", label: `${cam.id} · ${cam.label}`, get: () => cam.online, set: (v) => { cam.online = v; }, verbs: { on: "Disable", off: "Enable" }, hint: cam.kind === "virtual" ? "Virtual camera (3D simulation)" : "Physical webcam",
-          remove: { label: `Remove camera ${cam.id}`, run: () => { c.cfg.cameras.splice(i, 1); c.state.boardCam = 0; c.refresh(); } } });
-      });
       const full = c.cfg.cameras.length >= MAX_CAMERAS;
       const fullWhy = `All ${MAX_CAMERAS} camera slots are used. Remove a camera from the table above to add another.`;
       out.push({ kind: "action", icon: "scan", label: c.state.scanning ? "Scanning…" : "Scan for webcams", disabled: c.state.scanning, hint: c.state.scanning ? "A scan is already running. It finishes in a few seconds." : undefined, run: () => c.scan() });

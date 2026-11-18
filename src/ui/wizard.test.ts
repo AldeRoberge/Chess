@@ -89,21 +89,39 @@ describe("briefing step", () => {
   it("runs the system check automatically on entry and shows each result", async () => {
     const { w, d } = make(); go(w, 0); await tick(); expect(d.detectEnv).toHaveBeenCalled();
     expect(labels(w)).toContain("Re-run system check"); expect(labels(w)).not.toContain("Continue to cameras");
-    const rows = [...w.root.querySelectorAll(".sys-row")]; expect(rows.length).toBeGreaterThan(5);
-    expect(rows.some((r) => r.classList.contains("ok"))).toBe(true); expect(rows.some((r) => r.classList.contains("warn"))).toBe(true);
+    // failing rows show first; the passed ones fold away under "Show passed checks"
+    const rows = () => [...w.root.querySelectorAll(".sys-row")];
+    expect(rows().some((r) => r.classList.contains("warn"))).toBe(true); expect(rows().some((r) => r.classList.contains("ok"))).toBe(false);
+    const fold = w.root.querySelector<HTMLButtonElement>(".sys-fold")!; expect(fold.textContent).toMatch(/Show passed checks \(\d+\)/);
+    fold.click(); expect(rows().some((r) => r.classList.contains("ok"))).toBe(true); expect(w.root.querySelector(".sys-fold")!.textContent).toMatch(/^Hide passed checks/);
+  });
+  it("collapses the all-passed summary by default and expands it on click", async () => {
+    const { w, d } = make(); d.detectEnv.mockResolvedValue({ ...env, speech: true, stockfish: true, detail: {} }); go(w, 0); await tick();
+    expect(w.root.querySelectorAll(".sys-row")).toHaveLength(0); expect(w.root.querySelector(".sys-fold")).toBeNull();
+    const tg = w.root.querySelector<HTMLButtonElement>(".sys-bar .sys-toggle")!; expect(tg.textContent).toMatch(/All \d+ checks passed/); expect(tg.getAttribute("aria-expanded")).toBe("false");
+    tg.click(); expect(w.root.querySelectorAll(".sys-row").length).toBeGreaterThan(0); expect(w.root.querySelector(".sys-bar .sys-toggle")!.getAttribute("aria-expanded")).toBe("true");
   });
 });
 
 describe("cameras step", () => {
-  it("lists the configured cameras with online toggles and remove buttons", () => {
+  it("shows each camera as a table row with its name, status and online switch", () => {
     const { w } = make(); go(w, 1);
-    expect(labels(w).slice(0, 2)).toEqual(["A · Virtual camera A", "B · Virtual camera B"]); expect(w.root.querySelectorAll(".halo-trash")).toHaveLength(2); expect(values(w)[0]).toBe("Disable");
-    press(w, "select"); expect(w.cfg.cameras[0].online).toBe(false); expect(values(w)[0]).toBe("Enable");
-    expect(w.root.querySelector(".halo-hint")!.textContent).toContain("Virtual camera");
-    w.cfg.cameras.push(webcamSetup("x", "Real", "C")); (w as any).render(); select(w, "C · Real"); (w as any).renderList(); expect(w.root.querySelector(".halo-hint")!.textContent).toBe("Physical webcam");
+    const rows = () => [...w.root.querySelectorAll<HTMLElement>("table.halo-cams tbody tr.sys-row")];
+    expect(rows().map((r) => r.querySelector(".sys-name")!.textContent)).toEqual(["A · Virtual camera A", "B · Virtual camera B"]);
+    expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Simulated"); expect(rows()[0].querySelector("canvas.halo-cam-thumb")).toBeTruthy();
+    const on = () => rows()[0].querySelector<HTMLButtonElement>('button[aria-pressed]')!;
+    expect(on().getAttribute("aria-pressed")).toBe("true");
+    on().click(); expect(w.cfg.cameras[0].online).toBe(false); expect(on().getAttribute("aria-pressed")).toBe("false"); expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Offline");
+    w.cfg.cameras.push(webcamSetup("x", "Real", "C")); (w as any).render(); expect(rows()).toHaveLength(3);
+    expect(w.root.querySelector(".sys-sum")!.textContent).toBe("2 of 3 online");
   });
-  it("removes a camera and resets the calibration selection", () => {
-    const { w } = make(); go(w, 1); w.state.boardCam = 1; w.root.querySelector<HTMLButtonElement>('.halo-trash[aria-label="Remove camera A"]')!.click();
+  it("shows the facts behind a camera when its row is expanded", () => {
+    const { w } = make(); go(w, 1);
+    w.root.querySelector<HTMLButtonElement>('button[aria-label="Show details for A"]')!.click();
+    const dl = w.root.querySelector("tr.sys-detail dl")!; expect(dl.textContent).toContain("Virtual 3D camera"); expect(dl.textContent).toContain("Field of view");
+  });
+  it("removes a camera from its row and resets the calibration selection", () => {
+    const { w } = make(); go(w, 1); w.state.boardCam = 1; w.root.querySelector<HTMLButtonElement>('button[aria-label="Remove camera A"]')!.click();
     expect(w.cfg.cameras.map((c) => c.id)).toEqual(["B"]); expect(w.state.boardCam).toBe(0);
   });
   it("scans for webcams (showing a scanning state), then offers to add each one not yet configured", async () => {
@@ -350,8 +368,8 @@ describe("narration, opponent, room, launch steps", () => {
     select(w, "Launch experience"); press(w, "select"); expect(d.onFinish).not.toHaveBeenCalled(); expect(validateSetup(w.cfg).length).toBeGreaterThan(0);
     w.cfg.cameras[0].online = true; (w as any).render(); expect(labels(w)[0]).toBe("Notice"); expect(w.root.querySelector(".halo-item.warn")).toBeTruthy();
   });
-  it("shrinks focus when removing a camera leaves fewer rows (Delete key on the focused camera)", () => {
-    const { w } = make(); go(w, 1); w.focus = 1; (w as any).key(new KeyboardEvent("keydown", { key: "Delete" }));
+  it("keeps the list focus valid after a camera is removed from its row", () => {
+    const { w } = make(); go(w, 1); w.focus = 1; w.root.querySelector<HTMLButtonElement>('button[aria-label="Remove camera B"]')!.click();
     expect(w.cfg.cameras).toHaveLength(1); expect(w.focus).toBeLessThan((w as any).focusables().length);
   });
 });

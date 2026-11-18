@@ -44,7 +44,8 @@ function webglDetail(gl: any): { summary: string; rows: EnvRow[] } {
   const aniso = gl.getExtension?.("EXT_texture_filter_anisotropic");
   const api = two ? "WebGL 2" : "WebGL 1";
   return {
-    summary: [`three.js r${REVISION}`, api, gpu].filter(Boolean).join(" · "),
+    // one word for the table; the GPU, API and limits are in the expandable rows
+    summary: soft || !gpu ? "Subpar" : two ? "Perfect" : "Adequate",
     rows: [
       ...row("3D engine", `three.js r${REVISION}`), ...row("Graphics API", api),
       ...row("GPU", gpu), ...row("GPU vendor", vendor), ...row("Acceleration", gpu ? (soft ? "Software rendering (slow)" : "Hardware") : ""),
