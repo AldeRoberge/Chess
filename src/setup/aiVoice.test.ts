@@ -54,7 +54,11 @@ describe("AI and voice setup", () => {
     const c = defaultSetup(), opened: string[] = [], tests: string[] = [];
     const ctx = { cfg: c, state: { tests: {} }, refresh: () => {}, open: (u: string) => opened.push(u), test: (id: string) => tests.push(id), voiceSettings: () => ({}), speak: () => {} } as unknown as StepCtx;
     const ai = STEPS.find((s) => s.id === "ai")!, voice = STEPS.find((s) => s.id === "voice")!;
-    expect(ai.items(ctx).map((i) => i.label)).toEqual(["Commentary"]);
+    // the how-to steps are always listed; the key fields only appear once OpenAI is chosen
+    const before = ai.items(ctx);
+    expect(before[0].label).toBe("Commentary");
+    expect(before.filter((i) => i.kind === "info")).toHaveLength(4);
+    expect(before.find((i) => i.kind === "text")).toBeUndefined();
     c.ai.engine = "openai"; c.voice.engine = "elevenlabs";
     for (const step of [ai, voice]) {
       const items = step.items(ctx);

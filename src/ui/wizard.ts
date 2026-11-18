@@ -307,7 +307,9 @@ export class SetupWizard {
     if (this.stepsEl.children.length !== STEPS.length) {
       this.stepsEl.replaceChildren();
       STEPS.forEach((s, i) => {
-        const li = el("li", "halo-step", `${String(i + 1).padStart(2, "0")}  ${s.title}`);
+        const li = el("li", "halo-step");
+        const ic = el("span", "halo-step-ic"); ic.innerHTML = icon(STEP_ICON[s.id] ?? "setup", 22);
+        li.append(ic, el("span", "halo-step-name", s.title));
         li.onclick = () => { this.step = i; this.focus = 0; this.zone = "steps"; this.deps.sfx.play("tick"); this.enterStep(); this.render(); };
         this.stepsEl.append(li);
       });
@@ -722,6 +724,11 @@ const LABEL_ICON: Record<string, string> = {
   "Scene": "scene", "Rain": "scene", "Snow": "scene", "Time of day": "clock",
   "Speak aloud": "sound", "Volume": "sound", "Opponent for each game": "opponent", "Computer strength": "knight",
   "Projectors": "lamp", "People tracking": "people", "DMX lighting": "lamp", "Autoplay demo game": "play", "Demo game": "film",
+};
+/** Icon for each setup step in the left list. */
+const STEP_ICON: Record<string, string> = {
+  briefing: "briefing", cameras: "camera", board: "board", scenes: "scene", narration: "chat",
+  ai: "brain", voice: "voice", opponent: "opponent", room: "room", theme: "palette", launch: "launch",
 };
 const KIND_FALLBACK: Record<string, string> = { toggle: "toggle", choice: "list", slider: "sliders", text: "text" };
 

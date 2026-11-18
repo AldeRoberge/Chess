@@ -39,6 +39,7 @@ import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
 import { STEPS } from "./ui/wizardSteps";
 import { icon } from "./ui/icons";
+import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
 import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
 import { PAGES, formatRoute, parseRoute, routeTitle, sameRoute, type Route } from "./ui/route";
 import { suggestNext, type Suggestion } from "./ui/nextSteps";
@@ -122,6 +123,7 @@ export function boot(root: HTMLElement): Boot {
           <button id="hudmore" class="chip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="More stats" data-tip="More stats" data-tip-body="Healthy readings (green) are kept here. Anything that needs attention stays on the bar."><span>⋯</span></button>
           <div class="rmenu hud-menu" id="hudmenu" role="menu" hidden></div>
         </div>
+        <div class="chips" id="buildchips"></div>
       </nav>
       <div class="ribbon" role="tabpanel">
         <div class="rpane on" data-rpane="home">
@@ -250,6 +252,22 @@ export function boot(root: HTMLElement): Boot {
   let soundOn = false;
   const doSound = () => { startAudio(graph); soundOn = true; patchPrefs({ sound: true }); document.getElementById("audio")!.querySelector(".lbl")!.textContent = "Sound on"; refreshNext(true); };
   document.getElementById("audio")!.onclick = doSound;
+  // top-right build chips: how old this build is, its commit, and the latest CI run on main (links to it)
+  const buildChips = document.getElementById("buildchips")!;
+  let ci: CiRun | null | undefined;
+  const drawBuild = () => {
+    buildChips.replaceChildren();
+    for (const v of [buildBadge(BUILD, ci), ciBadge(ci)]) {
+      const chip = document.createElement(v.href ? "a" : "span");
+      chip.className = `chip ${v.tone}`.trim(); chip.textContent = v.text;
+      chip.dataset.tip = v.href ? "Latest CI run" : "Build"; chip.dataset.tipBody = v.tip;
+      if (v.href) { const a = chip as HTMLAnchorElement; a.href = v.href; a.target = "_blank"; a.rel = "noopener noreferrer"; }
+      buildChips.append(chip);
+    }
+  };
+  const askCi = () => { void latestCi().then((r) => { ci = r; drawBuild(); }); };
+  drawBuild(); askCi();
+  setInterval(drawBuild, 30_000); setInterval(askCi, 300_000);
   for (const [id, name] of [["audio", "sound"], ["more", "sliders"], ["reset", "refresh"]]) document.querySelector(`#${id} .ic-slot`)!.outerHTML = icon(name, 22);
   document.getElementById("reset")!.onclick = () => { addBackup("Before reset", graph.toJSON(), loadSetup(), false); localStorage.removeItem(KEY); clearSetup(); clearPrefs(); location.reload(); };
   const doExport = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([serializeCe(graph.toJSON(), loadSetup())], { type: "application/json" })); a.download = ceFileName(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
