@@ -55,7 +55,7 @@ describe("TablePanel", () => {
   it("draws pieces, selection, the carried piece's hand and the overlay, and narrates state in the info line", () => {
     const p = new TablePanel(), cv = p.root.querySelector("canvas")!, ctx = cv.getContext("2d")!, text = vi.spyOn(ctx, "fillText"); rect(cv);
     p.frame(0); expect(text).toHaveBeenCalledTimes(48); expect(p.root.querySelector(".muted")!.textContent).toBe("idle · tracker: — · ");
-    click(cv, 4, 6); virtualTable.carried = 52; virtualTable.hand = { x: 4.5, y: 5 }; text.mockClear(); p.frame(16); expect(text).toHaveBeenCalledTimes(47);
+    click(cv, 4, 6); virtualTable.carried = 52; virtualTable.hand = { x: 4.5, y: 5 }; text.mockClear(); p.frame(16); expect(text).toHaveBeenCalledTimes(48); // 47 on the board + the carried piece, now drawn in the hand
     bus.director = { phase: "game", mode: "engine", elo: 1500, menu: [], progress: {}, events: [], seat: null } as any; bus.game = { status: "synced", history: ["e4", "e5"], last: null, lifted: undefined, diff: [] } as any;
     p.frame(32); expect(p.root.querySelector(".muted")!.textContent).toBe("game · Stockfish 1500 · tracker: synced · e4 e5");
     bus.director = { ...bus.director, mode: "human" } as any; p.frame(48); expect(p.root.querySelector(".muted")!.textContent).toContain("2 joueurs");

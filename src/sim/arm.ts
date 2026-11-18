@@ -40,6 +40,8 @@ export interface ArmOpts {
   /** 0 = open, flat hand; 1 = fingers curled around a piece */
   grasp: number;
   active: boolean;
+  /** swing the forearm up (+) or down (-) about the elbow, in radians */
+  pivot?: number;
 }
 
 /** A full arm for one hand: shoulder (leaning toward far squares), IK elbow and wrist, palm, four fingers and a thumb. */
@@ -53,8 +55,16 @@ export function armPose(o: ArmOpts): ArmPose {
   const flat = Math.hypot(wristWant[0] - s0[0], wristWant[2] - s0[2]), lean = Math.min(0.26, Math.max(0, flat - 0.5));
   const shoulder: V3 = [s0[0] + hd[0] * lean, s0[1] - lean * 0.3, s0[2] + hd[2] * lean];
   const ik = twoBoneIK(shoulder, wristWant, [out * 0.6, -0.8, side * 0.5], UPPER, FORE);
-  const w = ik.wrist;
-  const fdir = (down: number): V3 => [hd[0] * Math.cos(down), -Math.sin(down), hd[2] * Math.cos(down)];
+  // `pivot` (radians, + = hand up): the forearm swings about the elbow, which stays put, and the hand tilts with it, as in a real handshake
+  const pv = o.pivot ?? 0;
+  let w = ik.wrist;
+  if (pv) {
+    const f = sub(ik.wrist, ik.elbow), ax = nrm([f[1] * 0 - f[2] * 1, f[2] * 0 - f[0] * 0, f[0] * 1 - f[1] * 0]); // f x up, normalised
+    const c = Math.cos(pv), s = Math.sin(pv), axf: V3 = [ax[1] * f[2] - ax[2] * f[1], ax[2] * f[0] - ax[0] * f[2], ax[0] * f[1] - ax[1] * f[0]];
+    const k = dot(ax, f) * (1 - c);
+    w = [ik.elbow[0] + f[0] * c + axf[0] * s + ax[0] * k, ik.elbow[1] + f[1] * c + axf[1] * s + ax[1] * k, ik.elbow[2] + f[2] * c + axf[2] * s + ax[2] * k];
+  }
+  const fdir = (down: number): V3 => { const d = down - pv; return [hd[0] * Math.cos(d), -Math.sin(d), hd[2] * Math.cos(d)]; };
   const knuckle = add(w, fdir(0.2), PALM);
   const curl = 0.25 + grasp * 0.85;
   const fingerLen = FINGER * (1 - 0.25 * grasp);

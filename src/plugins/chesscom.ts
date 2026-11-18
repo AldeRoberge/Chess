@@ -7,6 +7,7 @@ import { API, nextRemoteMove, pickGame, type RemoteGame } from "../chess/chessco
 import { sqIndex, sqName } from "../vision/types";
 import { drawBoard, withDetail } from "./shared";
 import { boardHover, visualSize } from "./hover";
+import { drawChevrons } from "../world/chevrons";
 
 type Tone = "idle" | "wait" | "move" | "ok" | "warn" | "err";
 interface ComState { game: RemoteGame | null; info: string; tone: Tone; lastPoll: number; busy: boolean; hintFen: string; announced: string; fen: string; hint: { from: string; to: string } | null; san: string; lastPgn: string }
@@ -89,11 +90,9 @@ export const chesscomNode: NodeSpec<ComState> = {
     drawBoard(ctx, w, bh, null, { fen: s.fen || undefined });
     if (s.hint) { // arrow for the move to play
       const sq = bh / 8, ox = (w - sq * 8) / 2, p = (n: string) => { const i = sqIndex(n); return [ox + (i % 8) * sq + sq / 2, Math.floor(i / 8) * sq + sq / 2]; };
-      const [ax, ay] = p(s.hint.from), [bx, by] = p(s.hint.to), a = Math.atan2(by - ay, bx - ax), hl = sq * 0.38;
+      const [ax, ay] = p(s.hint.from), [bx, by] = p(s.hint.to);
       ctx.fillStyle = "rgba(60,255,160,.3)"; ctx.fillRect(ax - sq / 2, ay - sq / 2, sq, sq); ctx.fillRect(bx - sq / 2, by - sq / 2, sq, sq);
-      ctx.strokeStyle = ctx.fillStyle = "rgba(60,255,160,.9)"; ctx.lineWidth = sq * 0.16; ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx - Math.cos(a) * hl * 0.6, by - Math.sin(a) * hl * 0.6); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx - Math.cos(a - 0.5) * hl, by - Math.sin(a - 0.5) * hl); ctx.lineTo(bx - Math.cos(a + 0.5) * hl, by - Math.sin(a + 0.5) * hl); ctx.closePath(); ctx.fill();
+      drawChevrons(ctx, { x: ax, y: ay }, { x: bx, y: by }, sq, performance.now() / 1000);
     }
     const y = bh + 6, col = TONES[s.tone];
     ctx.fillStyle = "rgba(255,255,255,.06)"; roundRect(ctx, 4, y, w - 8, h - y - 4, 8); ctx.fill();

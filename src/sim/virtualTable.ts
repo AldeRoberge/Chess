@@ -123,13 +123,13 @@ export class VirtualTable {
       const w = e < SHAKE_REACH_MS ? ease(e / SHAKE_REACH_MS) : e > SHAKE_MS - SHAKE_REACH_MS ? ease((SHAKE_MS - e) / SHAKE_REACH_MS) : 1;
       const clasp = e >= SHAKE_REACH_MS * 0.8 && e <= SHAKE_MS - SHAKE_REACH_MS * 0.8 ? 1 : 0;
       const pumping = Math.min(1, Math.max(0, Math.min(e - SHAKE_REACH_MS, SHAKE_MS - SHAKE_REACH_MS - e) / 200));
-      const bob = 0.02 * pumping * Math.sin(((e - SHAKE_REACH_MS) / 1000) * Math.PI * 4.5);
+      const pump = 0.22 * pumping * Math.sin(((e - SHAKE_REACH_MS) / 1000) * Math.PI * 4.5); // forearm swing about the still elbow (radians)
       const poses: ArmPose[] = [];
       for (const side of [1, -1] as const) {
-        const meet: V3 = [0, TABLE_Y + 0.13 + bob, side * 0.035]; // the two hands meet on the centre line, a thumb's width apart
+        const meet: V3 = [0, TABLE_Y + 0.13, side * 0.035]; // the two hands meet on the centre line, a thumb's width apart
         const at = lerp3(restTarget(side, "R"), meet, w);
         at[1] += 0.08 * Math.sin(Math.PI * w) * (1 - w); // a little arc on the way in and out instead of a straight line
-        poses.push(armPose({ side, hand: "R", tip: at, grasp: 0.55 * clasp, active: true }));
+        poses.push(armPose({ side, hand: "R", tip: at, grasp: 0.55 * clasp, active: true, pivot: pump }));
         poses.push(armPose({ side, hand: "L", tip: restTarget(side, "L"), grasp: 0, active: false }));
       }
       return poses;

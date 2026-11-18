@@ -1,6 +1,7 @@
 import type { GraphJSON } from "../core/types";
 import type { SetupConfig } from "../setup/config";
 import basic from "./basic.workflow.json";
+import botplay from "./botplay.workflow.json";
 import chesscom from "./chesscom.workflow.json";
 import complete from "./complete.workflow.json";
 import pieceless from "./pieceless.workflow.json";
@@ -17,4 +18,5 @@ export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
   { id: "complete", ...(complete as unknown as WorkflowFile) },
   { id: "chesscom", ...(chesscom as unknown as WorkflowFile) },
   { id: "pieceless", ...(pieceless as unknown as WorkflowFile) },
+  { id: "botplay", ...(botplay as unknown as WorkflowFile) },
 ];

@@ -102,7 +102,8 @@ export const defaultSetup = (): SetupConfig => ({
   demo: { autoplay: false, scenario: SCENARIOS[0].id },
 });
 
-export function validateSetup(c: SetupConfig): Issue[] {
+/** `voiceNames` maps ElevenLabs voice id to name once the account's voices are loaded; without it the voice/narrator check is skipped. */
+export function validateSetup(c: SetupConfig, voiceNames?: Record<string, string>): Issue[] {
   const out: Issue[] = [];
   const err = (field: string, message: string) => out.push({ level: "error", field, message });
   const warn = (field: string, message: string) => out.push({ level: "warn", field, message });
@@ -124,6 +125,15 @@ export function validateSetup(c: SetupConfig): Issue[] {
     else if (!/^sk-/.test(c.ai.apiKey.trim())) warn("ai", "OpenAI keys start with \"sk-\": check that you copied the whole key.");
   }
   if (c.voice.engine === "elevenlabs" && !c.voice.apiKey.trim()) warn("voice", "The voice engine is set to ElevenLabs but no API key is entered: the system voices will be used.");
+  if (c.voice.engine === "elevenlabs" && c.voice.apiKey.trim() && voiceNames) {
+    // the commentator's name must be the ElevenLabs voice it speaks with (A = slot 1, B = slot 2)
+    const slots = [[c.narrator.nameA, c.voice.voiceIdA, "A"], [c.narrator.nameB, c.voice.voiceIdB, "B"]].slice(0, c.narrator.voices);
+    for (const [name, id, slot] of slots) {
+      const voice = voiceNames[id.trim()];
+      if (voice === undefined) err("voice", `Voice ${slot} is not one of your ElevenLabs voices: pick one from the list.`);
+      else if (!voice.toLowerCase().includes(name.trim().toLowerCase())) err("voice", `Commentator ${slot} is "${name}" but ElevenLabs voice ${slot} is "${voice}": make them the same.`);
+    }
+  }
   if (c.projectors.dmx && !/^wss?:\/\//.test(c.projectors.dmxUrl)) err("projectors", "DMX bridge URL must start with ws:// or wss://.");
   if (c.tracking.pose && online < 2) warn("tracking", "People tracking with one camera can only place feet on the floor. Two or more cameras give full 3D.");
   if (c.scene !== "auto" && !(c.scene in SCENES)) err("scene", `Unknown scene "${c.scene}".`);
@@ -147,8 +157,14 @@ export function loadSetup(): SetupConfig | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const j = JSON.parse(raw) as SetupConfig;
-    return j.version === 1 ? { ...defaultSetup(), ...j } : null;
+    return j.version === 1 ? withDefaults(j) : null;
   } catch { return null; }
+}
+
+/** Fills sections a config saved by an older version lacks (a stored setup or wizard draft), section by section so new fields get their defaults too. */
+export function withDefaults(c: Partial<SetupConfig>): SetupConfig {
+  const d = defaultSetup();
+  return { ...d, ...c, narrator: { ...d.narrator, ...c.narrator }, ai: { ...d.ai, ...c.ai }, voice: { ...d.voice, ...c.voice }, opponent: { ...d.opponent, ...c.opponent }, projectors: { ...d.projectors, ...c.projectors }, tracking: { ...d.tracking, ...c.tracking }, demo: { ...d.demo, ...c.demo } };
 }
 export function saveSetup(c: SetupConfig) { try { localStorage.setItem(KEY, JSON.stringify(c)); } catch { /* storage unavailable */ } }
 export function clearSetup() { try { localStorage.removeItem(KEY); } catch { /* storage unavailable */ } }

@@ -14,6 +14,7 @@ import { dueFrame, pixelRatio, setDisplay, viewSettings } from "./viewSettings";
 import { PIECE_SETS, pieceColors, pieceImage, pieceSet, setPieceColors, setPieceSet } from "./pieceSets";
 import { BOARD_THEMES, boardTheme, setBoardTheme } from "./boardThemes";
 import { openChannel, type InMsg } from "./channel";
+import { drawBotAvatar, drawGrabHand } from "./botAvatar";
 import type { Tip, TipRow } from "./tooltip";
 import { fenPieces } from "../plugins/shared";
 import { isLightSquare, pct, pieceLabel, tone } from "../plugins/hover";
@@ -27,6 +28,8 @@ export class TablePanel {
   root = el("div", "panel table");
   private cv = el("canvas"); private info = el("div", "muted");
   private px = 44; private margin = 3; private sel: number | null = null;
+  /** A piece being dragged with the mouse (square index), and whether it was already selected when grabbed. */
+  private drag: { from: number; was: boolean } | null = null; private suppressClick = false;
   /** Square (0 = a8) under the mouse, or null; the margin ring counts as off the board. */
   private over: number | null = null; private overMargin: { x: number; y: number } | null = null;
 
@@ -50,10 +53,27 @@ export class TablePanel {
       const c = Math.floor(q.x), r = Math.floor(q.y); this.over = c >= 0 && c < 8 && r >= 0 && r < 8 ? r * 8 + c : null; this.overMargin = this.over === null ? q : null;
       if (virtualTable.hoverHand && !virtualTable.busy) { virtualTable.hand = { ...virtualTable.pointer }; virtualTable.carried = null; virtualTable.setHoverHand(); }
     };
-    this.cv.onmousedown = () => { virtualTable.pointerDown = true; };
-    this.cv.onmouseup = () => { virtualTable.pointerDown = false; };
-    this.cv.onmouseleave = () => { virtualTable.pointer = null; virtualTable.pointerDown = false; this.over = null; this.overMargin = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
+    this.cv.onmousedown = (e) => {
+      virtualTable.pointerDown = true;
+      const p = pos(e), c = Math.floor(p.x), r = Math.floor(p.y), pc = c >= 0 && c < 8 && r >= 0 && r < 8 ? virtualTable.game.board()[r][c] : null;
+      if (pc && !virtualTable.busy && pc.color === virtualTable.game.turn() && bus.botColor !== pc.color) { this.drag = { from: r * 8 + c, was: this.sel === r * 8 + c }; this.sel = r * 8 + c; } // grab: drag it to a square, or release to keep it selected
+    };
+    this.cv.onmouseup = (e) => {
+      virtualTable.pointerDown = false;
+      const d = this.drag; this.drag = null;
+      if (!d) return;
+      const p = pos(e), c = Math.floor(p.x), r = Math.floor(p.y), to = c >= 0 && c < 8 && r >= 0 && r < 8 ? r * 8 + c : null;
+      this.suppressClick = true; // the mouseup handled it; the click that follows must not act again
+      if (to === null) { this.sel = null; return; }
+      if (to === d.from) { this.sel = d.was ? null : to; return; } // released where it started: a plain click toggles the selection
+      const from = sqName(d.from), tn = sqName(to);
+      const m = virtualTable.game.moves({ verbose: true }).find((x) => x.from === from && x.to === tn && (x.promotion ?? "q") === "q"); // a pawn dropped on the last rank queens
+      if (m) virtualTable.play(m.from + m.to + (m.promotion ?? ""), performance.now());
+      this.sel = null;
+    };
+    this.cv.onmouseleave = () => { virtualTable.pointer = null; virtualTable.pointerDown = false; this.drag = null; this.over = null; this.overMargin = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
     this.cv.onclick = (e) => {
+      if (this.suppressClick) { this.suppressClick = false; return; }
       const p = pos(e); const c = Math.floor(p.x), r = Math.floor(p.y);
       if (c < 0 || c > 7 || r < 0 || r > 7) return;
       const i = r * 8 + c;
@@ -146,12 +166,23 @@ export class TablePanel {
     }
     c.font = `${px * 0.82}px "Segoe UI Symbol", serif`; c.textAlign = "center"; c.textBaseline = "middle";
     b.forEach((row, r) => row.forEach((p, col) => {
-      if (!p || virtualTable.carried === r * 8 + col || bus.pieceView) return; // projected pieces come with the overlay
+      if (!p || virtualTable.carried === r * 8 + col || this.drag?.from === r * 8 + col || bus.pieceView) return; // projected pieces come with the overlay
       const img = pieceImage(p.color + p.type);
       if (img) { c.drawImage(img, col * px, r * px, px, px); return; }
       const g = GLYPH["b" + p.type]; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.strokeStyle = p.color === "w" ? "#3b3a37" : "#0d0d0d"; c.lineWidth = p.color === "w" ? 2.2 : 1.2; c.strokeText(g, (col + 0.5) * px, (r + 0.55) * px); c.fillText(g, (col + 0.5) * px, (r + 0.55) * px);
     }));
+    if (bus.botColor) drawBotAvatar(c, px, bus.botColor, virtualTable.busy || !!bus.engineHint, virtualTable.hand, now / 1000);
     this.drawArms(c, px);
+    const lifted = (sq: number | null, x: number, y: number, hand: "me" | "bot") => { // a piece in a hand, raised and shadowed
+      const p = sq === null ? null : b[Math.floor(sq / 8)][sq % 8]; if (!p) return;
+      c.fillStyle = "rgba(0,0,0,.25)"; c.beginPath(); c.ellipse(x * px + 4, y * px + px * 0.4, px * 0.32, px * 0.14, 0, 0, 7); c.fill();
+      const img = pieceImage(p.color + p.type), s = px * 1.12;
+      if (img) c.drawImage(img, x * px - s / 2, y * px - s / 2 - 6, s, s);
+      else { c.font = `${px * 0.9}px "Segoe UI Symbol", serif`; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.fillText(GLYPH["b" + p.type], x * px, y * px - 4); }
+      drawGrabHand(c, x * px, y * px - px * 0.3, px, hand === "bot" ? bus.botColor === "b" : false);
+    };
+    if (virtualTable.carried !== null && virtualTable.hand) lifted(virtualTable.carried, virtualTable.hand.x, virtualTable.hand.y, "bot");
+    if (this.drag && virtualTable.pointer) lifted(this.drag.from, virtualTable.pointer.x, virtualTable.pointer.y, "me");
     if (this.over !== null) { c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.strokeRect((this.over % 8) * px + 1, Math.floor(this.over / 8) * px + 1, px - 2, px - 2); }
     c.restore();
     drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);

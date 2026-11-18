@@ -101,7 +101,8 @@ const engine: NodeSpec<EngState> = {
     state.now = now;
     const g = game as TrackResult | undefined, d = director as DirectorOut | undefined;
     const out: ExperienceEvent[] = [];
-    if (!g || !d || d.mode !== "engine" || d.phase !== "game") { bus.engineHint = null; return { events: [] }; }
+    if (!g || !d || d.mode !== "engine" || d.phase !== "game") { bus.engineHint = null; bus.botColor = null; return { events: [] }; }
+    bus.botColor = params.color === "w" ? "w" : "b";
     if (!state.engine && !state.loading) { state.loading = true; void createEngine().then((e) => { state.engine = e; state.loading = false; state.info = e.constructor.name; }); }
     if (state.hintFen && state.hintFen !== g.fen) { bus.engineHint = null; state.hintFen = ""; }
     if (state.engine && g.status === "synced" && !g.over && g.turn === params.color && state.thinkingFen !== g.fen) {

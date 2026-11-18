@@ -1,0 +1,832 @@
+{
+  "app": "chess-experience",
+  "kind": "workflow",
+  "name": "Play now against bot",
+  "description": "Play Stockfish right away: you sit at the table (simulated, use the mouse), the bot has its own body and hands, and green chevrons show every move to match on a real board. Use Play bot in the ribbon to pick who starts or use real webcams.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "vision.fuse",
+        "x": 640,
+        "y": 150,
+        "params": {
+          "staleMs": 600,
+          "handMotion": 0.08
+        }
+      },
+      {
+        "id": "n2",
+        "type": "world.virtual",
+        "x": 330,
+        "y": 820,
+        "params": {}
+      },
+      {
+        "id": "n3",
+        "type": "source.synthetic",
+        "x": 20,
+        "y": 30,
+        "params": {
+          "online": true,
+          "cam": "A",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n5",
+        "type": "vision.boardReader",
+        "x": 330,
+        "y": 30,
+        "params": {
+          "cam": "A",
+          "corners": "142,84;338,84;352,285;128,285",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n8",
+        "type": "source.synthetic",
+        "x": 20,
+        "y": 370,
+        "params": {
+          "online": true,
+          "cam": "B",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n10",
+        "type": "vision.boardReader",
+        "x": 330,
+        "y": 370,
+        "params": {
+          "cam": "B",
+          "corners": "259,309;106,192;226,80;369,164",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n13",
+        "type": "vision.stabilize",
+        "x": 900,
+        "y": 150,
+        "params": {
+          "memory": 0.8,
+          "hysteresis": 3,
+          "settleMs": 700,
+          "holdOnHand": true
+        }
+      },
+      {
+        "id": "n14",
+        "type": "game.tracker",
+        "x": 1160,
+        "y": 60,
+        "params": {
+          "confirm": 2,
+          "maxCost": 0.8,
+          "minConf": 0.5,
+          "promotion": "q",
+          "resync": false
+        }
+      },
+      {
+        "id": "n15",
+        "type": "experience.director",
+        "x": 1160,
+        "y": 520,
+        "params": {
+          "dwellMs": 1500,
+          "introMs": 6000,
+          "outroMs": 8000,
+          "preset": "engine",
+          "presetElo": "1200"
+        }
+      },
+      {
+        "id": "n16",
+        "type": "game.engine",
+        "x": 1440,
+        "y": 520,
+        "params": {
+          "color": "b",
+          "virtualHand": true
+        }
+      },
+      {
+        "id": "n17",
+        "type": "narration.narrator",
+        "x": 1700,
+        "y": 30,
+        "params": {
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot",
+          "language": "fr"
+        }
+      },
+      {
+        "id": "n18",
+        "type": "narration.ai",
+        "x": 1840,
+        "y": 30,
+        "params": {
+          "provider": "builtin",
+          "aiKey": "",
+          "aiModel": "gpt-4.1-nano",
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot",
+          "language": "fr"
+        }
+      },
+      {
+        "id": "n19",
+        "type": "narration.speech",
+        "x": 2100,
+        "y": 30,
+        "params": {
+          "enabled": true,
+          "volume": 0.9,
+          "provider": "browser",
+          "sepBrowser": "",
+          "browserA": "",
+          "browserB": "",
+          "sepElevenlabs": "",
+          "apiKey": "",
+          "voiceIdA": "pNInz6obpgDQGcFmaJgB",
+          "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
+          "model": "eleven_multilingual_v2",
+          "language": "fr"
+        }
+      },
+      {
+        "id": "n20",
+        "type": "scene.cues",
+        "x": 1700,
+        "y": 250,
+        "params": {
+          "scene": "(auto)",
+          "hour": -1,
+          "rain": -1,
+          "snow": -1,
+          "thunder": false,
+          "rules": ""
+        }
+      },
+      {
+        "id": "n21",
+        "type": "scene.output",
+        "x": 2000,
+        "y": 330,
+        "params": {
+          "audio": true,
+          "dmx": false,
+          "dmxUrl": "ws://127.0.0.1:8787",
+          "universe": 0
+        }
+      },
+      {
+        "id": "n26",
+        "type": "sim.person",
+        "x": 20,
+        "y": 1400,
+        "params": {
+          "seated": true
+        }
+      },
+      {
+        "id": "n44",
+        "type": "fx.trigger",
+        "x": 1700,
+        "y": 560,
+        "params": {
+          "when": "higher",
+          "minGap": 1,
+          "cooldown": 0,
+          "test": false
+        }
+      },
+      {
+        "id": "n45",
+        "type": "fx.effect",
+        "x": 1960,
+        "y": 520,
+        "params": {
+          "effect": "ripple",
+          "color": "auto",
+          "size": 6,
+          "intensity": 0.9,
+          "speed": 1,
+          "count": 4,
+          "delay": 0,
+          "byValue": true
+        }
+      },
+      {
+        "id": "n46",
+        "type": "fx.effect",
+        "x": 1960,
+        "y": 780,
+        "params": {
+          "effect": "grid-pulse",
+          "color": "auto",
+          "size": 6,
+          "intensity": 0.9,
+          "speed": 1,
+          "count": 4,
+          "delay": 0,
+          "byValue": true
+        }
+      },
+      {
+        "id": "n47",
+        "type": "fx.sound",
+        "x": 2220,
+        "y": 520,
+        "params": {
+          "sound": "ripple",
+          "volume": 0.7,
+          "pitch": 0,
+          "byValue": true,
+          "delay": 0,
+          "test": false
+        }
+      },
+      {
+        "id": "n48",
+        "type": "fx.output",
+        "x": 2480,
+        "y": 520,
+        "params": {
+          "project": true,
+          "sound": true
+        }
+      },
+      {
+        "id": "n57",
+        "type": "sim.pose",
+        "x": 20,
+        "y": 1500,
+        "params": {
+          "show": true
+        }
+      },
+      {
+        "id": "n58",
+        "type": "sim.scenario",
+        "x": 20,
+        "y": 1620,
+        "params": {
+          "scenario": "scholars-mate",
+          "play": false,
+          "pauseMs": 2500
+        }
+      },
+      {
+        "id": "n59",
+        "type": "sim.player",
+        "x": 330,
+        "y": 1620,
+        "params": {
+          "color": "w"
+        }
+      },
+      {
+        "id": "n60",
+        "type": "sim.player",
+        "x": 640,
+        "y": 1620,
+        "params": {
+          "color": "b"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e4",
+        "from": {
+          "node": "n2",
+          "port": "world"
+        },
+        "to": {
+          "node": "n3",
+          "port": "world"
+        }
+      },
+      {
+        "id": "e6",
+        "from": {
+          "node": "n3",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n5",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e7",
+        "from": {
+          "node": "n5",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n1",
+          "port": "o1"
+        }
+      },
+      {
+        "id": "e9",
+        "from": {
+          "node": "n2",
+          "port": "world"
+        },
+        "to": {
+          "node": "n8",
+          "port": "world"
+        }
+      },
+      {
+        "id": "e11",
+        "from": {
+          "node": "n8",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n10",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e12",
+        "from": {
+          "node": "n10",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n1",
+          "port": "o2"
+        }
+      },
+      {
+        "id": "e22",
+        "from": {
+          "node": "n1",
+          "port": "board"
+        },
+        "to": {
+          "node": "n13",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e23",
+        "from": {
+          "node": "n13",
+          "port": "board"
+        },
+        "to": {
+          "node": "n14",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e24",
+        "from": {
+          "node": "n15",
+          "port": "director"
+        },
+        "to": {
+          "node": "n14",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e25",
+        "from": {
+          "node": "n14",
+          "port": "events"
+        },
+        "to": {
+          "node": "n15",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e27",
+        "from": {
+          "node": "n26",
+          "port": "seats"
+        },
+        "to": {
+          "node": "n15",
+          "port": "seats"
+        }
+      },
+      {
+        "id": "e28",
+        "from": {
+          "node": "n26",
+          "port": "pointers"
+        },
+        "to": {
+          "node": "n15",
+          "port": "pointers"
+        }
+      },
+      {
+        "id": "e29",
+        "from": {
+          "node": "n14",
+          "port": "game"
+        },
+        "to": {
+          "node": "n16",
+          "port": "game"
+        }
+      },
+      {
+        "id": "e30",
+        "from": {
+          "node": "n15",
+          "port": "director"
+        },
+        "to": {
+          "node": "n16",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e31",
+        "from": {
+          "node": "n14",
+          "port": "events"
+        },
+        "to": {
+          "node": "n17",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e32",
+        "from": {
+          "node": "n15",
+          "port": "events"
+        },
+        "to": {
+          "node": "n17",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e33",
+        "from": {
+          "node": "n16",
+          "port": "events"
+        },
+        "to": {
+          "node": "n17",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e34",
+        "from": {
+          "node": "n17",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n18",
+          "port": "lines"
+        }
+      },
+      {
+        "id": "e35",
+        "from": {
+          "node": "n14",
+          "port": "events"
+        },
+        "to": {
+          "node": "n18",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e36",
+        "from": {
+          "node": "n15",
+          "port": "events"
+        },
+        "to": {
+          "node": "n18",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e37",
+        "from": {
+          "node": "n16",
+          "port": "events"
+        },
+        "to": {
+          "node": "n18",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e38",
+        "from": {
+          "node": "n18",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n19",
+          "port": "lines"
+        }
+      },
+      {
+        "id": "e39",
+        "from": {
+          "node": "n14",
+          "port": "events"
+        },
+        "to": {
+          "node": "n20",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e40",
+        "from": {
+          "node": "n15",
+          "port": "events"
+        },
+        "to": {
+          "node": "n20",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e41",
+        "from": {
+          "node": "n16",
+          "port": "events"
+        },
+        "to": {
+          "node": "n20",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e42",
+        "from": {
+          "node": "n20",
+          "port": "scene"
+        },
+        "to": {
+          "node": "n21",
+          "port": "scene"
+        }
+      },
+      {
+        "id": "e43",
+        "from": {
+          "node": "n20",
+          "port": "fired"
+        },
+        "to": {
+          "node": "n21",
+          "port": "fired"
+        }
+      },
+      {
+        "id": "e49",
+        "from": {
+          "node": "n14",
+          "port": "events"
+        },
+        "to": {
+          "node": "n44",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e50",
+        "from": {
+          "node": "n16",
+          "port": "events"
+        },
+        "to": {
+          "node": "n44",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e51",
+        "from": {
+          "node": "n44",
+          "port": "cues"
+        },
+        "to": {
+          "node": "n45",
+          "port": "cues"
+        }
+      },
+      {
+        "id": "e52",
+        "from": {
+          "node": "n44",
+          "port": "cues"
+        },
+        "to": {
+          "node": "n46",
+          "port": "cues"
+        }
+      },
+      {
+        "id": "e53",
+        "from": {
+          "node": "n44",
+          "port": "cues"
+        },
+        "to": {
+          "node": "n47",
+          "port": "cues"
+        }
+      },
+      {
+        "id": "e54",
+        "from": {
+          "node": "n45",
+          "port": "calls"
+        },
+        "to": {
+          "node": "n46",
+          "port": "chain"
+        }
+      },
+      {
+        "id": "e55",
+        "from": {
+          "node": "n46",
+          "port": "calls"
+        },
+        "to": {
+          "node": "n47",
+          "port": "chain"
+        }
+      },
+      {
+        "id": "e56",
+        "from": {
+          "node": "n47",
+          "port": "calls"
+        },
+        "to": {
+          "node": "n48",
+          "port": "calls"
+        }
+      },
+      {
+        "id": "e61",
+        "from": {
+          "node": "n58",
+          "port": "events"
+        },
+        "to": {
+          "node": "n14",
+          "port": "control"
+        }
+      },
+      {
+        "id": "e62",
+        "from": {
+          "node": "n58",
+          "port": "actions"
+        },
+        "to": {
+          "node": "n59",
+          "port": "actions"
+        }
+      },
+      {
+        "id": "e63",
+        "from": {
+          "node": "n58",
+          "port": "actions"
+        },
+        "to": {
+          "node": "n60",
+          "port": "actions"
+        }
+      },
+      {
+        "id": "e64",
+        "from": {
+          "node": "n59",
+          "port": "player"
+        },
+        "to": {
+          "node": "n2",
+          "port": "white"
+        }
+      },
+      {
+        "id": "e65",
+        "from": {
+          "node": "n60",
+          "port": "player"
+        },
+        "to": {
+          "node": "n2",
+          "port": "black"
+        }
+      }
+    ],
+    "groups": []
+  },
+  "setup": {
+    "version": 1,
+    "completed": true,
+    "cameras": [
+      {
+        "id": "A",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera A",
+        "online": true,
+        "channel": "luma",
+        "rig": "A",
+        "corners": "142,84;338,84;352,285;128,285",
+        "trust": 1,
+        "fov": 42
+      },
+      {
+        "id": "B",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera B",
+        "online": true,
+        "channel": "luma",
+        "rig": "B",
+        "corners": "259,309;106,192;226,80;369,164",
+        "trust": 1,
+        "fov": 44
+      }
+    ],
+    "scene": "auto",
+    "rain": -1,
+    "snow": -1,
+    "hour": -1,
+    "narrator": {
+      "voices": 2,
+      "nameA": "Jean",
+      "nameB": "Margot",
+      "speak": true,
+      "volume": 0.9
+    },
+    "ai": {
+      "engine": "builtin",
+      "apiKey": "",
+      "model": "gpt-4.1-nano"
+    },
+    "voice": {
+      "engine": "browser",
+      "apiKey": "",
+      "voiceIdA": "pNInz6obpgDQGcFmaJgB",
+      "voiceIdB": "21m00Tcm4TlvDq8ikWAM"
+    },
+    "opponent": {
+      "mode": "engine",
+      "elo": 1200
+    },
+    "projectors": {
+      "count": 0,
+      "dmx": false,
+      "dmxUrl": "ws://127.0.0.1:8787"
+    },
+    "tracking": {
+      "pose": false
+    },
+    "demo": {
+      "autoplay": false,
+      "scenario": "scholars-mate"
+    }
+  }
+}

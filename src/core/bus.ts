@@ -21,6 +21,8 @@ export const bus = {
   lines: [] as NarrationLine[],
   events: [] as ExperienceEvent[],
   engineHint: null as { from: string; to: string } | null,
+  /** Which colour the bot plays while a game against it runs (drives where its body sits); null otherwise. */
+  botColor: null as "w" | "b" | null,
   clock: null as ClockEstimate | null,
   /** What the projector should show of the clock; set by the Clock Overlay node. */
   clockView: null as ClockView | null,

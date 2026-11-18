@@ -19,7 +19,7 @@ import { startFxAudio } from "./plugins/fx";
 import { AudioEngine } from "./scene/audio";
 import { mixer, type Bus, type MixState } from "./scene/mixer";
 import { speakLine } from "./plugins/narration";
-import { buildGraphFromConfig, clearSetup, defaultSetup, loadSetup, saveSetup, type SetupConfig } from "./setup/config";
+import { buildGraphFromConfig, clearSetup, defaultSetup, loadSetup, saveSetup, withDefaults, type SetupConfig } from "./setup/config";
 import { listCameras, openCamera } from "./setup/devices";
 import { detectEnv } from "./setup/system";
 import { Sfx } from "./ui/sfx";
@@ -33,6 +33,7 @@ import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, o
 import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
+import { openPlayNow } from "./ui/playNow";
 import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
@@ -134,6 +135,7 @@ export function boot(root: HTMLElement): Boot {
             <button id="export" class="rb" data-tip="Save" data-tip-keys="Ctrl,S" data-tip-body="Download the workflow as a JSON file you can keep or share. Lights up when there are changes since the last backup.">${icon("save", 22)}<span>Save</span></button>
           </div><div class="rlabel">File</div></div>
           <div class="rgroup"><div class="rbtns">
+            <button id="playnow" class="rb" data-tip="Play now against bot" data-tip-body="Start a game against Stockfish right away. Choose who starts, and whether you are simulated (mouse) or real (webcams).">${icon("film", 22)}<span>Play bot</span></button>
             <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
             <button id="setup" class="rb" data-tip="Setup wizard" data-tip-body="Step-by-step setup for cameras, projector and players.">${icon("setup", 22)}<span>Setup</span></button>
@@ -349,6 +351,7 @@ export function boot(root: HTMLElement): Boot {
   document.body.append(openInput);
   document.getElementById("openfile")!.onclick = () => openInput.click();
   document.getElementById("workflows")!.onclick = () => openWorkflowPanel(wfApi);
+  document.getElementById("playnow")!.onclick = () => openPlayNow(wfApi, () => go({ page: "table" }));
   document.getElementById("aiwiz")!.onclick = () => openAiWizard(wfApi);
   document.getElementById("backupnow")!.onclick = () => { addBackup("Manual backup", graph.toJSON(), loadSetup(), false); };
   document.getElementById("addsec")!.onclick = () => editor.addGroup();
@@ -531,7 +534,7 @@ export function boot(root: HTMLElement): Boot {
   const openWizard = () => {
     if (wiz) return;
     const draft = loadPrefs().draft;
-    const cfg = structuredClone(draft?.cfg ?? loadSetup() ?? defaultSetup());
+    const cfg = withDefaults(structuredClone(draft?.cfg ?? loadSetup() ?? defaultSetup()));
     wiz = new SetupWizard(cfg, {
       onProgress: (c, step) => { patchPrefs({ draft: { cfg: c, step } }); liveApply(c); },
       listCameras, openCamera, detectEnv, sfx, speak: speakLine,

@@ -166,6 +166,10 @@ function loadVoices(c: StepCtx) {
   c.refresh();
 }
 
+/** Voice id to name for the loaded account voices, or undefined until they are loaded for the current key. */
+const voiceNamesFor = (c: StepCtx): Record<string, string> | undefined =>
+  voiceList.key === c.cfg.voice.apiKey.trim() && voiceList.voices.length ? Object.fromEntries(voiceList.voices.map((x) => [x.id, x.name])) : undefined;
+
 const voiceItems = (c: StepCtx): Item[] => {
   const v = c.cfg.voice;
   const out: Item[] = [
@@ -204,6 +208,7 @@ const voiceItems = (c: StepCtx): Item[] => {
       { kind: "text", label: "Voice ID B", get: () => v.voiceIdB, set: (x) => { v.voiceIdB = x.trim(); } },
     );
   }
+  for (const i of validateSetup(c.cfg, voiceNamesFor(c)).filter((x) => x.field === "voice" && x.level === "error")) out.push({ kind: "info", label: "Error", value: i.message, tone: "fail" });
   out.push(
     { kind: "action", icon: "sound", label: "Test voice A", run: () => say("A", "Un joueur rejoint la partie.") },
     { kind: "action", icon: "sound", label: "Test voice B", run: () => say("B", "Quel coup de tonnerre !") },
@@ -295,7 +300,7 @@ export const STEPS: Step[] = [
     } },
   { id: "launch", title: "Launch", blurb: "Review, then start. You can reopen this setup any time from the top bar.",
     items: (c) => {
-      const issues = validateSetup(c.cfg);
+      const issues = validateSetup(c.cfg, voiceNamesFor(c));
       return [
         ...issues.map((i): Item => ({ kind: "info", label: i.level === "error" ? "Error" : "Notice", value: i.message, tone: i.level === "error" ? "fail" : "warn" })),
         { kind: "info", label: "Cameras", value: `${c.cfg.cameras.filter((x) => x.online).length} online / ${c.cfg.cameras.length}` },

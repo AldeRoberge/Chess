@@ -8,7 +8,7 @@ const reg = createRegistry();
 
 describe("demo workflow files", () => {
   it("ships basic, complete and chess.com, easiest first", () => {
-    expect(WORKFLOWS.map((w) => w.id)).toEqual(["basic", "complete", "chesscom", "pieceless"]);
+    expect(WORKFLOWS.map((w) => w.id)).toEqual(["basic", "complete", "chesscom", "pieceless", "botplay"]);
     expect(WORKFLOWS[0].graph.nodes.length).toBeLessThan(WORKFLOWS[1].graph.nodes.length);
     expect(WORKFLOWS[2].graph.nodes.some((n) => n.type === "game.chesscom")).toBe(true);
     expect(WORKFLOWS[2].graph.nodes.some((n) => n.type === "game.engine")).toBe(false);

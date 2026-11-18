@@ -17,7 +17,7 @@ export interface WorkflowApi {
 }
 
 /** Opens a modal shell (same look as Backups). Esc or the backdrop closes it. */
-function modal(title: string, label: string) {
+export function modal(title: string, label: string) {
   document.querySelector(".bk")?.remove();
   const root = el("div", "bk"), card = el("div", "bk-card wf"); card.setAttribute("role", "dialog"); card.setAttribute("aria-label", label);
   const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };

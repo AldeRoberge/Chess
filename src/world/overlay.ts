@@ -1,6 +1,7 @@
 import type { TrackResult } from "../chess/tracker";
 import type { DirectorOut } from "../experience/director";
 import { sqIndex } from "../vision/types";
+import { drawChevrons } from "./chevrons";
 import { drawClockOverlay, type ClockOverlay } from "./clockOverlay";
 import { drawPieceOverlay, type PieceOverlay } from "./pieceOverlay";
 
@@ -36,8 +37,7 @@ export function drawTableOverlay(ctx: CanvasRenderingContext2D, px: number, marg
     const pulse = 0.5 + 0.5 * Math.sin(t * 4);
     fill(o.hint.from, `rgba(60,255,160,${0.25 + 0.3 * pulse})`); fill(o.hint.to, `rgba(60,255,160,${0.35 + 0.3 * pulse})`);
     const a = sq(o.hint.from), b = sq(o.hint.to);
-    ctx.strokeStyle = "rgba(60,255,160,.8)"; ctx.lineWidth = px * 0.09; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(a.x + px / 2, a.y + px / 2); ctx.lineTo(b.x + px / 2, b.y + px / 2); ctx.stroke();
+    drawChevrons(ctx, { x: a.x + px / 2, y: a.y + px / 2 }, { x: b.x + px / 2, y: b.y + px / 2 }, px, t);
   }
 
   o.fx?.draw(ctx, px, t * 1000);

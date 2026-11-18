@@ -5,7 +5,8 @@ import type { BoardBelief, GrayFrame, SquareObs } from "../vision/types";
 import type { NodeSpec, Plugin } from "../core/types";
 import { bus } from "../core/bus";
 import { applyH, boardToImage, invertH } from "../vision/homography";
-import { sqName } from "../vision/types";
+import { sqIndex, sqName } from "../vision/types";
+import { drawChevrons } from "../world/chevrons";
 import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, parseCorners, withDetail, type DetailRow } from "./shared";
 import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
@@ -99,6 +100,11 @@ const reader: NodeSpec<ReaderState> = {
       if (!s.frame || !r) return;
       const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * r.s, y: r.y + p.y * r.s }), c = s.sampler.cfg.corners;
       ctx.strokeStyle = "#35e0b4"; ctx.beginPath(); c.forEach((p, i) => { const q = at(p); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath(); ctx.stroke();
+      if (bus.engineHint) { // the move the human must play on the real board for the bot
+        const H = boardToImage(c), ctr = (n: string) => { const i = sqIndex(n), q = applyH(H, (i % 8) + 0.5, Math.floor(i / 8) + 0.5); return at(q); };
+        const a = ctr(bus.engineHint.from), b = ctr(bus.engineHint.to);
+        drawChevrons(ctx, a, b, Math.hypot(at(applyH(H, 1, 0)).x - at(applyH(H, 0, 0)).x, at(applyH(H, 1, 0)).y - at(applyH(H, 0, 0)).y), performance.now() / 1000);
+      }
       ctx.fillStyle = "rgba(255,90,110,.6)"; // a frame always comes with its observation
       const right = r.x + s.frame.width * r.s;
       for (let i = 0; i < 64; i++) if (s.obs!.handSquares[i]) ctx.fillRect(right - 6, r.y + 4 + (i % 8), 4, 1);
