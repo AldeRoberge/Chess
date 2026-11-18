@@ -8,7 +8,7 @@
       {
         "id": "n1",
         "type": "source.synthetic",
-        "x": 44,
+        "x": 1684,
         "y": 94,
         "params": {
           "online": true,
@@ -18,7 +18,8 @@
           "gradient": 0.15,
           "shadows": true,
           "fps": 8
-        }
+        },
+        "w": 360
       },
       {
         "id": "n2",
@@ -32,29 +33,32 @@
           "weight": 1,
           "autoCal": true,
           "learn": false
-        }
+        },
+        "w": 360
       },
       {
         "id": "n3",
         "type": "vision.fuse",
-        "x": 374,
+        "x": 454,
         "y": 538,
         "params": {
           "staleMs": 600,
           "handMotion": 0.08
-        }
+        },
+        "w": 360
       },
       {
         "id": "n4",
         "type": "vision.stabilize",
-        "x": 704,
+        "x": 864,
         "y": 538,
         "params": {
           "memory": 0.8,
           "hysteresis": 3,
           "settleMs": 700,
           "holdOnHand": true
-        }
+        },
+        "w": 360
       },
       {
         "id": "n5",
@@ -66,18 +70,20 @@
           "maxCost": 0.8,
           "promotion": "q",
           "resync": false
-        }
+        },
+        "w": 360
       },
       {
         "id": "n6",
         "type": "sim.scenario",
-        "x": 374,
+        "x": 44,
         "y": 94,
         "params": {
           "scenario": "scholars-mate",
           "play": true,
           "pauseMs": 2500
-        }
+        },
+        "w": 360
       },
       {
         "id": "n7",
@@ -88,12 +94,13 @@
           "voices": "2",
           "nameA": "Jean",
           "nameB": "Margot"
-        }
+        },
+        "w": 360
       },
       {
         "id": "n8",
         "type": "narration.speech",
-        "x": 374,
+        "x": 454,
         "y": 1426,
         "params": {
           "enabled": true,
@@ -105,32 +112,36 @@
           "voiceIdA": "pNInz6obpgDQGcFmaJgB",
           "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
           "model": "eleven_multilingual_v2"
-        }
+        },
+        "w": 360
       },
       {
         "id": "w1",
         "type": "world.virtual",
-        "x": 700,
+        "x": 1274,
         "y": 94,
-        "params": {}
+        "params": {},
+        "w": 360
       },
       {
         "id": "p1",
         "type": "sim.player",
-        "x": 1000,
+        "x": 454,
         "y": 94,
         "params": {
           "color": "w"
-        }
+        },
+        "w": 360
       },
       {
         "id": "p2",
         "type": "sim.player",
-        "x": 1000,
-        "y": 300,
+        "x": 864,
+        "y": 94,
         "params": {
           "color": "b"
-        }
+        },
+        "w": 360
       }
     ],
     "edges": [
@@ -274,7 +285,7 @@
         "color": "#f2b84b",
         "x": 20,
         "y": 30,
-        "w": 658,
+        "w": 2048,
         "h": 388
       },
       {
@@ -283,7 +294,7 @@
         "color": "#3fb59a",
         "x": 20,
         "y": 474,
-        "w": 988,
+        "w": 1228,
         "h": 388
       },
       {
@@ -292,7 +303,7 @@
         "color": "#9a78e0",
         "x": 20,
         "y": 918,
-        "w": 328,
+        "w": 408,
         "h": 388
       },
       {
@@ -301,7 +312,7 @@
         "color": "#62c27a",
         "x": 20,
         "y": 1362,
-        "w": 658,
+        "w": 818,
         "h": 388
       }
     ]

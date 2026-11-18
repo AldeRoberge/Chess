@@ -113,17 +113,17 @@ export function boot(root: HTMLElement): Boot {
         <button role="tab" data-rtab="view" aria-selected="false">View</button>
         <button role="tab" data-rtab="tools" aria-selected="false">Tools</button>
         <div class="spacer"></div>
+        <div class="chips" id="hud"></div>
+        <div class="chips" id="buildchips"></div>
         <button id="scenpause" class="scen-pause" type="button" disabled aria-label="Pause scenario" data-tip="Pause scenario" data-tip-body="Holds the scenario player between moves while a game is replaying. Press again to resume."><span class="lbl">❚❚ Pause</span></button>
         <div class="chips" id="hist">
           <button id="hudundo" class="chip" type="button" disabled aria-label="Undo" data-act="undo" data-tip="Undo" data-tip-keys="Ctrl,Z" data-tip-body="Step back through your edits to the workflow."></button>
           <button id="hudredo" class="chip" type="button" disabled aria-label="Redo" data-act="redo" data-tip="Redo" data-tip-keys="Ctrl,Y" data-tip-body="Bring back an edit you undid."></button>
         </div>
-        <div class="chips" id="hud"></div>
         <div class="rdrop hud-more">
           <button id="hudmore" class="chip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="More stats" data-tip="More stats" data-tip-body="Healthy readings (green) are kept here. Anything that needs attention stays on the bar."><span>⋯</span></button>
           <div class="rmenu hud-menu" id="hudmenu" role="menu" hidden></div>
         </div>
-        <div class="chips" id="buildchips"></div>
       </nav>
       <div class="ribbon" role="tabpanel">
         <div class="rpane on" data-rpane="home">
@@ -347,7 +347,7 @@ export function boot(root: HTMLElement): Boot {
 
   const hud = document.getElementById("hud")!, sub = document.getElementById("sub")!;
   // ---- top bar: healthy readings live under ⋯; the Pause button holds a running scenario
-  const hudMore = document.getElementById("hudmore")!, hudMenu = document.getElementById("hudmenu")!;
+  const hudMore = document.getElementById("hudmore") as HTMLButtonElement, hudMenu = document.getElementById("hudmenu")!;
   const setHudMenu = (open: boolean) => { hudMenu.hidden = !open; hudMore.setAttribute("aria-expanded", String(open)); };
   hudMore.onclick = (e) => { e.stopPropagation(); setHudMenu(hudMenu.hidden === true); };
   document.addEventListener("click", () => setHudMenu(false));
@@ -407,7 +407,7 @@ export function boot(root: HTMLElement): Boot {
       hud.innerHTML = items.filter(needsAttention).map((c) => c.html).join("");
       const quiet = items.filter((c) => !needsAttention(c));
       hudMenu.innerHTML = quiet.map((c) => c.html).join("");
-      hudMore.hidden = quiet.length === 0;
+      hudMore.disabled = quiet.length === 0; // stays in place, just grayed out, so nothing shifts
       if (!quiet.length) setHudMenu(false);
       syncHistChips(); syncScenarioPause();
       const l = bus.lines[bus.lines.length - 1];

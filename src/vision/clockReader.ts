@@ -159,7 +159,17 @@ export function readDial(frame: GrayFrame, quad: Pt[], flagHour = 12): ClockRead
   return { ms: total, conf, sigmaMs: 30000, text: `${Math.floor(left)}:${String(Math.floor((left % 1) * 60)).padStart(2, "0")}` };
 }
 
-export function readClock(kind: ClockKind, frame: GrayFrame, quad: Pt[], flagHour = 12): ClockRead {
-  try { return kind === "lcd" ? readLcd(frame, quad) : kind === "phone" ? readPhone(frame, quad) : readDial(frame, quad, flagHour); }
+/** Camera type unknown: try each reader and keep the most certain plausible one. The dial is held to a higher bar since it can see hands in noise. */
+export function readAuto(frame: GrayFrame, quad: Pt[], flagHour = 12): ClockRead {
+  let best = none();
+  for (const k of ["lcd", "phone", "analog"] as ClockKind[]) {
+    const r = readClock(k, frame, quad, flagHour);
+    if (r.ms !== null && r.conf >= (k === "analog" ? 0.5 : 0.3) && r.conf > best.conf) best = r;
+  }
+  return best;
+}
+
+export function readClock(kind: ClockKind | "auto", frame: GrayFrame, quad: Pt[], flagHour = 12): ClockRead {
+  try { if (kind === "auto") return readAuto(frame, quad, flagHour); return kind === "lcd" ? readLcd(frame, quad) : kind === "phone" ? readPhone(frame, quad) : readDial(frame, quad, flagHour); }
   catch { return none(); } // degenerate quad
 }

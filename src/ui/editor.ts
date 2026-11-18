@@ -540,7 +540,13 @@ export class NodeEditor {
   }
 
   private wirePath(a: { x: number; y: number }, b: { x: number; y: number }) {
-    const d = Math.max(40, Math.abs(b.x - a.x) * 0.5);
+    // Handle length sets how rounded the curve is. Forward wires get a gentle S; wires that run backwards
+    // (target left of source) get long handles that grow with the vertical gap too, so they swing out in a wide
+    // round arc instead of a tight hairpin.
+    const dx = b.x - a.x, dy = Math.abs(b.y - a.y);
+    const d = dx >= 0
+      ? Math.max(60, dx * 0.5)
+      : Math.min(600, Math.max(120, -dx * 0.5 + dy * 0.6 + 80));
     return `M${a.x},${a.y} C${a.x + d},${a.y} ${b.x - d},${b.y} ${b.x},${b.y}`;
   }
 

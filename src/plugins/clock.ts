@@ -24,7 +24,7 @@ const reader: NodeSpec<ClockState> = {
   inputs: [{ id: "frame", type: "frame" }, { id: "game", type: "game" }],
   outputs: [{ id: "clock", type: "clock" }, { id: "events", type: "event" }],
   params: [
-    { id: "kind", kind: "select", label: "Clock type", options: ["manual", "lcd", "phone", "analog"], value: "manual" },
+    { id: "kind", kind: "select", label: "Clock type", options: ["auto", "lcd", "phone", "analog", "manual"], value: "auto" },
     { id: "control", kind: "text", label: "Time control", value: "10+0" },
     { id: "whiteBox", kind: "text", label: "White display", value: fmtCorners(rect(20, 20, 130, 44)), quad: { names: ["tl", "tr", "br", "bl"], grid: 1 } },
     { id: "blackBox", kind: "text", label: "Black display", value: fmtCorners(rect(170, 20, 130, 44)), quad: { names: ["tl", "tr", "br", "bl"], grid: 1 } },
@@ -58,7 +58,7 @@ const reader: NodeSpec<ClockState> = {
     s.lastPly = ply;
 
     // camera readings, one per camera frame
-    const kind = String(params.kind) as "manual" | ClockKind;
+    const kind = String(params.kind) as "manual" | "auto" | ClockKind;
     s.frame = frame ?? null;
     if (kind !== "manual" && frame && frame.t !== s.lastT) {
       s.lastT = frame.t;
@@ -113,7 +113,7 @@ const reader: NodeSpec<ClockState> = {
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, [160, 100], (pw, ph) => {
-      drawFrame(ctx, pw, ph, s.frame, "manual clock");
+      drawFrame(ctx, pw, ph, s.frame, "clock");
       ctx.fillStyle = "rgba(5,10,20,.72)"; ctx.fillRect(0, 0, pw, ph);
       if (s.frame) for (const side of SIDES) { const q = s.quads[side]; if (!q) continue; ctx.strokeStyle = side === "w" ? "#ffd35a" : "#7fd4ff"; ctx.beginPath(); q.forEach((p, i) => { const x = (p.x / s.frame!.width) * pw, y = (p.y / s.frame!.height) * ph; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); ctx.stroke(); }
       const e = s.est; if (!e) return;

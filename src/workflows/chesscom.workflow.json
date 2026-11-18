@@ -8,18 +8,19 @@
       {
         "id": "n1",
         "type": "vision.fuse",
-        "x": 704,
-        "y": 538,
+        "x": 864,
+        "y": 878,
         "params": {
           "staleMs": 600,
           "handMotion": 0.08
-        }
+        },
+        "w": 360
       },
       {
         "id": "n2",
         "type": "source.synthetic",
-        "x": 44,
-        "y": 94,
+        "x": 454,
+        "y": 434,
         "params": {
           "online": true,
           "cam": "A",
@@ -28,13 +29,14 @@
           "gradient": 0.15,
           "shadows": true,
           "fps": 8
-        }
+        },
+        "w": 360
       },
       {
         "id": "n3",
         "type": "vision.boardReader",
         "x": 44,
-        "y": 538,
+        "y": 878,
         "params": {
           "cam": "A",
           "corners": "142,84;338,84;352,285;128,285",
@@ -42,13 +44,14 @@
           "weight": 1,
           "autoCal": true,
           "learn": false
-        }
+        },
+        "w": 360
       },
       {
         "id": "n6",
         "type": "source.synthetic",
-        "x": 374,
-        "y": 94,
+        "x": 864,
+        "y": 434,
         "params": {
           "online": true,
           "cam": "B",
@@ -57,13 +60,14 @@
           "gradient": 0.15,
           "shadows": true,
           "fps": 8
-        }
+        },
+        "w": 360
       },
       {
         "id": "n7",
         "type": "vision.boardReader",
-        "x": 374,
-        "y": 538,
+        "x": 454,
+        "y": 878,
         "params": {
           "cam": "B",
           "corners": "259,309;106,192;226,80;369,164",
@@ -71,61 +75,66 @@
           "weight": 1,
           "autoCal": true,
           "learn": false
-        }
+        },
+        "w": 360
       },
       {
         "id": "n10",
         "type": "vision.stabilize",
-        "x": 1034,
-        "y": 538,
+        "x": 1274,
+        "y": 878,
         "params": {
           "memory": 0.8,
           "hysteresis": 3,
           "settleMs": 700,
           "holdOnHand": true
-        }
+        },
+        "w": 360
       },
       {
         "id": "n11",
         "type": "game.tracker",
-        "x": 44,
-        "y": 982,
+        "x": 454,
+        "y": 1322,
         "params": {
           "confirm": 2,
           "maxCost": 0.8,
           "promotion": "q",
           "resync": false
-        }
+        },
+        "w": 360
       },
       {
         "id": "n12",
         "type": "experience.director",
-        "x": 374,
-        "y": 982,
+        "x": 44,
+        "y": 1322,
         "params": {
           "dwellMs": 1500,
           "introMs": 6000,
           "outroMs": 8000,
           "preset": "human",
           "presetElo": "1000"
-        }
+        },
+        "w": 360
       },
       {
         "id": "n14",
         "type": "narration.narrator",
-        "x": 374,
-        "y": 1426,
+        "x": 454,
+        "y": 1766,
         "params": {
           "voices": "2",
           "nameA": "Jean",
           "nameB": "Margot"
-        }
+        },
+        "w": 360
       },
       {
         "id": "n15",
         "type": "narration.ai",
-        "x": 704,
-        "y": 1426,
+        "x": 864,
+        "y": 1766,
         "params": {
           "provider": "openai",
           "aiKey": "",
@@ -133,13 +142,14 @@
           "voices": "2",
           "nameA": "Jean",
           "nameB": "Margot"
-        }
+        },
+        "w": 360
       },
       {
         "id": "n16",
         "type": "narration.speech",
-        "x": 44,
-        "y": 1426,
+        "x": 1274,
+        "y": 1766,
         "params": {
           "enabled": true,
           "volume": 0.9,
@@ -150,13 +160,14 @@
           "voiceIdA": "pNInz6obpgDQGcFmaJgB",
           "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
           "model": "eleven_multilingual_v2"
-        }
+        },
+        "w": 360
       },
       {
         "id": "n17",
         "type": "scene.cues",
-        "x": 1034,
-        "y": 1426,
+        "x": 1684,
+        "y": 1766,
         "params": {
           "scene": "(auto)",
           "hour": -1,
@@ -164,84 +175,93 @@
           "snow": -1,
           "thunder": false,
           "rules": ""
-        }
+        },
+        "w": 360
       },
       {
         "id": "n18",
         "type": "scene.output",
-        "x": 1364,
-        "y": 1426,
+        "x": 44,
+        "y": 1766,
         "params": {
           "audio": true,
           "dmx": false,
           "dmxUrl": "ws://127.0.0.1:8787",
           "universe": 0
-        }
+        },
+        "w": 360
       },
       {
         "id": "n23",
         "type": "sim.person",
-        "x": 704,
+        "x": 44,
         "y": 94,
         "params": {
           "seated": false
-        }
+        },
+        "w": 360
       },
       {
         "id": "n41",
         "type": "sim.pose",
-        "x": 1034,
+        "x": 454,
         "y": 94,
         "params": {
           "show": true
-        }
+        },
+        "w": 360
       },
       {
         "id": "n42",
         "type": "sim.scenario",
-        "x": 1364,
+        "x": 864,
         "y": 94,
         "params": {
           "scenario": "scholars-mate",
           "play": false,
           "pauseMs": 2500
-        }
+        },
+        "w": 360
       },
       {
         "id": "n44",
         "type": "game.chesscom",
-        "x": 704,
-        "y": 982,
+        "x": 864,
+        "y": 1322,
         "params": {
           "username": "",
           "gameUrl": "",
           "poll": 8
-        }
+        },
+        "w": 360
       },
       {
         "id": "w1",
         "type": "world.virtual",
-        "x": 700,
-        "y": 94,
-        "params": {}
+        "x": 44,
+        "y": 434,
+        "params": {},
+        "w": 360
       },
       {
         "id": "p1",
         "type": "sim.player",
-        "x": 1000,
+        "x": 1274,
         "y": 94,
         "params": {
           "color": "w"
-        }
+        },
+        "w": 360
       },
       {
         "id": "p2",
         "type": "sim.player",
-        "x": 1000,
-        "y": 300,
+        "x": 1684,
+        "y": 94,
         "params": {
           "color": "b"
-        }
+        },
+        "w": 360
       }
     ],
     "edges": [
@@ -605,16 +625,16 @@
         "color": "#f2b84b",
         "x": 20,
         "y": 30,
-        "w": 1648,
-        "h": 388
+        "w": 2048,
+        "h": 728
       },
       {
         "id": "g2",
         "title": "Analysis",
         "color": "#3fb59a",
         "x": 20,
-        "y": 474,
-        "w": 1318,
+        "y": 814,
+        "w": 1638,
         "h": 388
       },
       {
@@ -622,8 +642,8 @@
         "title": "Game & experience",
         "color": "#9a78e0",
         "x": 20,
-        "y": 918,
-        "w": 988,
+        "y": 1258,
+        "w": 1228,
         "h": 388
       },
       {
@@ -631,8 +651,8 @@
         "title": "Output: sound & narration",
         "color": "#62c27a",
         "x": 20,
-        "y": 1362,
-        "w": 1648,
+        "y": 1702,
+        "w": 2048,
         "h": 388
       }
     ]

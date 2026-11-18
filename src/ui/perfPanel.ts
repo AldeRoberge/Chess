@@ -42,7 +42,7 @@ export class PerfPanel {
   private colW: number[] = [];
   private open = new Set<string>();
   private lastDraw = 0;
-  private lastTable = 0;
+  private lastTable = -Infinity;
   private boxes: FlameBox[] = [];
   private total = 1;
   private base: Map<string, number> | null = null;

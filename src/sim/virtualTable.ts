@@ -14,6 +14,8 @@ export type TableAsk = TableAction extends infer A ? (A extends { id: number } ?
 
 /** Length of one handshake (ms). */
 export const SHAKE_MS = 2800;
+/** Time to reach in (and to pull back out) at either end of a handshake (ms). */
+const SHAKE_REACH_MS = 700;
 /** A fist bangs the table at 300, 800 and 1300 ms; the last bang knocks the pieces loose. */
 const FIST_FIRST_MS = 300, FIST_HIT_MS = 1300, FIST_DONE_MS = 2100;
 /** How long the pieces keep tumbling after the bang (ms). */
@@ -112,11 +114,18 @@ export class VirtualTable {
   /** Arms for the handshake and the fist; null when neither is happening. */
   private fxPoses(): ArmPose[] | null {
     if (this.shakeAt !== null && this.clock - this.shakeAt < SHAKE_MS) {
-      // both players reach over the middle of the board with their right hands and pump twice
-      const s = (this.clock - this.shakeAt) / 1000, bob = 0.015 * Math.sin(s * Math.PI * 4);
+      // both players glide their right hands to the middle of the board, clasp, pump three times, then let go and go back
+      const e = this.clock - this.shakeAt;
+      const w = e < SHAKE_REACH_MS ? ease(e / SHAKE_REACH_MS) : e > SHAKE_MS - SHAKE_REACH_MS ? ease((SHAKE_MS - e) / SHAKE_REACH_MS) : 1;
+      const clasp = e >= SHAKE_REACH_MS * 0.8 && e <= SHAKE_MS - SHAKE_REACH_MS * 0.8 ? 1 : 0;
+      const pumping = Math.min(1, Math.max(0, Math.min(e - SHAKE_REACH_MS, SHAKE_MS - SHAKE_REACH_MS - e) / 200));
+      const bob = 0.02 * pumping * Math.sin(((e - SHAKE_REACH_MS) / 1000) * Math.PI * 4.5);
       const poses: ArmPose[] = [];
       for (const side of [1, -1] as const) {
-        poses.push(armPose({ side, hand: "R", tip: [0, TABLE_Y + 0.12 + bob, side * 0.06], grasp: 0, active: true }));
+        const meet: V3 = [0, TABLE_Y + 0.13 + bob, side * 0.035]; // the two hands meet on the centre line, a thumb's width apart
+        const at = lerp3(restTarget(side, "R"), meet, w);
+        at[1] += 0.08 * Math.sin(Math.PI * w) * (1 - w); // a little arc on the way in and out instead of a straight line
+        poses.push(armPose({ side, hand: "R", tip: at, grasp: 0.55 * clasp, active: true }));
         poses.push(armPose({ side, hand: "L", tip: restTarget(side, "L"), grasp: 0, active: false }));
       }
       return poses;

@@ -6,8 +6,8 @@ import type { NodeSpec, Plugin } from "../core/types";
 import { bus } from "../core/bus";
 import { applyH, boardToImage, invertH } from "../vision/homography";
 import { sqName } from "../vision/types";
-import { brief, CAM_PRESETS, drawBoard, drawFrame, fmtCorners, parseCorners, withDetail, type DetailRow } from "./shared";
-import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pct, tone, visualSize } from "./hover";
+import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, parseCorners, withDetail, type DetailRow } from "./shared";
+import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
 
 interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number }
@@ -61,6 +61,8 @@ const reader: NodeSpec<ReaderState> = {
     }
     const m = s.sampler.measure(f)[sq], ref = s.sampler.ref[sq], thr = ref * cfg.threshold, d = m - ref;
     rows.unshift({ label: "Square", value: `${sqName(sq)} (${isLightSquare(sq) ? "light" : "dark"})` });
+    const tracked = bus.game?.fen ? fenPieces(bus.game.fen)[sq] ?? null : undefined;
+    if (tracked !== undefined) rows.splice(1, 0, { label: "Tracked piece", value: pieceLabel(tracked) });
     if (s.sampler.calibrated && !Number.isNaN(m)) {
       rows.push({ label: "Square brightness", value: `${Math.round(m)} vs ${Math.round(ref)} when empty` });
       rows.push({ label: "Change", value: `${d >= 0 ? "+" : ""}${Math.round(d)} (needs ±${Math.round(thr)})`, bar: Math.min(1, Math.abs(d) / (thr * 2 || 1)), tone: Math.abs(d) > thr ? "ok" : "warn" });
@@ -71,6 +73,10 @@ const reader: NodeSpec<ReaderState> = {
       if (occ > 0.5) rows.push({ label: "Piece colour", value: `${white > 0.5 ? "white" : "black"} ${pct(white > 0.5 ? white : 1 - white)}`, bar: white > 0.5 ? white : 1 - white });
       rows.push({ label: "Hand / motion here", value: o.handSquares[sq] ? "yes, anomaly" : "no", tone: o.handSquares[sq] ? "bad" : "ok" });
       rows.push({ label: "Camera quality", value: pct(o.quality), bar: o.quality, tone: tone(o.quality) });
+      if (tracked !== undefined) {
+        const seen = occ > 0.5, agree = (tracked !== null) === seen && (!tracked || (tracked === tracked.toUpperCase()) === white > 0.5);
+        rows.push({ label: "Reader vs. game", value: agree ? "agree" : "disagree", tone: agree ? "ok" : "bad" });
+      }
     }
     return {
       title: sqName(sq), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4",
