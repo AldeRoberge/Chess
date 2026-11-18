@@ -363,7 +363,7 @@ describe("briefing: build and CI chips", () => {
     const { w } = make(); w.mount(document.body); go(w, briefing());
     await vi.waitFor(() => expect(w.root.querySelector(".halo-build")!.textContent).toContain("CI passed"));
     const chips = [...w.root.querySelectorAll<HTMLElement>(".halo-build .chip")];
-    expect(chips[0].textContent).toMatch(/^build .* ago · [0-9a-f]{7} · latest$/);
+    expect(chips[0].textContent).toMatch(/^build (just now|\d+ (min|h|d) ago) · [0-9a-f]{7} · latest$/);
     expect(chips[1].tagName).toBe("A"); expect(chips[1].getAttribute("href")).toBe("https://github.com/AldeRoberge/Chess/actions/runs/9");
     expect(chips[1].className).toContain("ok");
   });
