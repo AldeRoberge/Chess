@@ -12,7 +12,20 @@
 .kpi.warn{border-left-color:var(--amber)}.kpi.bad{border-left-color:var(--bad)}.kpi.bad b{color:var(--bad)}.kpi.warn b{color:var(--amber)}
 .perf canvas.perf-timeline{display:block;cursor:pointer}
 .perf-flame-wrap{position:relative}
-.perf canvas.perf-flame{display:block;cursor:pointer}
+.perf canvas.perf-flame{display:block;width:100%;cursor:grab;touch-action:none;outline:none;border-radius:4px}
+.perf canvas.perf-flame.drag{cursor:grabbing}
+.perf canvas.perf-flame:focus-visible{box-shadow:0 0 0 1px var(--signal)}
+.perf canvas.perf-mini{display:block;width:100%;margin-top:4px;border:1px solid var(--line);border-radius:4px;cursor:grab;touch-action:none}
+.perf canvas.perf-mini:active{cursor:grabbing}
+.perf-frow{display:flex;align-items:center;gap:10px;min-width:0}
+.perf-frow .perf-crumb{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.perf-crumb-path{color:var(--text)}
+.perf-zbar{display:inline-flex;flex:none;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.perf-zbar button{display:inline-grid;place-items:center;width:28px;height:24px;padding:0;border:0;border-radius:0;background:var(--ink-1);color:var(--text-dim);cursor:pointer}
+.perf-zbar button+button{border-left:1px solid var(--line)}
+.perf-zbar button:hover{background:var(--ink-3);color:var(--text)}
+.perf-zbar button:focus-visible{outline:1px solid var(--signal);outline-offset:-1px}
+.perf-tip .perf-hint{color:var(--signal);margin-top:2px}
 .perf-crumb{font:400 var(--t-xs)/1.4 var(--font-ui);color:var(--text-dim)}
 .perf-crumb a{color:var(--signal);text-decoration:none}
 .perf-crumb .link{padding:0 4px;border:0;background:none;color:var(--signal);text-decoration:underline;cursor:pointer}

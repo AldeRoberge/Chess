@@ -31,7 +31,7 @@ const pose: NodeSpec<PoseState> = {
     { id: "fps", kind: "number", label: "Pose FPS", min: 1, max: 15, step: 1, value: 6 },
   ],
   init: () => ({ lm: null, loading: false, canvas: null, last: 0, rr: 0, joints: [[], [], []], poses: [], seats: [], pointers: [], err: "", failedAt: -1e9 }),
-  process(inputs, { params, state, now, setFidelity }) {
+  process(inputs, { params, state, now, setFidelity, span }) {
     if (!params.enabled) { setFidelity(null); return { poses: [], seats: [], pointers: [] }; }
     if (!state.lm && !state.loading && now - state.failedAt > 30000) { // a failed load retries every 30 s, not every frame
       state.loading = true;
@@ -51,10 +51,13 @@ const pose: NodeSpec<PoseState> = {
       else {
         const c = (state.canvas ??= document.createElement("canvas"));
         c.width = f.width; c.height = f.height;
-        const ctx = c.getContext("2d")!, img = ctx.createImageData(f.width, f.height);
-        for (let i = 0; i < f.data.length; i++) img.data.fill(f.data[i], i * 4, i * 4 + 3), (img.data[i * 4 + 3] = 255);
-        ctx.putImageData(img, 0, 0);
-        const r = state.lm.detect(c);
+        const ctx = c.getContext("2d")!;
+        span("upload frame", () => {
+          const img = ctx.createImageData(f.width, f.height);
+          for (let i = 0; i < f.data.length; i++) img.data.fill(f.data[i], i * 4, i * 4 + 3), (img.data[i * 4 + 3] = 255);
+          ctx.putImageData(img, 0, 0);
+        });
+        const r = span("pose detect (MediaPipe)", () => state.lm.detect(c));
         const lm = r.landmarks?.[0];
         state.joints[k] = lm ? COCO_FROM_BLAZE.map((bi) => (lm[bi].visibility > 0.4 ? { x: lm[bi].x * f.width, y: lm[bi].y * f.height } : null)) : [];
       }
@@ -62,13 +65,15 @@ const pose: NodeSpec<PoseState> = {
     // triangulate every joint seen by >= 2 calibrated cameras; single-camera feet land on the floor plane
     const mats: (ProjMat | null)[] = ["cam1", "cam2", "cam3"].map((n) => { const c = parseCam(String(params[n])); return c ? cameraMatrix(c[0], c[1], c[2], 480, 360) : null; });
     const joints: ([number, number, number] | null)[] = [];
-    for (let j = 0; j < 17; j++) {
-      const Ps: ProjMat[] = [], pts: Pt[] = [];
-      state.joints.forEach((js, k) => { const p = js[j]; if (p && mats[k] && frames[k]) { Ps.push(mats[k]!); pts.push(p); } });
-      let w = Ps.length >= 2 ? triangulate(Ps, pts) : null;
-      if (!w && Ps.length === 1 && (j === 15 || j === 16)) w = rayToPlane([0, 0, 0], Ps[0], pts[0], 0);
-      joints.push(w);
-    }
+    span("triangulate joints", () => {
+      for (let j = 0; j < 17; j++) {
+        const Ps: ProjMat[] = [], pts: Pt[] = [];
+        state.joints.forEach((js, k) => { const p = js[j]; if (p && mats[k] && frames[k]) { Ps.push(mats[k]!); pts.push(p); } });
+        let w = Ps.length >= 2 ? triangulate(Ps, pts) : null;
+        if (!w && Ps.length === 1 && (j === 15 || j === 16)) w = rayToPlane([0, 0, 0], Ps[0], pts[0], 0);
+        joints.push(w);
+      }
+    });
     const seen = joints.filter(Boolean).length;
     state.poses = seen > 4 ? [{ id: "p1", joints }] : [];
     setFidelity(seen / 17);

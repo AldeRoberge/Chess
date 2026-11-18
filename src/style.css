@@ -84,6 +84,10 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne-node.wide .ne-params{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:5px 14px}
 .ne-grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 55%,var(--line-hi) 55% 65%,transparent 65% 77%,var(--line-hi) 77% 87%,transparent 87%);border-radius:0 0 6px 0}
 .ne-node.sel{border-color:var(--signal)}.ne-node.bypass{opacity:.8}
+/* With a selection, the selected nodes stay bright and everything else is dimmed back. */
+.ne-node{transition:opacity .15s}
+.ne.has-sel .ne-node:not(.sel){opacity:.35}
+.ne.has-sel .ne-node.sel{opacity:1}
 .ne-head{display:grid;grid-template-columns:26px auto 1fr;align-items:center;column-gap:8px;row-gap:3px;padding:8px 8px 7px 12px;border-radius:5px 5px 0 0;background:var(--ink-2);box-shadow:inset 3px 0 var(--cat);cursor:grab;user-select:none}
 .ne-ico{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:6px;color:var(--cat);background:color-mix(in srgb,var(--cat) 16%,transparent);border:1px solid color-mix(in srgb,var(--cat) 40%,transparent)}.ne-ico .ic{display:block}
 .ne-ico{grid-column:1;grid-row:1}
@@ -133,7 +137,10 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .mc-lab{font-size:11px;white-space:nowrap}
 .ne-param-sep{margin:6px 0 2px;padding:2px 6px;font:600 var(--t-xs,11px) var(--font-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--signal-hi);border-bottom:1px solid color-mix(in srgb,var(--signal) 40%,transparent)}
 .ne-pv{min-width:32px;text-align:right;color:var(--text);font:400 var(--t-sm) var(--font-mono)}
-.ne-err{color:var(--bad);font-size:var(--t-xs);padding:0 10px;word-break:break-all}
+.ne-err{color:var(--bad);font-size:var(--t-xs);padding:0 10px}
+.ne-err:not(:empty){display:flex;flex-direction:column;gap:2px;margin:6px 10px;padding:6px 8px;border-left:3px solid var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent);border-radius:3px;overflow-wrap:anywhere}
+.ne-err-h{font-weight:600}.ne-err-m{color:var(--text)}.ne-err-t{color:var(--text-dim);font-style:normal}
+.ne-node.errored{border-color:var(--bad);outline:2px solid var(--bad);outline-offset:2px;box-shadow:0 0 14px color-mix(in srgb,var(--bad) 55%,transparent)}
 .ne-palette{position:absolute;z-index:9;width:250px;background:var(--ink-2);border:1px solid var(--line-hi);border-radius:6px;box-shadow:0 14px 36px var(--shadow);padding:6px}
 .ne-search{width:100%;background:var(--ink-0);border:1px solid var(--line);color:var(--text);border-radius:3px;padding:7px 9px;margin-bottom:4px}
 .ne-list{max-height:300px;overflow:auto}
@@ -165,6 +172,8 @@ header button{display:inline-flex;align-items:center;gap:7px}
 .rtabs>button:hover{background:var(--ink-2);border-color:transparent;color:var(--text)}
 .rtabs>button.on{background:var(--ink-2);border-color:var(--line);color:var(--text);font-weight:600;margin-bottom:-1px;padding-bottom:7px}
 .rtabs>button.on::before{content:"";position:absolute;left:8px;right:8px;top:-1px;height:2px;border-radius:2px;background:var(--signal)}
+.rtabs>button:focus{outline:none;box-shadow:none}
+.rtabs>button:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
 .rtabs .chips{margin:0 0 4px 12px}
 .ribbon{grid-row:2;grid-column:1/-1;background:var(--ink-2);border-top:1px solid var(--line);padding:6px 12px;min-height:78px}
 #app>header{position:relative;z-index:40}

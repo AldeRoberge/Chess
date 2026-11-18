@@ -75,6 +75,10 @@ const P: Record<string, string> = {
   palette: '<path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-1 1.5-2-.6-1.2.2-2.5 1.6-2.5H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3z"/><circle cx="8" cy="11" r=".8"/><circle cx="12" cy="7.5" r=".8"/><circle cx="16" cy="11" r=".8"/>',
   step: '<path d="M3 17h5V7h5v10h5M18 17h3"/>',
   scale: '<path d="M12 4v16M6 20h12M5 8h14M5 8l-2.5 6a3 3 0 0 0 5 0zM19 8l-2.5 6a3 3 0 0 0 5 0z"/>',
+  webcam: '<circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.2"/><path d="M8 21h8M12 15v6"/>',
+  vcam: '<path d="M3 8h12v8H3zM15 11l6-3v8l-6-3"/><path d="M6 5.5 9 4l3 1.5"/>',
+  projector: '<rect x="3" y="8" width="14" height="8" rx="2"/><circle cx="10" cy="12" r="2"/><path d="M20 9l1.5-1M20 12h2M20 15l1.5 1M7 19v-3M13 19v-3"/>',
+  speaker: '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="14.5" r="3.2"/><circle cx="12" cy="7" r="1"/>',
 };
 
 const PARAM_ICON: Record<string, string> = {
@@ -93,13 +97,13 @@ export const paramIcon = (id: string, kind: string, size = 13): string => icon(P
 
 /** Icon per node type, falling back to its category. */
 const NODE_ICON: Record<string, string> = {
-  "source.webcam": "camera", "source.synthetic": "cube",
+  "source.webcam": "webcam", "source.synthetic": "vcam",
   "vision.boardReader": "eye", "vision.fuse": "fuse", "vision.stabilize": "wave",
   "game.tracker": "board", "game.engine": "knight", "game.chesscom": "knight",
   "narration.narrator": "chat", "narration.ai": "brain", "narration.speech": "voice",
-  "scene.cues": "lamp", "scene.output": "sound",
+  "scene.cues": "lamp", "scene.output": "speaker",
   "tracking.pose": "people", "sim.pose": "walk", "sim.person": "opponent", "sim.scenario": "film", "sim.player": "opponent", "world.virtual": "cube",
-  "experience.director": "spark", "clock.reader": "clock", "clock.overlay": "clock",
+  "experience.director": "spark", "clock.reader": "clock", "clock.overlay": "projector",
 };
 const CAT_ICON: Record<string, string> = { Source: "camera", Vision: "eye", Game: "knight", Narration: "chat", Scene: "lamp", Output: "sound", Tracking: "people", Experience: "spark" };
 export const nodeIcon = (type: string, category: string, size = 16): string => icon(NODE_ICON[type] ?? CAT_ICON[category] ?? "spark", size);

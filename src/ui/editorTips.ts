@@ -131,7 +131,7 @@ export function editorTips(graph: Graph): TipResolver {
     const st = graph.stats.get(n.id);
     const wired = (side: "from" | "to", ports: number) => `${new Set(graph.edges.filter((e) => e[side].node === n.id).map((e) => e[side].port)).size} / ${ports}`;
     const rows: NonNullable<Tip["rows"]> = [{ label: "Status", value: st?.error ? "error" : n.bypass ? "bypassed" : "running", tone: st?.error ? "bad" : n.bypass ? "warn" : "ok" }];
-    if (st?.error) rows.push({ label: "Error", value: st.error.length > 28 ? st.error.slice(0, 27) + "…" : st.error, tone: "bad" });
+    if (st?.error) { rows.push({ label: "Problem", value: st.error, tone: "bad" }); if (st.errorHint) rows.push({ label: "Try", value: st.errorHint }); }
     if (st?.fidelity != null) rows.push({ label: "Fidelity", value: pct(st.fidelity), bar: st.fidelity, tone: tone(st.fidelity) });
     if (st) rows.push({ label: "Time", value: `${st.ms.toFixed(2)} ms` });
     if (n.bypass) for (const [port, val] of Object.entries(graph.inputValues(n.id))) rows.push({ label: `In · ${port}`, value: describeValue(val) });

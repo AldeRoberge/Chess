@@ -25,18 +25,18 @@ const cues: NodeSpec<CueState> = {
   ],
   previewSize: [200, 112],
   init: () => ({ cues: new CueEngine(), rulesJson: "", r: new SceneRenderer(), last: 0, forced: "(auto)" }),
-  process(i, { params, state, now }) {
+  process(i, { params, state, now, span }) {
     const c = state.cues;
     if (state.rulesJson !== params.rules) {
       state.rulesJson = String(params.rules);
-      try { c.rules = state.rulesJson ? (JSON.parse(state.rulesJson) as CueRule[]) : DEFAULT_RULES; } catch { /* keep previous rules while typing */ }
+      span("parse rules", () => { try { c.rules = state.rulesJson ? (JSON.parse(state.rulesJson) as CueRule[]) : DEFAULT_RULES; } catch { /* keep previous rules while typing */ } });
     }
     const evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
-    if (evs.length) c.fire(evs, now);
+    if (evs.length) span("fire cues (events)", () => c.fire(evs, now));
     const forced = String(params.scene);
     if (forced !== state.forced) { state.forced = forced; if (forced !== "(auto)") c.setScene(forced as SceneId); }
     if (params.thunder) { c.fire([{ type: "capture", t: now, data: { captured: "q" } }], now); params.thunder = false; }
-    const fired = c.tick(now);
+    const fired = span("tick scene", () => c.tick(now));
     if (Number(params.hour) >= 0) c.state.timeOfDay = Number(params.hour);
     if (Number(params.rain) >= 0) c.state.rain = Number(params.rain);
     if (Number(params.snow) >= 0) c.state.snow = Number(params.snow);
@@ -69,7 +69,7 @@ const cues: NodeSpec<CueState> = {
 
 interface OutState { audio: AudioEngine; dmx: DmxSink; dmxOn: boolean }
 const sceneOut: NodeSpec<OutState> = {
-  type: "scene.output", title: "Audio + DMX Out", category: "Output",
+  type: "scene.output", title: "AUDIO + DMX OUT", category: "Output",
   inputs: [{ id: "scene", type: "scene" }, { id: "fired", type: "any" }], outputs: [],
   params: [
     { id: "audio", kind: "bool", label: "Ambient audio", value: true },
@@ -78,14 +78,15 @@ const sceneOut: NodeSpec<OutState> = {
     { id: "universe", kind: "number", label: "Universe", min: 0, max: 15, step: 1, value: 0 },
   ],
   init: () => ({ audio: new AudioEngine(), dmx: new DmxSink(), dmxOn: false }),
-  process({ scene, fired }, { params, state }) {
+  process({ scene, fired }, { params, state, span }) {
     const s = scene as SceneState | undefined;
     if (!s) return;
     state.audio.enabled = !!params.audio;
-    state.audio.follow(s);
-    for (const f of (fired as FiredAction[]) ?? []) state.audio.play(f.action);
+    span("audio follow scene", () => state.audio.follow(s));
+    const fl = (fired as FiredAction[]) ?? [];
+    if (fl.length) span("audio play cues", () => { for (const f of fl) state.audio.play(f.action); });
     if (params.dmx && !state.dmxOn) { state.dmx.url = String(params.dmxUrl); state.dmx.connect(); state.dmxOn = true; }
-    if (params.dmx) state.dmx.send(Number(params.universe), s.dmx);
+    if (params.dmx) span("DMX send", () => state.dmx.send(Number(params.universe), s.dmx));
   },
 };
 

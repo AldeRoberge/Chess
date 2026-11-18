@@ -68,7 +68,7 @@ describe("live frame updates", () => {
     g.connect({ node: a.id, port: "o" }, { node: b.id, port: "i" }); g.connect({ node: b.id, port: "o" }, { node: c.id, port: "i" });
     g.tick(1000); g.stats.get(a.id)!.fidelity = 0.5; ed.frame(1000);
     const paths = ed.root.querySelectorAll("svg.ne-wires path"); expect(paths).toHaveLength(2); expect([...paths].map((p) => p.getAttribute("class"))).toEqual(["part", "live"]); expect(paths[0].getAttribute("stroke")).toBe(PORT_COLOR.frame);
-    expect(node(ed, a.id).querySelector(".ne-ms")!.textContent).toMatch(/ms$/); expect(node(ed, a.id).querySelector(".ne-fid")!.textContent).toBe("50%"); expect(node(ed, oops.id).querySelector(".ne-err")!.textContent).toContain("broken");
+    expect(node(ed, a.id).querySelector(".ne-ms")!.textContent).toMatch(/ms$/); expect(node(ed, a.id).querySelector(".ne-fid")!.textContent).toBe("50%"); expect(node(ed, oops.id).querySelector(".ne-err")!.textContent).toContain("broken"); expect(node(ed, oops.id).classList.contains("errored")).toBe(true); expect(node(ed, a.id).classList.contains("errored")).toBe(false);
     expect(node(ed, b.id).querySelector(".ne-fid")!.classList.contains("none")).toBe(true); expect(painted).toHaveBeenCalled();
     // an empty-array output reads as idle
     g.outputs.set(b.id, { o: [] }); ed.frame(1500); expect([...ed.root.querySelectorAll("svg.ne-wires path")].map((p) => p.getAttribute("class"))).toEqual(["part", "idle"]);

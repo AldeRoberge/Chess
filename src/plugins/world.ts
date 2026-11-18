@@ -15,8 +15,8 @@ const world: NodeSpec<WorldState> = {
   inputs: [{ id: "white", type: "player", label: "White player" }, { id: "black", type: "player", label: "Black player" }],
   outputs: [{ id: "world", type: "world" }],
   init: () => ({ players: 0 }),
-  process({ white, black }, { now, state }) {
-    virtualTable.tick(now);
+  process({ white, black }, { now, state, span }) {
+    span("table physics tick", () => virtualTable.tick(now));
     state.players = [white, black].filter(Boolean).length;
     return { world: virtualTable };
   },
@@ -34,12 +34,12 @@ const player: NodeSpec<PlayerState> = {
   outputs: [{ id: "player", type: "player" }],
   params: [{ id: "color", kind: "select", label: "Plays", options: ["w", "b"], labels: ["♔ White", "♚ Black"], value: "w" }],
   init: () => ({ lastId: 0 }),
-  process({ actions }, { params, state, now }) {
+  process({ actions }, { params, state, now, span }) {
     const color = String(params.color) as "w" | "b";
     for (const a of ((actions as TableAction[] | undefined) ?? [])) {
       if (a.id <= state.lastId) continue; // each action is carried out once
       state.lastId = a.id;
-      performAction(virtualTable, a, color, now);
+      span("perform action", () => performAction(virtualTable, a, color, now));
     }
     const info: PlayerInfo = { color };
     return { player: info };

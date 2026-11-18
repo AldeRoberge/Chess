@@ -1,6 +1,8 @@
+import { mixer } from "../scene/mixer";
+
 export type SfxKind = "tick" | "ok" | "back" | "deny" | "launch";
 
-/** Menu sounds synthesised on the fly: short sine / square blips, console style. Silent until the first user gesture. */
+/** Menu sounds synthesised on the fly: short sine / square blips, console style. Silent until the first user gesture. Levels follow the global mixer's SFX bus. */
 export class Sfx {
   private ctx: AudioContext | null = null;
   muted = false;
@@ -16,14 +18,15 @@ export class Sfx {
     const ctx = this.ensure();
     if (!ctx) return;
     const t = ctx.currentTime + delay, o = ctx.createOscillator(), g = ctx.createGain();
+    const m = mixer.get(), level = gain * m.sfx * m.master;
     o.type = type; o.frequency.setValueAtTime(freq, t);
     if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.gain.setValueAtTime(level, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur + 0.02);
   }
 
   play(kind: SfxKind) {
-    if (this.muted) return;
+    if (this.muted || mixer.get().muted) return;
     switch (kind) {
       case "tick": this.blip(1320, 0.04, "sine", 0.05); break;
       case "ok": this.blip(660, 0.07, "square", 0.05); this.blip(990, 0.1, "square", 0.05, 0.07); break;

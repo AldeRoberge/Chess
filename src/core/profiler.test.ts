@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { aggregateBoxes, delta, frameBoxes, percentile, Profiler, slowestFrame, toTrace, type FrameRecord } from "./profiler";
+import { aggregateBoxes, delta, frameBoxes, panView, percentile, Profiler, slowestFrame, toTrace, zoomView, MIN_VIEW, type FrameRecord } from "./profiler";
 
 const frame = (spans: [string, number, number, number][]): FrameRecord => ({ at: 0, dur: 10, spans: spans.map(([name, depth, t0, dur]) => ({ name, depth, t0, dur })) });
 
@@ -60,6 +60,25 @@ describe("flame layout", () => {
     expect(by.tick.w).toBe(10); expect(by.tick.calls).toBe(2);
     expect(by.A.w).toBe(3); expect(by.B.w).toBe(4);
     expect(by.B.x).toBe(0); expect(by.A.x).toBe(4);
+  });
+
+  it("zooms around the anchor and keeps the view inside the graph", () => {
+    const v = zoomView({ a: 0, w: 1 }, 0.5, 0.5);
+    expect(v.w).toBeCloseTo(0.5); expect(v.a).toBeCloseTo(0.25);
+    // the point under the cursor stays put
+    const z = zoomView({ a: 0.2, w: 0.4 }, 0.5, 0.25);
+    expect(0.2 + 0.25 * 0.4).toBeCloseTo(z.a + 0.25 * z.w);
+    // zooming out never exceeds the whole graph, and zooming in stops at the minimum width
+    expect(zoomView({ a: 0.5, w: 0.5 }, 10, 0.5)).toEqual({ a: 0, w: 1 });
+    expect(zoomView({ a: 0, w: 1 }, 1e-12, 0.5).w).toBe(MIN_VIEW);
+    // anchored at the left edge the window never goes below zero
+    expect(zoomView({ a: 0, w: 1 }, 0.5, 0).a).toBe(0);
+  });
+
+  it("pans by a fraction of the visible width and clamps at both ends", () => {
+    expect(panView({ a: 0.25, w: 0.5 }, 0.5)).toEqual({ a: 0.5, w: 0.5 });
+    expect(panView({ a: 0.25, w: 0.5 }, 1).a).toBe(0.5);
+    expect(panView({ a: 0.25, w: 0.5 }, -1).a).toBe(0);
   });
 
   it("interpolates percentiles", () => {

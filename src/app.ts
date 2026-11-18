@@ -16,6 +16,7 @@ import { Graph } from "./core/graph";
 import { createRegistry } from "./plugins";
 import { startAudio } from "./plugins/scene";
 import { AudioEngine } from "./scene/audio";
+import { mixer, type Bus, type MixState } from "./scene/mixer";
 import { speakLine } from "./plugins/narration";
 import { buildGraphFromConfig, clearSetup, defaultSetup, loadSetup, saveSetup, type SetupConfig } from "./setup/config";
 import { listCameras, openCamera } from "./setup/devices";
@@ -63,7 +64,7 @@ export function boot(root: HTMLElement): Boot {
   }
   const setup = loadSetup();
   if (!graph.nodes.size) buildGraphFromConfig(graph, setup ?? defaultSetup());
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(graph.toJSON())); } catch { /* quota */ } };
+  const save = (json: GraphJSON = graph.toJSON()) => { try { localStorage.setItem(KEY, JSON.stringify(json)); } catch { /* quota */ } };
   const edits = new History<GraphJSON>(graph.toJSON());
   let dirty = false;
   const sig = () => `${graph.nodes.size}:${graph.edges.length}:${graph.groups.length}`;
@@ -102,7 +103,7 @@ export function boot(root: HTMLElement): Boot {
     return out;
   };
   /** Every edit: autosave, remember an undo step, mark the workflow as changed since the last backup. */
-  const persist = () => { save(); dirty = true; edits.record(graph.toJSON(), Date.now(), sig()); syncUndo(); };
+  const persist = () => { const json = graph.toJSON(); save(json); dirty = true; edits.record(json, Date.now(), sig()); syncUndo(); }; // one snapshot shared by autosave and undo
 
   const app = root;
   app.innerHTML = `
@@ -167,7 +168,8 @@ export function boot(root: HTMLElement): Boot {
         </div>
         <div class="rpane" data-rpane="tools">
           <div class="rgroup"><div class="rbtns">
-            <button id="audio" class="rb" data-tip="Sound" data-tip-body="Browsers keep audio locked until you click. This starts the thunder and ambience engine."><span class="ic-slot"></span><span class="lbl">Enable sound</span></button>
+            <button id="audio" class="rb" data-tip="Sound" data-tip-body="Browsers keep audio locked until you click. The first click starts the engine; after that it mutes and unmutes."><span class="ic-slot"></span><span class="lbl">Enable sound</span></button>
+            <button id="mixer" class="rb" data-tip="Mixer" data-tip-body="Levels for master, ambience, sound effects, music and narrators, plus mute."><span class="ic-slot"></span><span class="lbl">Mixer</span></button>
           </div><div class="rlabel">Experience</div></div>
         </div>
       </div>
@@ -250,8 +252,36 @@ export function boot(root: HTMLElement): Boot {
 
   table.seatCb = (seated) => { for (const n of graph.nodes.values()) if (n.type === "sim.person") n.params.seated = seated; };
   let soundOn = false;
-  const doSound = () => { startAudio(graph); soundOn = true; patchPrefs({ sound: true }); document.getElementById("audio")!.querySelector(".lbl")!.textContent = "Sound on"; refreshNext(true); };
-  document.getElementById("audio")!.onclick = doSound;
+  const soundLabel = () => { document.getElementById("audio")!.querySelector(".lbl")!.textContent = soundOn && !mixer.get().muted ? "Sound on" : "Sound off"; };
+  const doSound = () => { if (!soundOn) { startAudio(graph); soundOn = true; } mixer.setMuted(false); patchPrefs({ sound: true }); soundLabel(); refreshNext(true); };
+  const toggleSound = () => { if (!soundOn) { doSound(); return; } const muted = mixer.toggleMuted(); patchPrefs({ sound: !muted }); soundLabel(); refreshNext(true); };
+  document.getElementById("audio")!.onclick = toggleSound;
+
+  // mixer popover: one slider per bus, plus a mute-all switch. Opens under its button; closes on an outside click.
+  const MIX_ROWS: [("master" | Bus), string][] = [["master", "Master"], ["ambience", "Ambience"], ["sfx", "Sound effects"], ["music", "Music"], ["narration", "Narrators"]];
+  const mixBtn = document.getElementById("mixer")!;
+  const mixPanel = document.createElement("div");
+  mixPanel.hidden = true; mixPanel.setAttribute("role", "dialog"); mixPanel.setAttribute("aria-label", "Mixer");
+  mixPanel.style.cssText = "position:fixed;z-index:1000;min-width:240px;padding:10px 12px;display:grid;gap:8px;background:var(--panel,#1b1f27);color:var(--text,inherit);border:1px solid var(--border,#3a4150);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:12px";
+  mixPanel.innerHTML = MIX_ROWS.map(([k, l]) => `<label style="display:grid;grid-template-columns:110px 1fr 40px;gap:8px;align-items:center"><span>${l}</span><input type="range" min="0" max="100" step="1" data-bus="${k}"><output style="text-align:right"></output></label>`).join("")
+    + `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mixmute"><span>Mute all</span></label>`;
+  document.body.append(mixPanel);
+  const syncMix = (s: Readonly<MixState>) => {
+    for (const [k] of MIX_ROWS) {
+      const inp = mixPanel.querySelector<HTMLInputElement>(`[data-bus="${k}"]`)!, pct = Math.round(s[k] * 100);
+      inp.value = String(pct); inp.nextElementSibling!.textContent = `${pct}%`;
+    }
+    mixPanel.querySelector<HTMLInputElement>("#mixmute")!.checked = s.muted;
+    soundLabel();
+  };
+  for (const inp of mixPanel.querySelectorAll<HTMLInputElement>("input[data-bus]")) inp.oninput = () => mixer.set(inp.dataset.bus as "master" | Bus, Number(inp.value) / 100);
+  mixPanel.querySelector<HTMLInputElement>("#mixmute")!.onchange = (e) => { const m = (e.target as HTMLInputElement).checked; if (!m && !soundOn) doSound(); else { mixer.setMuted(m); patchPrefs({ sound: !m }); } soundLabel(); };
+  mixer.subscribe(syncMix); syncMix(mixer.get());
+  mixBtn.onclick = () => {
+    mixPanel.hidden = !mixPanel.hidden;
+    const r = mixBtn.getBoundingClientRect(); mixPanel.style.left = `${r.left}px`; mixPanel.style.top = `${r.bottom + 6}px`;
+  };
+  document.addEventListener("pointerdown", (e) => { if (!mixPanel.hidden && !mixPanel.contains(e.target as Node) && e.target !== mixBtn) mixPanel.hidden = true; });
   // top-right build chips: how old this build is, its commit, and the latest CI run on main (links to it)
   const buildChips = document.getElementById("buildchips")!;
   let ci: CiRun | null | undefined;
@@ -367,6 +397,7 @@ export function boot(root: HTMLElement): Boot {
   scenPause.onclick = () => { bus.scenarioPaused = !bus.scenarioPaused; syncScenarioPause(); };
   let lastTick = 0, lastHud = 0, lastPost = 0, lastLine = "", lastFrame = 0, frameMs = 16.7, worstMs = 0;
   let lastBackup = 0, lastBeat = 0;
+  let hudBarHtml = "", hudMenuHtml = "";
   const step = (now: number) => {
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }
     lastFrame = now;
@@ -404,9 +435,11 @@ export function boot(root: HTMLElement): Boot {
       ];
       // Yellow, orange or red readings stay on the bar; healthy ones (green or no tone) move under ⋯.
       const needsAttention = (c: Hud) => /[yor]/.test(c.tone);
-      hud.innerHTML = items.filter(needsAttention).map((c) => c.html).join("");
       const quiet = items.filter((c) => !needsAttention(c));
-      hudMenu.innerHTML = quiet.map((c) => c.html).join("");
+      // Rewrite only when the markup changed: replacing it every 250 ms would rebuild the chips under the pointer and drop their tooltips.
+      const barHtml = items.filter(needsAttention).map((c) => c.html).join(""), menuHtml = quiet.map((c) => c.html).join("");
+      if (barHtml !== hudBarHtml) { hudBarHtml = barHtml; hud.innerHTML = barHtml; }
+      if (menuHtml !== hudMenuHtml) { hudMenuHtml = menuHtml; hudMenu.innerHTML = menuHtml; }
       hudMore.disabled = quiet.length === 0; // stays in place, just grayed out, so nothing shifts
       if (!quiet.length) setHudMenu(false);
       syncHistChips(); syncScenarioPause();
@@ -427,7 +460,7 @@ export function boot(root: HTMLElement): Boot {
   const doSuggestion = (s: Suggestion) => { if (s.to) go(s.to); else if (s.action === "sound") doSound(); else if (s.action === "export") doExport(); };
   function refreshNext(force = false) {
     const b = bus.board;
-    const list = suggestNext({ route, setupDone: !!loadSetup()?.completed, soundOn, boardFidelity: b ? b.fidelity : 0, cameras: graph.nodes.size ? 1 : 0 });
+    const list = suggestNext({ route, setupDone: !!loadSetup()?.completed, soundOn: soundOn && !mixer.get().muted,boardFidelity: b ? b.fidelity : 0, cameras: graph.nodes.size ? 1 : 0 });
     // Keyed on everything rendered, so an unchanged bar is never rebuilt (rebuilding replays the cards' entry animation).
     const key = list.map((x) => `${x.id}\u0001${x.title}\u0001${x.hint}\u0001${x.icon}`).join("\u0002");
     if (key === nextKey) return;

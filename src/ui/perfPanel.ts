@@ -1,6 +1,6 @@
 import type { Graph } from "../core/graph";
 import { loadPrefs, patchPrefs } from "../setup/prefs";
-import { aggregateBoxes, delta, frameBoxes, hueOf, percentile, profiler, slowestFrame, toTrace, type FlameBox, type FrameRecord } from "../core/profiler";
+import { aggregateBoxes, delta, frameBoxes, hueOf, panView, percentile, profiler, slowestFrame, toTrace, zoomView, type FlameBox, type FrameRecord, type View } from "../core/profiler";
 import { CAT_COLOR } from "./editor";
 import type { Tip } from "./tooltip";
 
@@ -9,6 +9,16 @@ const ms = (v: number) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 const ROW = 20;
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** Small stroke icons for the flamegraph toolbar (24x24 grid). */
+const svgIcon = (body: string) => `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const ICON = {
+  zoomIn: svgIcon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/>'),
+  zoomOut: svgIcon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/>'),
+  left: svgIcon('<path d="M15 6l-6 6 6 6"/>'),
+  right: svgIcon('<path d="M9 6l6 6-6 6"/>'),
+  fit: svgIcon('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
+};
 const DETAIL = [["Overview", 0], ["Nodes", 1], ["Lines", 99]] as const;
 type SortKey = "name" | "avg" | "p95" | "max" | "last";
 
@@ -32,7 +42,15 @@ export class PerfPanel {
   private mode: "frame" | "window" = "window";
   private depth = 1;
   private selected: number | null = null; // index into profiler.frames while pinned
-  private zoom: FlameBox | null = null;
+  /** Visible window over the graph's width (fractions), plus the box last zoomed to for the crumb. */
+  private view: View = { a: 0, w: 1 };
+  private focusPath = "";
+  private anim = 0; // requestAnimationFrame id of a running glide, 0 when idle
+  private drag: { x: number; a: number; id: number; moved: boolean; mini: boolean } | null = null;
+  private over: FlameBox | null = null; // box under the pointer, outlined
+  private crumbText = el("span");
+  private crumbPath = el("span", "perf-crumb-path");
+  private mini = el("canvas", "perf-mini");
   private hits: { x: number; y: number; w: number; box: FlameBox }[] = [];
   private tlHits: { x: number; w: number; i: number }[] = [];
   private tlOver = -1; // frame index under the pointer on the timeline
@@ -52,9 +70,9 @@ export class PerfPanel {
   constructor(private graph: Graph, private hooks: PerfHooks) {
     const bar = el("div", "bar perf-bar");
     this.pauseBtn.onclick = () => { profiler.paused = !profiler.paused; this.pauseBtn.textContent = profiler.paused ? "Resume" : "Pause"; this.pauseBtn.classList.toggle("on", profiler.paused); this.draw(true); };
-    const clear = el("button", "", "Clear"); clear.onclick = () => { profiler.reset(); this.selected = null; this.zoom = null; this.draw(true); };
+    const clear = el("button", "", "Clear"); clear.onclick = () => { profiler.reset(); this.selected = null; this.resetView(); this.draw(true); };
     const worst = el("button", "", "Slowest frame"); worst.title = "Pin the slowest captured frame";
-    worst.onclick = () => { const i = slowestFrame(profiler.frames); if (i < 0) return; this.selected = i; this.mode = "frame"; this.zoom = null; if (!profiler.paused) this.pauseBtn.click(); this.syncModeButtons(); this.draw(true); };
+    worst.onclick = () => { const i = slowestFrame(profiler.frames); if (i < 0) return; this.selected = i; this.mode = "frame"; this.resetView(); if (!profiler.paused) this.pauseBtn.click(); this.syncModeButtons(); this.draw(true); };
     const save = el("button", "", "Export trace"); save.title = "Download the capture as Chrome trace JSON (Perfetto, chrome://tracing)";
     save.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(toTrace(profiler.frames))], { type: "application/json" })); a.download = "chess-experience-trace.json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
     this.baseBtn.title = "Remember today's per-node averages, then compare after a change";
@@ -77,32 +95,101 @@ export class PerfPanel {
       return g;
     };
     bar.append(this.pauseBtn, clear, worst, save, this.baseBtn, bud,
-      seg([["Window", "window"], ["Frame", "frame"]], () => this.mode, (v) => { this.mode = v; this.zoom = null; this.draw(true); }),
-      seg(DETAIL.map(([l, d]) => [l, d] as const), () => this.depth, (v) => { this.depth = v; this.zoom = null; this.draw(true); }),
+      seg([["Window", "window"], ["Frame", "frame"]], () => this.mode, (v) => { this.mode = v; this.resetView(); this.draw(true); }),
+      seg(DETAIL.map(([l, d]) => [l, d] as const), () => this.depth, (v) => { this.depth = v; this.resetView(); this.draw(true); }),
       heat);
 
     this.tip.hidden = true;
-    const flameWrap = el("div", "perf-flame-wrap"); flameWrap.append(this.flame, this.tip);
+    this.flame.tabIndex = 0;
+    this.flame.setAttribute("role", "img");
+    this.flame.setAttribute("aria-label", "Flamegraph. Wheel to zoom, drag to pan, click a box to focus it, double-click to show everything. Plus, minus, zero and arrow keys also work.");
+    const zb = (label: string, svg: string, act: () => void) => { const b = el("button"); b.type = "button"; b.title = label; b.setAttribute("aria-label", label); b.innerHTML = svg; b.onclick = act; return b; };
+    const zbar = el("div", "perf-zbar");
+    zbar.append(
+      zb("Zoom in (+)", ICON.zoomIn, () => this.zoomBy(0.5)),
+      zb("Zoom out (−)", ICON.zoomOut, () => this.zoomBy(2)),
+      zb("Pan left (←)", ICON.left, () => this.panBy(-0.25)),
+      zb("Pan right (→)", ICON.right, () => this.panBy(0.25)),
+      zb("Show everything (0)", ICON.fit, () => this.showAll()),
+    );
+    const crumbRow = el("div", "perf-frow");
+    this.crumb.append(this.crumbText, this.crumbPath);
+    crumbRow.append(this.crumb, zbar);
+    const flameWrap = el("div", "perf-flame-wrap"); flameWrap.append(this.flame, this.tip, this.mini);
     this.search.type = "text"; this.search.placeholder = "Filter nodes…"; this.search.className = "perf-search";
     this.search.oninput = () => this.drawTable(true);
     const tbar = el("div", "perf-tbar"); tbar.append(el("h4", "", "Nodes"), this.search);
-    this.root.append(bar, this.kpis, el("h4", "", "Frame timeline"), this.timeline, el("h4", "", "Flamegraph"), this.crumb, flameWrap, tbar, this.table);
+    this.root.append(bar, this.kpis, el("h4", "", "Frame timeline"), this.timeline, el("h4", "", "Flamegraph"), crumbRow, flameWrap, tbar, this.table);
 
     this.timeline.onclick = (e) => {
       const r = this.timeline.getBoundingClientRect(), x = e.clientX - r.left;
       const hit = this.tlHits.find((t) => x >= t.x && x < t.x + t.w);
       if (!hit) return;
-      this.selected = this.selected === hit.i ? null : hit.i; this.mode = this.selected === null ? "window" : "frame"; this.zoom = null;
+      this.selected = this.selected === hit.i ? null : hit.i; this.mode = this.selected === null ? "window" : "frame"; this.resetView();
       if (this.selected !== null && !profiler.paused) this.pauseBtn.click();
       this.syncModeButtons(); this.draw(true);
     };
     this.timeline.dataset.tipLive = "1";
     this.timeline.onmousemove = (e) => { const x = e.clientX - this.timeline.getBoundingClientRect().left; const i = this.tlHits.find((t) => x >= t.x && x < t.x + t.w)?.i ?? -1; if (i !== this.tlOver) { this.tlOver = i; this.drawTimeline(); } };
     this.timeline.onmouseleave = () => { this.tlOver = -1; this.drawTimeline(); };
-    this.flame.onmousemove = (e) => this.hover(e);
-    this.flame.onmouseleave = () => { this.tip.hidden = true; };
-    this.flame.onclick = (e) => { const h = this.pick(e); if (h) { this.zoom = this.zoom === h.box ? null : h.box; this.draw(true); } };
-    this.flame.ondblclick = () => { this.zoom = null; this.draw(true); };
+    // Flamegraph: wheel zooms at the pointer, shift-wheel or a sideways trackpad pans, drag pans, a click (no drag) zooms to the box.
+    this.flame.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.flame.clientWidth : 1;
+      const dx = e.deltaX * unit, dy = e.deltaY * unit;
+      this.stopAnim();
+      if (e.shiftKey || Math.abs(dx) > Math.abs(dy)) {
+        const d = e.shiftKey && !dx ? dy : dx;
+        this.view = panView(this.view, d / this.flame.clientWidth); // pixels across the canvas, as a share of the visible window
+      } else {
+        const r = this.flame.getBoundingClientRect();
+        this.view = zoomView(this.view, Math.exp(dy * 0.0015), clamp((e.clientX - r.left) / r.width, 0, 1));
+      }
+      this.paint();
+    }, { passive: false });
+    this.flame.onpointerdown = (e) => {
+      if (e.button !== 0) return;
+      this.flame.focus(); this.stopAnim();
+      this.flame.setPointerCapture(e.pointerId);
+      this.drag = { x: e.clientX, a: this.view.a, id: e.pointerId, moved: false, mini: false };
+    };
+    this.flame.onpointermove = (e) => {
+      const d = this.drag;
+      if (!d || d.mini) { this.hover(e); return; }
+      const dx = e.clientX - d.x;
+      if (!d.moved && Math.abs(dx) < 4) return;
+      if (!d.moved) { d.moved = true; this.flame.classList.add("drag"); this.tip.hidden = true; }
+      this.view.a = clamp(d.a - (dx / this.flame.clientWidth) * this.view.w, 0, 1 - this.view.w);
+      this.paint();
+    };
+    this.flame.onpointerup = (e) => {
+      const d = this.drag; this.drag = null; this.flame.classList.remove("drag");
+      if (!d || d.moved) return;
+      const h = this.pick(e);
+      if (h) this.zoomTo(h.box);
+    };
+    this.flame.onpointercancel = () => { this.drag = null; this.flame.classList.remove("drag"); };
+    this.flame.onpointerleave = () => { if (this.drag) return; this.tip.hidden = true; if (this.over) { this.over = null; this.drawFlame(); } };
+    this.flame.onkeydown = (e) => {
+      if (e.key === "+" || e.key === "=") this.zoomBy(0.5);
+      else if (e.key === "-" || e.key === "_") this.zoomBy(2);
+      else if (e.key === "ArrowLeft") this.panBy(-0.2);
+      else if (e.key === "ArrowRight") this.panBy(0.2);
+      else if (e.key === "0" || e.key === "Escape") this.showAll();
+      else return;
+      e.preventDefault();
+    };
+    this.flame.ondblclick = () => this.showAll();
+    // Minimap: press anywhere to centre the view there, then drag.
+    const miniTo = (e: PointerEvent) => {
+      const r = this.mini.getBoundingClientRect();
+      this.view.a = clamp((e.clientX - r.left) / r.width - this.view.w / 2, 0, 1 - this.view.w);
+      this.paint();
+    };
+    this.mini.onpointerdown = (e) => { this.stopAnim(); this.mini.setPointerCapture(e.pointerId); this.drag = { x: e.clientX, a: this.view.a, id: e.pointerId, moved: true, mini: true }; miniTo(e); };
+    this.mini.onpointermove = (e) => { if (this.drag?.mini) miniTo(e); };
+    this.mini.onpointerup = () => { this.drag = null; };
+    this.mini.onpointercancel = () => { this.drag = null; };
     this.table.addEventListener("pointerdown", (e) => {
       const h = (e.target as HTMLElement).closest<HTMLElement>(".rz");
       if (!h) return;
@@ -178,11 +265,47 @@ export class PerfPanel {
   }
 
   private draw(force: boolean) {
+    const cb = this.currentBoxes(); this.boxes = cb.boxes; this.total = cb.total;
     this.drawKpis();
     this.drawTimeline();
-    this.drawFlame();
+    this.paint();
     this.drawTable(force);
   }
+
+  /** Cheap repaint of the flamegraph, minimap and crumb. Used by animation and panning, so it never re-lays out the capture. */
+  private paint() { this.drawFlame(); this.drawMini(); this.updateCrumb(); }
+
+  private stopAnim() { if (this.anim) { cancelAnimationFrame(this.anim); this.anim = 0; } }
+
+  /** Glide the visible window to `to` over a short ease-out, so zooms and jumps feel continuous. */
+  private go(to: View) {
+    this.stopAnim();
+    const from = { ...this.view }, t0 = performance.now(), dur = 280;
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      this.view = { a: from.a + (to.a - from.a) * e, w: from.w + (to.w - from.w) * e };
+      this.paint();
+      this.anim = k < 1 ? requestAnimationFrame(step) : 0;
+    };
+    this.anim = requestAnimationFrame(step);
+  }
+
+  private zoomBy(factor: number, anchor = 0.5) { this.go(zoomView(this.view, factor, anchor)); }
+  private panBy(frac: number) { this.go(panView(this.view, frac)); }
+
+  /** Zoom so `b` fills the view, with a little margin on each side. */
+  private zoomTo(b: FlameBox) {
+    const span = this.total || 1, w0 = b.w / span, pad = 0.01;
+    const w = clamp(w0 * (1 + 2 * pad), 1e-5, 1), a = clamp(b.x / span + w0 / 2 - w / 2, 0, 1 - w);
+    this.focusPath = b.path;
+    this.go({ a, w });
+  }
+
+  /** Back to the whole graph (animated). */
+  private showAll() { this.focusPath = ""; this.go({ a: 0, w: 1 }); }
+
+  /** Jump to the whole graph without animating; used when the mode or depth changes. */
+  private resetView() { this.view = { a: 0, w: 1 }; this.focusPath = ""; }
 
   private drawKpis() {
     const fr = this.frames(), n = fr.length, durs = fr.map((f) => f.dur);
@@ -250,49 +373,78 @@ export class PerfPanel {
     g.fillStyle = "#8aa0b8"; g.textBaseline = "alphabetic"; g.fillText(fr.length ? `click a bar to inspect that frame · scale 0–${top.toFixed(0)} ms` : "no frames yet", 4, h - 1);
   }
 
+  /** Flamegraph layout, cached until the capture changes (it is redrawn every 250 ms, the capture only grows once per frame). */
+  private boxCache: { key: string; out: { boxes: FlameBox[]; total: number } } | null = null;
   private currentBoxes(): { boxes: FlameBox[]; total: number } {
     const fr = this.frames();
     if (!fr.length) return { boxes: [], total: 1 };
+    const key = `${this.mode}|${this.selected}|${profiler.version}`;
+    if (this.boxCache?.key === key) return this.boxCache.out;
+    let out: { boxes: FlameBox[]; total: number };
     if (this.mode === "frame") {
       const f = this.selected !== null ? fr[this.selected] : fr[slowestFrame(fr)];
-      if (!f) return { boxes: [], total: 1 };
-      return { boxes: frameBoxes(f), total: f.dur };
+      out = f ? { boxes: frameBoxes(f), total: f.dur } : { boxes: [], total: 1 };
+    } else {
+      const boxes = aggregateBoxes(fr);
+      out = { boxes, total: boxes.filter((b) => b.depth === 0).reduce((a, b) => a + b.w, 0) };
     }
-    const boxes = aggregateBoxes(fr);
-    return { boxes, total: boxes.filter((b) => b.depth === 0).reduce((a, b) => a + b.w, 0) };
+    this.boxCache = { key, out };
+    return out;
   }
 
   private drawFlame() {
-    const { boxes, total } = this.currentBoxes();
-    this.boxes = boxes; this.total = total;
-    const vis = boxes.filter((b) => b.depth <= this.depth);
-    const maxD = vis.reduce((a, b) => Math.max(a, b.depth), 0);
-    const base = this.zoom ? this.zoom.depth : 0;
-    const { g, w, h } = this.fit(this.flame, Math.max(1, maxD - base + 1) * ROW + 4);
+    const vis = this.boxes.filter((b) => b.depth <= this.depth);
+    const rows = vis.reduce((a, b) => Math.max(a, b.depth), 0) + 1;
+    const { g, w, h } = this.fit(this.flame, rows * ROW + 4);
     g.clearRect(0, 0, w, h);
     this.hits = [];
-    const z = this.zoom, x0 = z ? z.x : 0, span = z ? z.w : total || 1;
-    const inZoom = (b: FlameBox) => !z || (b.depth >= z.depth && b.path.startsWith(z.path) && b.x >= z.x - 1e-6 && b.x + b.w <= z.x + z.w + 1e-6);
+    // the visible window in ms: boxes outside it are culled, so zooming keeps the frame cheap
+    const span = this.total || 1, x0 = this.view.a * span, vs = this.view.w * span;
     const q = this.search.value.trim().toLowerCase();
     g.font = "11px IBM Plex Mono, monospace"; g.textBaseline = "middle";
     for (const b of vis) {
-      if (!inZoom(b)) continue;
-      const x = ((b.x - x0) / span) * w, bw = (b.w / span) * w;
+      if (b.x + b.w < x0 || b.x > x0 + vs) continue;
+      const x = ((b.x - x0) / vs) * w, bw = (b.w / vs) * w;
       if (bw < 0.6) continue;
-      const y = (b.depth - base) * ROW;
+      const y = b.depth * ROW;
       const dim = q && !b.name.toLowerCase().includes(q);
       const hot = b.node ? 58 : 46;
       g.globalAlpha = dim ? 0.25 : 1;
       g.fillStyle = `hsl(${hueOf(b.node ? b.name.replace(/ preview$/, "") : b.name)} ${b.node ? 55 : 38}% ${hot}%)`;
       g.fillRect(x, y, Math.max(0.6, bw - 1), ROW - 2);
-      if (bw > 38) { g.fillStyle = "#04101c"; g.save(); g.beginPath(); g.rect(x, y, bw - 2, ROW); g.clip(); g.fillText(`${b.name}  ${ms(b.w)}`, x + 4, y + ROW / 2 - 1); g.restore(); }
+      if (bw > 38) {
+        // labels stay readable when the box starts off-screen to the left
+        const cx = Math.max(x, 0), cw = Math.min(x + bw, w) - cx - 4;
+        g.fillStyle = "#04101c"; g.save(); g.beginPath(); g.rect(cx, y, cw, ROW); g.clip(); g.fillText(`${b.name}  ${ms(b.w)}`, cx + 4, y + ROW / 2 - 1); g.restore();
+      }
+      if (b === this.over) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(x + 0.5, y + 0.5, Math.max(0.6, bw - 2), ROW - 3); }
       g.globalAlpha = 1;
       this.hits.push({ x, y, w: bw, box: b });
     }
+  }
+
+  /** Overview strip: every top-level section, with the part of the graph currently in view bright and the rest dimmed. Drag it to pan. */
+  private drawMini() {
+    const { g, w, h } = this.fit(this.mini, 22);
+    g.clearRect(0, 0, w, h);
+    const span = this.total || 1;
+    for (const b of this.boxes) {
+      if (b.depth !== 0) continue;
+      g.fillStyle = `hsl(${hueOf(b.name)} 50% 50%)`;
+      g.fillRect((b.x / span) * w, 3, Math.max(0.6, (b.w / span) * w), h - 6);
+    }
+    const x = this.view.a * w, vw = this.view.w * w;
+    g.fillStyle = "rgba(4,10,20,.6)"; g.fillRect(0, 0, x, h); g.fillRect(x + vw, 0, w - x - vw, h);
+    g.strokeStyle = "#fff"; g.lineWidth = 1; g.strokeRect(x + 0.5, 0.5, Math.max(1, vw - 1), h - 1);
+  }
+
+  /** Crumb: what is pinned, the zoom factor and the visible range, or the controls hint when the whole graph is shown. */
+  private updateCrumb() {
     const label = this.mode === "window" ? `${this.frames().length} frames merged · widths are total time` : this.selected !== null ? `frame ${this.selected + 1} of ${this.frames().length} (pinned)` : "slowest captured frame";
-    this.crumb.innerHTML = `<span>${esc(label)}</span>${z ? ` · <a href="#">${esc(z.path.split("/").join(" › "))}</a> <button class="link">reset zoom</button>` : ` · click a box to zoom, double-click to reset`}`;
-    this.crumb.querySelector("button")?.addEventListener("click", () => { this.zoom = null; this.draw(true); });
-    this.crumb.querySelector("a")?.addEventListener("click", (e) => e.preventDefault());
+    const span = this.total || 1, zoom = 1 / this.view.w;
+    const range = zoom > 1.001 ? ` · ×${zoom >= 10 ? zoom.toFixed(0) : zoom.toFixed(1)} · ${ms(this.view.a * span)} – ${ms((this.view.a + this.view.w) * span)}` : " · wheel to zoom, drag to pan, click a box to focus";
+    this.crumbText.textContent = label + range;
+    this.crumbPath.textContent = this.focusPath ? ` › ${this.focusPath.split("/").join(" › ")}` : "";
   }
 
   private pick(e: MouseEvent) {
@@ -301,10 +453,11 @@ export class PerfPanel {
   }
 
   private hover(e: MouseEvent) {
-    const h = this.pick(e);
+    const h = this.pick(e), b0 = h ? h.box : null;
+    if (b0 !== this.over) { this.over = b0; this.drawFlame(); }
     if (!h) { this.tip.hidden = true; return; }
     const b = h.box, pct = this.total ? (b.w / this.total) * 100 : 0, n = Math.max(1, this.mode === "window" ? this.frames().length : 1);
-    this.tip.innerHTML = `<b>${esc(b.name)}</b><span>${ms(b.w)} total · ${pct.toFixed(1)}%</span><span>${ms(b.self)} self</span><span>${b.calls} call${b.calls === 1 ? "" : "s"}${this.mode === "window" ? ` · ${ms(b.w / n)} per frame` : ""}</span>`;
+    this.tip.innerHTML = `<b>${esc(b.name)}</b><span>${ms(b.w)} total · ${pct.toFixed(1)}%</span><span>${ms(b.self)} self</span><span>${b.calls} call${b.calls === 1 ? "" : "s"}${this.mode === "window" ? ` · ${ms(b.w / n)} per frame` : ""}</span><span class="perf-hint">click to zoom here</span>`;
     this.tip.hidden = false;
     const wr = this.flame.parentElement!.getBoundingClientRect();
     this.tip.style.left = Math.min(wr.width - 190, Math.max(0, e.clientX - wr.left + 12)) + "px";

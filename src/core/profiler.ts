@@ -43,6 +43,8 @@ export class Profiler {
   /** Per-node average cost (ms) that counts as "over budget"; 0 turns the check off. */
   budget = 0;
   readonly nodes = new Map<string, NodeSeries>();
+  /** Bumps whenever `frames` changes, so views derived from the capture can be cached until the next frame lands. */
+  version = 0;
   private cur: FrameRecord | null = null;
   private stack: Span[] = [];
   private t0 = 0;
@@ -61,6 +63,7 @@ export class Profiler {
     f.dur = performance.now() - this.t0;
     this.frames.push(f);
     if (this.frames.length > this.maxFrames) this.frames.shift();
+    this.version++;
     this.cur = null;
   }
 
@@ -110,7 +113,7 @@ export class Profiler {
     return { id, avg: v.reduce((a, b) => a + b, 0) / v.length, p95: sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))], max: sorted[sorted.length - 1], last: v[v.length - 1], samples: v.length };
   }
 
-  reset() { this.frames = []; this.nodes.clear(); }
+  reset() { this.frames = []; this.nodes.clear(); this.version++; }
 }
 
 export const profiler = new Profiler();
@@ -164,6 +167,21 @@ export function aggregateBoxes(frames: FrameRecord[]): FlameBox[] {
   };
   walk(root, 0);
   return out;
+}
+
+/** Visible window over the graph's width, as fractions 0..1, so it survives live updates. */
+export interface View { a: number; w: number }
+export const MIN_VIEW = 1e-5;
+
+/** Zoom by `factor` (<1 zooms in) keeping the point at `anchor` (0..1 across the view) fixed. */
+export function zoomView(v: View, factor: number, anchor: number): View {
+  const w = Math.min(1, Math.max(MIN_VIEW, v.w * factor)), pivot = v.a + anchor * v.w;
+  return { a: Math.min(1 - w, Math.max(0, pivot - anchor * w)), w };
+}
+
+/** Shift the window by `frac` of its own width (negative = left), staying inside the graph. */
+export function panView(v: View, frac: number): View {
+  return { a: Math.min(1 - v.w, Math.max(0, v.a + frac * v.w)), w: v.w };
 }
 
 /** Stable pseudo-hue per name so a node keeps its colour across frames. */

@@ -1,4 +1,5 @@
 /** Speech output for narration lines: browser speechSynthesis or ElevenLabs text-to-speech. */
+import { mixer } from "../scene/mixer";
 
 export interface VoiceSettings {
   provider: "browser" | "elevenlabs";
@@ -110,5 +111,11 @@ export const TTS_PROVIDERS: TtsProvider[] = [BROWSER_PROVIDER, ELEVENLABS_PROVID
 export function speak(text: string, who: "A" | "B", s: VoiceSettings, interrupt = false) {
   if (interrupt) stopSpeaking();
   const p = TTS_PROVIDERS.find((x) => x.id === s.provider) ?? BROWSER_PROVIDER;
-  p.speak(text, who, s);
+  // the mixer's narration bus (and master, and mute) scales the voice level
+  p.speak(text, who, { ...s, volume: s.volume * narrationLevel() });
+}
+
+/** Narration bus gain from the global mixer: 0 when muted. */
+function narrationLevel(): number {
+  return mixer.gain("narration");
 }

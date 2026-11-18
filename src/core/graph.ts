@@ -1,10 +1,16 @@
+import { describeError } from "./nodeError";
 import { profiler } from "./profiler";
 import { Registry, portsCompatible, type Edge, type GraphJSON, type GroupDef, type NodeInstance, type NodeRuntime, type ParamValues } from "./types";
 
 export interface NodeStats {
   ms: number;
   fidelity: number | null;
+  /** Human-readable explanation of what went wrong (set only while the node is failing). */
   error?: string;
+  /** What to try next. */
+  errorHint?: string;
+  /** Raw technical error text. */
+  errorDetail?: string;
 }
 
 /**
@@ -142,7 +148,8 @@ export class Graph {
         }
         this.stats.set(id, { ms: performance.now() - t0, fidelity });
       } catch (err) {
-        this.stats.set(id, { ms: performance.now() - t0, fidelity: null, error: String(err) });
+        const info = describeError(err);
+        this.stats.set(id, { ms: performance.now() - t0, fidelity: null, error: info.message, errorHint: info.hint, errorDetail: info.detail });
       }
       profiler.end();
       profiler.recordNode(id, this.stats.get(id)!.ms);

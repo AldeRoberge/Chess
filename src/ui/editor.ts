@@ -337,7 +337,11 @@ export class NodeEditor {
     }
   }
 
-  private refreshSel() { for (const [id, v] of this.views) v.el.classList.toggle("sel", this.selected.has(id)); this.onSelect([...this.selected]); }
+  private refreshSel() {
+    for (const [id, v] of this.views) v.el.classList.toggle("sel", this.selected.has(id));
+    this.root.classList.toggle("has-sel", this.selected.size > 0); // dims the nodes that are not selected
+    this.onSelect([...this.selected]);
+  }
   /** Called whenever the selection changes; the top ribbon uses it to offer the matching actions. */
   onSelect: (ids: string[]) => void = () => {};
   selection(): string[] { return [...this.selected]; }
@@ -377,7 +381,7 @@ export class NodeEditor {
     ];
   }
 
-  removeNode(id: string) { setPreviewPointer(id, null); this.graph.removeNode(id); this.views.get(id)?.el.remove(); this.views.delete(id); this.selected.delete(id); this.dirty = true; this.onChange(); }
+  removeNode(id: string) { setPreviewPointer(id, null); this.graph.removeNode(id); this.views.get(id)?.el.remove(); this.views.delete(id); this.selected.delete(id); this.root.classList.toggle("has-sel", this.selected.size > 0); this.dirty = true; this.onChange(); }
 
   addNodeAt(type: string, cx: number, cy: number) {
     const n = this.graph.addNode(type, (cx - this.view.x) / this.view.k, (cy - this.view.y) / this.view.k);
@@ -577,6 +581,28 @@ export class NodeEditor {
   }
 
   /** Called every frame by the app: refreshes wires, live meters, previews, param echoes. */
+  /** Red outline on the node plus a plain-language message: what happened, what to try, and the raw text on hover. */
+  private showError(v: NodeView, st: { error?: string; errorHint?: string; errorDetail?: string }) {
+    v.el.classList.toggle("errored", !!st.error);
+    v.err.replaceChildren();
+    if (!st.error) { v.err.removeAttribute("role"); v.err.removeAttribute("title"); return; }
+    v.err.setAttribute("role", "alert");
+    if (st.errorDetail) v.err.title = `Technical details: ${st.errorDetail}`;
+    const head = h("strong", "ne-err-h"); head.textContent = "⚠ This node has a problem";
+    const msg = h("span", "ne-err-m"); msg.textContent = st.error;
+    v.err.append(head, msg);
+    if (st.errorHint) { const t = h("em", "ne-err-t"); t.textContent = st.errorHint; v.err.append(t); }
+  }
+
+  /** True when a node's box (plus a margin, so panning does not pop previews in) overlaps the visible canvas. */
+  private onScreen(n: NodeInstance, v: NodeView): boolean {
+    if (!this.root.clientWidth || !this.root.clientHeight) return true; // no layout yet (hidden or detached): keep painting as before
+    const k = this.view.k, m = 120;
+    const x = n.x * k + this.view.x, y = n.y * k + this.view.y;
+    const w = v.el.offsetWidth * k, h = v.el.offsetHeight * k;
+    return x + w > -m && y + h > -m && x < this.root.clientWidth + m && y < this.root.clientHeight + m;
+  }
+
   frame(now: number) {
     if (this.dirty || now - this.lastWire > 400) {
       this.lastWire = now; this.dirty = false;
@@ -606,7 +632,7 @@ export class NodeEditor {
       const st = this.graph.stats.get(id);
       const n = this.graph.nodes.get(id)!;
       if (st) {
-        const key = `${st.ms.toFixed(1)}|${st.fidelity == null ? "" : Math.round(st.fidelity * 100)}|${st.error ?? ""}`;
+        const key = `${st.ms.toFixed(1)}|${st.fidelity == null ? "" : Math.round(st.fidelity * 100)}|${st.error ?? ""}|${st.errorHint ?? ""}`;
         if (key !== v.statKey) { // touch the DOM only when a number actually changed
           v.statKey = key;
           v.ms.textContent = (st.ms.toFixed(1) === "0.0" ? "0" : st.ms.toFixed(1)) + "ms";
@@ -617,16 +643,18 @@ export class NodeEditor {
           v.fid.textContent = st.fidelity == null ? "" : Math.round(st.fidelity * 100) + "%";
           v.fid.style.setProperty("--f", String(st.fidelity ?? 0));
           v.fid.classList.toggle("none", st.fidelity == null);
-          v.err.textContent = st.error ?? "";
+          this.showError(v, st);
         }
       }
       const seen = (v.seen ??= new Map()), busy = v.el.contains(document.activeElement); // a focused widget is never overwritten, so never memoise it
       for (const [k, set] of v.params) { const val = n.params[k]; if (busy || seen.get(k) !== val) { seen.set(k, val); set(val); } }
-      if (doPrev && v.preview && n.bypass) { // bypassed: nothing is computed, so show what is passing through
+      // Previews are the costliest part of a frame, so nodes scrolled out of view skip painting (they repaint on the next pass once visible).
+      if (!doPrev || !v.preview || !this.onScreen(n, v)) continue;
+      if (n.bypass) { // bypassed: nothing is computed, so show what is passing through
         const ctx = v.preview.getContext("2d")!, lw = v.preview.width, lh = v.preview.height, rows = objRows(this.graph.inputValues(id));
         ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh);
         drawRows(ctx, 0, 0, lw, lh, rows.length ? rows : [["bypassed", "no input wired"]]);
-      } else if (doPrev && v.preview && !n.bypass) {
+      } else {
         const spec: NodeSpec = this.spec(n);
         // A resized node paints at its real on-screen size so previews can lay out more detail; otherwise a small logical size scaled up.
         const sized = !!n.h && v.preview.clientWidth > 0 && v.preview.clientHeight > 0;

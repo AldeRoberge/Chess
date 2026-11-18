@@ -20,8 +20,8 @@ describe("piece profiles", () => {
     expect(profileMaxRadius("p")).toBeCloseTo(0.45); expect(profileMaxRadius("k")).toBeCloseTo(0.5);
   });
   it("radiusAt interpolates between profile points and is zero outside the solid", () => {
-    expect(radiusAt("p", 0)).toBeCloseTo(0.45); expect(radiusAt("p", 0.12)).toBeCloseTo(0.4);
-    expect(radiusAt("p", 0.16)).toBeCloseTo(0.35, 2); // halfway between (0.4,0.12) and (0.3,0.2)
+    expect(radiusAt("p", 0)).toBeCloseTo(0.45); expect(radiusAt("p", 0.12)).toBeCloseTo(0.39);
+    expect(radiusAt("p", 0.16)).toBeCloseTo(0.31, 2); // halfway between (0.37,0.13) and (0.27,0.18)
     expect(radiusAt("p", -0.1)).toBe(0); expect(radiusAt("p", 5)).toBe(0);
     expect(radiusAt("p", 0.9)).toBeCloseTo(0);
   });

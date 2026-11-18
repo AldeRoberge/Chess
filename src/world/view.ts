@@ -40,8 +40,9 @@ export class WorldView {
   private pieceKey = "";
   private lastDraw = 0;
   private lastOverlay = 0;
-  private matW = new THREE.MeshStandardMaterial({ color: 0xf6f3e8, roughness: 0.32, metalness: 0.05 });
-  private matB = new THREE.MeshStandardMaterial({ color: 0x3b3a3f, roughness: 0.3, metalness: 0.1 });
+  // lacquered pieces: a clear-coat layer gives the polished highlight real chess sets have
+  private matW = new THREE.MeshPhysicalMaterial({ color: 0xf6f3e8, roughness: 0.4, metalness: 0.02, clearcoat: 0.6, clearcoatRoughness: 0.2 });
+  private matB = new THREE.MeshPhysicalMaterial({ color: 0x3b3a3f, roughness: 0.38, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2 });
   private lamp!: THREE.SpotLight;
   private lastFrame = 0;
   showFrusta = true;

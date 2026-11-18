@@ -1,17 +1,22 @@
-/** Lathe silhouettes shared by the 3D view (meshes) and the fake-camera renderer (rays). [radius, height] in piece units. */
+/**
+ * Lathe silhouettes shared by the 3D view (meshes) and the fake-camera renderer (rays / shadows).
+ * [radius, height] in piece units. Heights must be non-decreasing so radiusAt can interpolate.
+ * Staunton-style turned profiles: plinth, waist, collar, then the head/crown.
+ * Detail that a lathe cannot make (knight head, rook merlons, king cross) is added in world/pieces.ts.
+ */
 export const PROFILES: Record<string, [number, number][]> = {
-  // pawn: round foot, slim stem, collar, ball head
-  p: [[0, 0], [0.45, 0], [0.45, 0.06], [0.4, 0.12], [0.3, 0.2], [0.22, 0.35], [0.19, 0.5], [0.3, 0.55], [0.3, 0.58], [0.2, 0.62], [0.27, 0.7], [0.29, 0.76], [0.25, 0.83], [0.15, 0.88], [0, 0.9]],
-  // rook: flared base, straight tower, wide crenellated crown (flat top)
-  r: [[0, 0], [0.5, 0], [0.5, 0.07], [0.42, 0.14], [0.32, 0.24], [0.28, 0.5], [0.3, 0.74], [0.42, 0.82], [0.44, 0.86], [0.44, 1.0], [0, 1.0]],
-  // knight: base, thick neck, tapered head with a muzzle bulge (lathe approximation)
-  n: [[0, 0], [0.5, 0], [0.5, 0.07], [0.42, 0.14], [0.3, 0.24], [0.28, 0.45], [0.33, 0.68], [0.38, 0.82], [0.34, 0.96], [0.22, 1.06], [0.1, 1.1], [0, 1.1]],
-  // bishop: base, slim stem, collar, teardrop mitre with a finial
-  b: [[0, 0], [0.5, 0], [0.5, 0.07], [0.42, 0.14], [0.3, 0.24], [0.2, 0.5], [0.18, 0.66], [0.32, 0.72], [0.32, 0.76], [0.2, 0.8], [0.3, 0.92], [0.28, 1.04], [0.15, 1.14], [0.08, 1.18], [0.1, 1.22], [0, 1.25]],
-  // queen: base, long stem, wide collar, flared crown with orb
-  q: [[0, 0], [0.5, 0], [0.5, 0.07], [0.42, 0.14], [0.3, 0.26], [0.22, 0.55], [0.2, 0.8], [0.36, 0.88], [0.36, 0.93], [0.26, 0.97], [0.5, 1.1], [0.4, 1.14], [0.22, 1.18], [0.14, 1.26], [0.12, 1.34], [0, 1.4]],
-  // king: queen-like body, narrower crown, cross on top
-  k: [[0, 0], [0.5, 0], [0.5, 0.07], [0.42, 0.14], [0.3, 0.26], [0.24, 0.55], [0.22, 0.88], [0.38, 0.96], [0.38, 1.0], [0.28, 1.04], [0.5, 1.15], [0.36, 1.2], [0.12, 1.24], [0.12, 1.5], [0, 1.5]],
+  // pawn: wide plinth, slim waist, collar ring, round ball head
+  p: [[0, 0], [0.45, 0], [0.45, 0.05], [0.43, 0.1], [0.37, 0.13], [0.27, 0.18], [0.21, 0.27], [0.19, 0.36], [0.2, 0.44], [0.25, 0.49], [0.31, 0.52], [0.31, 0.55], [0.22, 0.575], [0.173, 0.58], [0.188, 0.612], [0.2, 0.68], [0.173, 0.78], [0.129, 0.833], [0.068, 0.868], [0, 0.88]],
+  // rook: plinth, tower, flared parapet ring at 0.9 (merlons sit on top, see pieces.ts)
+  r: [[0, 0], [0.5, 0], [0.5, 0.05], [0.47, 0.09], [0.4, 0.13], [0.34, 0.19], [0.31, 0.27], [0.3, 0.6], [0.32, 0.76], [0.37, 0.82], [0.38, 0.86], [0.38, 0.9], [0, 0.9]],
+  // knight: plinth and neck; the horse head is an extruded silhouette added in pieces.ts
+  n: [[0, 0], [0.5, 0], [0.5, 0.05], [0.44, 0.1], [0.36, 0.15], [0.3, 0.22], [0.28, 0.4], [0.28, 0.7], [0.3, 0.9], [0.25, 1.0], [0.15, 1.08], [0, 1.1]],
+  // bishop: plinth, slim stem, collar, pointed mitre with a finial ball
+  b: [[0, 0], [0.5, 0], [0.5, 0.05], [0.44, 0.1], [0.36, 0.15], [0.3, 0.22], [0.22, 0.34], [0.19, 0.5], [0.18, 0.62], [0.24, 0.68], [0.28, 0.7], [0.28, 0.74], [0.2, 0.78], [0.26, 0.84], [0.31, 0.92], [0.3, 0.99], [0.22, 1.08], [0.12, 1.16], [0.1, 1.19], [0.07, 1.22], [0.04, 1.25], [0, 1.26]],
+  // queen: plinth, long stem, collar, flared crown cup with a ball on top
+  q: [[0, 0], [0.5, 0], [0.5, 0.05], [0.44, 0.1], [0.36, 0.15], [0.3, 0.24], [0.22, 0.4], [0.2, 0.6], [0.22, 0.8], [0.3, 0.86], [0.36, 0.9], [0.36, 0.95], [0.3, 0.98], [0.38, 1.1], [0.42, 1.2], [0.36, 1.26], [0.2, 1.3], [0.12, 1.36], [0.07, 1.4], [0, 1.42]],
+  // king: queen-like body with a taller, narrower crown; the cross is added in pieces.ts
+  k: [[0, 0], [0.5, 0], [0.5, 0.05], [0.44, 0.1], [0.36, 0.15], [0.3, 0.24], [0.22, 0.4], [0.2, 0.6], [0.22, 0.82], [0.3, 0.88], [0.36, 0.92], [0.36, 0.97], [0.3, 1.0], [0.34, 1.1], [0.38, 1.2], [0.32, 1.26], [0.18, 1.3], [0.12, 1.34], [0.1, 1.4], [0.08, 1.46], [0, 1.5]],
 };
 
 /** Radius of a profile at height y (piece units); 0 above the top or below the base. */
