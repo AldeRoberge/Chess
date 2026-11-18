@@ -103,5 +103,6 @@ export const PARAM_DOCS: Record<string, string> = {
   "sim.scenario.scenario": "Which prepared game to replay on the virtual table.",
   "sim.scenario.play": "Starts and stops the replay.",
   "sim.scenario.pauseMs": "Wait between moves while replaying.",
+  "sim.desktop.color": "Which side you play with the mouse on the Table panel. The Scenario Player's moves for this colour are ignored.",
   "sim.player.color": "Which side this AI player sits on and plays. It plays its colour's moves from the Scenario Player, shakes hands at the start and end, and bangs the table when it is checkmated.",
 };

@@ -111,3 +111,23 @@ describe("Narrator", () => {
     expect(run(a)).toBe(run(b)); expect(run(a)).not.toBe(run(c));
   });
 });
+
+describe("variety", () => {
+  it("does not reuse a phrase until the pool has been used up, in both languages", () => {
+    for (const lang of ["fr", "en"] as const) {
+      const n = new Narrator({ ...defaultNarratorConfig(), minGapMs: 0, lang });
+      const seen = Array.from({ length: 10 }, (_, i) => say(n, "engine-move", { san: "Nf6", uci: "g8f6" }, 10000 * (i + 1)).map((x) => x.text));
+      const bs = seen.map((l) => l[1]), as = seen.map((l) => l[0]);
+      expect(new Set(bs).size).toBe(8); // first eight replies are all different (pool of 8)
+      expect(new Set(as.slice(0, 6)).size).toBe(6);
+    }
+  });
+  it("reacts to recaptures and to a clear material lead", () => {
+    const n = new Narrator({ ...defaultNarratorConfig(), minGapMs: 0, lang: "en" });
+    say(n, "capture", { color: "w", piece: "p", captured: "r", to: "d5" }, 100000);
+    const re = say(n, "capture", { color: "b", piece: "q", captured: "p", to: "d5" }, 110000);
+    expect(re[1].text).toMatch(/retaken|recapture|eye for an eye|change is given back/);
+    const lead = say(n, "capture", { color: "w", piece: "n", captured: "n", to: "f6" }, 200000);
+    expect(lead[1].text).toMatch(/points|+7/);
+  });
+});

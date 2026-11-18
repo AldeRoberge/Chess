@@ -5,11 +5,12 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") 
 const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return b; };
 
 /** A centred dialog with a title, message, optional details and actions. Replaces any earlier notice. Esc, the backdrop or Dismiss closes it. */
-export function notify(message: string, actions: { label: string; run: () => void }[] = [], tone: "info" | "warn" = "info", opts: { title?: string; details?: string[] } = {}) {
+export function notify(message: string, actions: { label: string; run: () => void }[] = [], tone: "info" | "warn" = "info", opts: { title?: string; details?: string[]; onDismiss?: () => void } = {}) {
   document.querySelector(".notice")?.remove();
   const n = el("div", `notice ${tone}`); n.setAttribute("role", "alertdialog"); n.setAttribute("aria-modal", "true");
   const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
-  const close = () => { n.remove(); document.removeEventListener("keydown", onKey, true); };
+  let acted = false;
+  const close = () => { n.remove(); document.removeEventListener("keydown", onKey, true); if (!acted) opts.onDismiss?.(); };
   document.addEventListener("keydown", onKey, true);
   n.onclick = (e) => { if (e.target === n) close(); };
   const card = el("div", "notice-card");
@@ -17,7 +18,7 @@ export function notify(message: string, actions: { label: string; run: () => voi
   card.append(el("h3", "notice-title", title), el("p", "notice-msg", message));
   if (opts.details?.length) { const ul = el("ul", "notice-details"); for (const d of opts.details) ul.append(el("li", "", d)); card.append(ul); }
   const row = el("div", "notice-actions");
-  row.append(...actions.map((a) => btn(a.label, () => { a.run(); close(); })), btn("Dismiss", close, actions.length ? "ghost" : ""));
+  row.append(...actions.map((a) => btn(a.label, () => { acted = true; a.run(); close(); })), btn("Dismiss", close, actions.length ? "ghost" : ""));
   card.append(row); n.append(card);
   document.body.append(n);
   return n;

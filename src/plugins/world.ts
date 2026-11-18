@@ -46,4 +46,20 @@ const player: NodeSpec<PlayerState> = {
   },
 };
 
-export const worldPlugin: Plugin = { id: "world", name: "Virtual World", register: (r) => { r.register(world); r.register(player); } };
+/**
+ * A human at the keyboard and mouse in place of an AI player: it takes no scripted actions, the Table panel's mouse plays this colour.
+ * Wires into the world exactly like an AI Player, so the two are interchangeable.
+ */
+const desktop: NodeSpec = {
+  type: "sim.desktop", title: "Desktop Controller", category: "Experience",
+  desc: "A person at this computer plays this colour with the mouse on the Table panel, instead of an AI player. Ignores the Scenario Player's actions.",
+  inputs: [],
+  outputs: [{ id: "player", type: "player" }],
+  params: [{ id: "color", kind: "select", label: "Plays", options: ["w", "b"], labels: ["♔ White", "♚ Black"], value: "w" }],
+  process(_i, { params }) {
+    const info: PlayerInfo = { color: String(params.color) as "w" | "b" };
+    return { player: info };
+  },
+};
+
+export const worldPlugin: Plugin = { id: "world", name: "Virtual World", register: (r) => { r.register(world); r.register(player); r.register(desktop); } };

@@ -32,6 +32,7 @@ import { History } from "./core/history";
 import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, openSession, type Backup } from "./setup/backups";
 import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
+import { virtualTable } from "./sim/virtualTable";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
 import { KNIGHT_SVG } from "./ui/brandIcon";
@@ -399,6 +400,29 @@ export function boot(root: HTMLElement): Boot {
     if (label.textContent !== text) label.textContent = text;
   };
   scenPause.onclick = () => { bus.scenarioPaused = !bus.scenarioPaused; syncScenarioPause(); };
+  // ---- clicking the table while two AI players are playing: pause, ask, then swap the AI player for a Desktop Controller
+  const takeControl = (color: "w" | "b") => {
+    const old = [...graph.nodes.values()].find((n) => n.type === "sim.player" && n.params.color === color);
+    const targets = old ? graph.edges.filter((e) => e.from.node === old.id).map((e) => ({ ...e.to })) : [];
+    const ctl = graph.addNode("sim.desktop", old?.x ?? 330, old?.y ?? 1620, { color });
+    if (old) graph.removeNode(old.id);
+    for (const to of targets) graph.connect({ node: ctl.id, port: "player" }, to);
+    for (const n of graph.nodes.values()) if (n.type === "sim.scenario") n.params.play = false; // the mouse owns the game now: the script no longer feeds moves
+    bus.scenarioPaused = false; syncScenarioPause();
+    editor.rebuild(); persist();
+  };
+  table.takeover = () => {
+    if (!scenarioPlaying()) return false;
+    if (!bus.scenarioPaused) { bus.scenarioPaused = true; syncScenarioPause(); }
+    if (document.querySelector(".notice")) return true; // already asking
+    const color = virtualTable.game.turn() as "w" | "b", name = color === "w" ? "White" : "Black";
+    notify(`Two AI players are playing and the game is paused. Replace the ${name} AI player with a Desktop Controller so you play ${name} with the mouse?`, [{ label: `Take control of ${name}`, run: () => takeControl(color) }], "info", {
+      title: "Do you want to take control?",
+      details: ["The scenario stops; the other AI player will not move on its own.", "Undo (Ctrl+Z) puts the AI player back."],
+      onDismiss: () => { bus.scenarioPaused = false; syncScenarioPause(); },
+    });
+    return true;
+  };
   let lastTick = 0, lastHud = 0, lastPost = 0, lastLine = "", lastFrame = 0, frameMs = 16.7, worstMs = 0;
   let lastBackup = 0, lastBeat = 0;
   let hudBarHtml = "", hudMenuHtml = "";

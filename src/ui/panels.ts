@@ -54,6 +54,8 @@ export class TablePanel {
       if (virtualTable.hoverHand && !virtualTable.busy) { virtualTable.hand = { ...virtualTable.pointer }; virtualTable.carried = null; virtualTable.setHoverHand(); }
     };
     this.cv.onmousedown = (e) => {
+      this.suppressClick = false;
+      if (this.takeover()) { this.suppressClick = true; return; } // two bots are playing: the click asks to take control instead of moving a piece
       virtualTable.pointerDown = true;
       const p = pos(e), c = Math.floor(p.x), r = Math.floor(p.y), pc = c >= 0 && c < 8 && r >= 0 && r < 8 ? virtualTable.game.board()[r][c] : null;
       if (pc && !virtualTable.busy && pc.color === virtualTable.game.turn() && bus.botColor !== pc.color) { this.drag = { from: r * 8 + c, was: this.sel === r * 8 + c }; this.sel = r * 8 + c; } // grab: drag it to a square, or release to keep it selected
@@ -85,6 +87,8 @@ export class TablePanel {
     };
   }
   seatCb: (seated: boolean) => void = () => {};
+  /** Called on every press on the table; return true when it was used up (e.g. to offer taking over from the AI players), so no piece is grabbed. */
+  takeover: () => boolean = () => false;
 
   /** Hover card for the virtual table: what is on the square, what the cameras and tracker think, and what every colour on it means. */
   tips = (e: Element): Tip | null => {
