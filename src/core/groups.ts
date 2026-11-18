@@ -14,7 +14,7 @@ const ROLES: { title: string; color: string; match: RegExp }[] = [
   { title: "Demo & input", color: GROUP_COLORS[0], match: /^(sim|source|world)\./ },
   { title: "Analysis", color: GROUP_COLORS[1], match: /^(vision|clock\.reader)/ },
   { title: "Game & experience", color: GROUP_COLORS[2], match: /^(game|experience|tracking)\./ },
-  { title: "Output: sound & narration", color: GROUP_COLORS[3], match: /^(narration|scene|clock\.overlay)/ },
+  { title: "Output: sound & narration", color: GROUP_COLORS[3], match: /^(narration|scene|clock\.overlay|projection)/ },
 ];
 const OTHER = { title: "Other", color: GROUP_COLORS[7], match: /./ };
 

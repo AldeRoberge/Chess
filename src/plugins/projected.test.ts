@@ -132,3 +132,39 @@ describe("the piece-less demo workflow", () => {
     g.nodes.forEach((n) => n.type === "projection.pieces" && createRegistry().get(n.type)!.dispose?.(null));
   });
 });
+
+describe("the piece-less demo, played with a mouse-as-finger", () => {
+  it("grabs e2, carries it to e4 over several ticks, plays it, and refuses an illegal drop", async () => {
+    const w = WORKFLOWS.find((x) => x.id === "pieceless")!, g = new Graph(createRegistry());
+    g.load(w.graph);
+    let t = 0; const step = (n = 1) => { for (let i = 0; i < n; i++) g.tick((t += 100)); };
+    step(40);                                                  // seat, intro, and the director opens the game
+    expect(bus.director?.phase).toBe("game");
+    const finger = (x: number, y: number, down: boolean) => { virtualTable.pointer = { x, y }; virtualTable.pointerDown = down; };
+    finger(4.5, 6.5, false); step(2);
+    finger(4.5, 6.5, true); step(2);
+    expect(bus.pieceView?.drag).toMatchObject({ from: "e2" });
+    finger(4.5, 5.5, true); step(2); finger(4.5, 4.5, true); step(2);
+    expect(bus.pieceView?.drag?.hover).toBe("e4");
+    finger(4.5, 4.5, false); step(5);
+    expect(bus.pieceView?.drag).toBeNull();
+    expect(bus.game?.history[0]).toBe("e4");
+    // black's turn now: white pieces cannot be picked up, and an illegal drop leaves the position alone
+    const ply = bus.game!.ply;
+    finger(3.5, 6.5, true); step(3); expect(bus.pieceView?.drag).toBeNull();
+    finger(3.5, 6.5, false); step(3);
+    expect(bus.game!.ply).toBeGreaterThanOrEqual(ply);
+    expect([...g.stats.values()].filter((s) => s.error)).toEqual([]);
+    g.nodes.forEach((n) => n.type === "projection.pieces" && createRegistry().get(n.type)!.dispose?.(null));
+    virtualTable.pointer = null; virtualTable.pointerDown = false;
+  });
+});
+
+describe("organising the piece-less demo", () => {
+  it("puts the projection in the output section and nothing in 'Other'", async () => {
+    const { organize } = await import("../core/groups");
+    const g = JSON.parse(JSON.stringify(WORKFLOWS.find((x) => x.id === "pieceless")!.graph));
+    organize(g);
+    expect(g.groups.map((s: any) => s.title)).toEqual(["Demo & input", "Game & experience", "Output: sound & narration"]);
+  });
+});

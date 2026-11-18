@@ -27,6 +27,8 @@ const boardOf = (fen: string) => {
 /** One piece centred on (cx, cy) in pixels, `size` pixels tall. */
 function sprite(ctx: CanvasRenderingContext2D, code: string, cx: number, cy: number, size: number, turn: number) {
   ctx.save(); ctx.translate(cx, cy); ctx.rotate(turn);
+  // a projector adds light and cannot paint black: a pale halo keeps the dark pieces readable on the table
+  ctx.shadowColor = code[0] === "w" ? "rgba(255,255,255,.55)" : "rgba(170,205,255,.95)"; ctx.shadowBlur = size * (code[0] === "w" ? 0.1 : 0.16);
   const img = pieceImage(code);
   if (img) ctx.drawImage(img, -size / 2, -size / 2, size, size);
   else {

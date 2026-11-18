@@ -18,8 +18,8 @@
       {
         "id": "n2",
         "type": "tracking.hands",
-        "x": 454,
-        "y": 94,
+        "x": 44,
+        "y": 822,
         "params": {
           "enabled": false,
           "cam1": "-1.6,2.2,1.6;0,0.75,0;60",
@@ -32,8 +32,8 @@
       {
         "id": "n3",
         "type": "tracking.touch",
-        "x": 864,
-        "y": 94,
+        "x": 454,
+        "y": 822,
         "params": {
           "touchMm": 15,
           "releaseMm": 30,
@@ -46,16 +46,16 @@
       {
         "id": "w1",
         "type": "world.virtual",
-        "x": 44,
-        "y": 434,
+        "x": 454,
+        "y": 94,
         "params": {},
         "w": 360
       },
       {
         "id": "n4",
         "type": "source.synthetic",
-        "x": 454,
-        "y": 434,
+        "x": 864,
+        "y": 94,
         "params": {
           "online": true,
           "cam": "A",
@@ -70,8 +70,8 @@
       {
         "id": "n5",
         "type": "source.synthetic",
-        "x": 864,
-        "y": 434,
+        "x": 1274,
+        "y": 94,
         "params": {
           "online": true,
           "cam": "B",
@@ -86,8 +86,8 @@
       {
         "id": "n6",
         "type": "experience.director",
-        "x": 44,
-        "y": 878,
+        "x": 864,
+        "y": 822,
         "params": {
           "dwellMs": 1500,
           "introMs": 3000,
@@ -100,8 +100,8 @@
       {
         "id": "n7",
         "type": "game.virtual",
-        "x": 454,
-        "y": 878,
+        "x": 44,
+        "y": 1282,
         "params": {
           "engineDelayMs": 700,
           "resync": false
@@ -111,8 +111,8 @@
       {
         "id": "n8",
         "type": "game.dragDrop",
-        "x": 864,
-        "y": 878,
+        "x": 1274,
+        "y": 822,
         "params": {
           "grabRadius": 0.6,
           "graceMs": 250,
@@ -123,8 +123,8 @@
       {
         "id": "n9",
         "type": "game.engine",
-        "x": 1274,
-        "y": 878,
+        "x": 1684,
+        "y": 822,
         "params": {
           "color": "b",
           "virtualHand": false
@@ -134,8 +134,8 @@
       {
         "id": "n10",
         "type": "projection.pieces",
-        "x": 44,
-        "y": 1322,
+        "x": 454,
+        "y": 1817,
         "params": {
           "scale": 0.85,
           "legalDots": true,
@@ -147,8 +147,8 @@
       {
         "id": "n11",
         "type": "narration.narrator",
-        "x": 454,
-        "y": 1322,
+        "x": 864,
+        "y": 1817,
         "params": {
           "voices": "2",
           "nameA": "Jean",
@@ -159,8 +159,8 @@
       {
         "id": "n12",
         "type": "narration.speech",
-        "x": 864,
-        "y": 1322,
+        "x": 44,
+        "y": 1817,
         "params": {
           "enabled": true,
           "volume": 0.9,
@@ -433,30 +433,30 @@
     "groups": [
       {
         "id": "g1",
-        "title": "Demo & input: fingers",
+        "title": "Demo & input",
         "color": "#f2b84b",
         "x": 20,
         "y": 30,
         "w": 1638,
-        "h": 728
+        "h": 672
       },
       {
         "id": "g2",
         "title": "Game & experience",
         "color": "#9a78e0",
         "x": 20,
-        "y": 814,
+        "y": 758,
         "w": 2048,
-        "h": 388
+        "h": 939
       },
       {
         "id": "g3",
-        "title": "Output: projected pieces & narration",
+        "title": "Output: sound & narration",
         "color": "#62c27a",
         "x": 20,
-        "y": 1258,
+        "y": 1753,
         "w": 1228,
-        "h": 388
+        "h": 605
       }
     ]
   },
