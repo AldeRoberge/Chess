@@ -24,7 +24,7 @@ let root: HTMLElement;
 beforeEach(() => {
   history.replaceState(null, "", "#"); document.body.innerHTML = '<div id="app"></div>'; root = document.getElementById("app")!; localStorage.clear(); Chan.all = []; FakeAC.made = []; speak.mockClear();
   vi.stubGlobal("BroadcastChannel", Chan); vi.stubGlobal("AudioContext", FakeAC); virtualTable.reset(); virtualTable.seated = false;
-  Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [], poses: [] });
+  Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [], poses: [], scenarioPaused: false });
   (Element.prototype as any).setPointerCapture = vi.fn();
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -80,7 +80,9 @@ describe("running", () => {
   const frames = (app: ReturnType<typeof boot>, from: number, n: number, dt = 70) => { for (let i = 0; i < n; i++) app.step(from + i * dt); };
   it("ticks the graph at ~15 Hz, updates the HUD and the subtitle", () => {
     finishSetup(); const app = boot(root); frames(app, 1000, 30);
-    expect(bus.game).toBeTruthy(); expect(root.querySelector("#hud")!.textContent).toMatch(/board \d+%.*move \d+%.*2 cam.*idle.*ms\/tick/);
+    // Healthy chips sit under ⋯, the rest on the bar: the readings are there either way.
+    const readings = () => root.querySelector("#hud")!.textContent + root.querySelector("#hudmenu")!.textContent;
+    expect(bus.game).toBeTruthy(); expect(readings()).toMatch(/board \d+%.*move \d+%.*2 cam.*idle.*ms\/tick/);
     bus.lines = [{ speaker: "B", name: "Margot", text: "Quel coup !", t: 0, priority: 1 }]; frames(app, 5000, 6, 70); expect(root.querySelector("#sub")!.textContent).toBe("Margot: Quel coup !"); expect(root.querySelector("#sub")!.className).toBe("AB");
     bus.lines = []; frames(app, 9000, 6); expect(root.querySelector("#sub")!.textContent).toBe(""); expect(root.querySelector("#sub")!.className).toBe("");
   });
@@ -88,6 +90,32 @@ describe("running", () => {
     finishSetup(); const app = quiet(boot(root)); app.step(1000);
     bus.board = { fidelity: 0.2 } as any; bus.game = { moveFidelity: 0.2, history: [] } as any; frames(app, 2000, 5); expect(root.querySelectorAll("#hud .chip.warn:not([data-tip=\"Frame rate\"])").length).toBe(2);
     bus.board = { fidelity: 0.95 } as any; bus.game = { moveFidelity: 0.95, history: [] } as any; frames(app, 4000, 5); expect(root.querySelectorAll("#hud .chip.ok").length).toBe(2);
+  });
+  it("moves healthy readings under ⋯ and keeps only the ones that need attention on the bar", () => {
+    finishSetup(); const app = quiet(boot(root));
+    bus.board = { fidelity: 0.95 } as any; bus.game = { moveFidelity: 0.95, history: [] } as any; bus.cameras = [{ id: "A", online: true, quality: 0.9, reliability: 0.9 }];
+    frames(app, 1000, 5);
+    const more = root.querySelector<HTMLButtonElement>("#hudmore")!, menu = root.querySelector<HTMLElement>("#hudmenu")!;
+    expect(root.querySelector("#hud")!.textContent).not.toMatch(/cam|board/); expect(menu.textContent).toMatch(/board 95%.*move 95%.*1 cam/);
+    expect(more.hidden).toBe(false); more.click(); expect(menu.hidden).toBe(false); expect(more.getAttribute("aria-expanded")).toBe("true");
+    document.body.click(); expect(menu.hidden).toBe(true);
+    bus.board = { fidelity: 0.1 } as any; frames(app, 2000, 5); expect(root.querySelector("#hud")!.textContent).toMatch(/board 10%/);
+  });
+  it("undo and redo chips on the bar are clickable, also after the bar has been redrawn", () => {
+    finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
+    (app.editor as any).removeNode([...app.graph.nodes.keys()][0]); app.step(1000); // redraw the bar in between
+    const undoChip = root.querySelector<HTMLButtonElement>("#hudundo")!, redoChip = root.querySelector<HTMLButtonElement>("#hudredo")!;
+    expect(undoChip.disabled).toBe(false); undoChip.click(); expect(app.graph.nodes.size).toBe(before); app.step(1100);
+    expect(redoChip.disabled).toBe(false); redoChip.click(); expect(app.graph.nodes.size).toBe(before - 1);
+  });
+  it("Pause holds a playing scenario, is only offered while one plays, and resumes", () => {
+    finishSetup(); const app = quiet(boot(root)); const pause = root.querySelector<HTMLButtonElement>("#scenpause")!;
+    app.step(1000); expect(pause.disabled).toBe(true);
+    const node = app.graph.addNode("sim.scenario", 0, 0, { scenario: "scholars-mate", play: true }); app.editor.rebuild(); app.step(1400); // the bar refreshes at most every 250 ms
+    expect(pause.disabled).toBe(false); expect(pause.textContent).toContain("Pause");
+    pause.click(); expect(bus.scenarioPaused).toBe(true); expect(pause.textContent).toContain("Resume"); expect(pause.classList.contains("on")).toBe(true);
+    pause.click(); expect(bus.scenarioPaused).toBe(false);
+    pause.click(); node.params.play = false; app.step(1700); expect(pause.disabled).toBe(true); expect(bus.scenarioPaused).toBe(false);
   });
   it("renders the active tab's panel only (table, 3D, log) and broadcasts the scene to projector windows", () => {
     finishSetup(); const app = quiet(boot(root)); const tabs = [...root.querySelectorAll<HTMLElement>("#tabs button")];
@@ -232,7 +260,7 @@ describe("workflows", () => {
     (document.getElementById("workflows") as HTMLButtonElement).click();
     expect(document.querySelectorAll(".wf-row")).toHaveLength(3);
     (document.querySelector(".wf-row button") as HTMLButtonElement).click();
-    expect(app.graph.nodes.size).toBe(8); expect(listBackups()[0].reason).toContain("Before workflow");
+    expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);
   });
   it("Open workflow file goes through the same import path", async () => {

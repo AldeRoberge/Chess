@@ -37,17 +37,17 @@ describe("source.synthetic (3D virtual camera)", () => {
   });
   it("renders the virtual table from its rig, honouring the frame-rate cap", () => {
     const n = node("source.synthetic", { cam: "B", fps: 5, noise: 0 });
-    const a = n.run({}, 1000)!.frame; n.h.fidelity = undefined; const same = n.run({}, 1050)!.frame;
+    const a = n.run({ world: virtualTable }, 1000)!.frame; n.h.fidelity = undefined; const same = n.run({ world: virtualTable }, 1050)!.frame;
     expect(n.h.fidelity).toBe(1); // a reused frame still reports fidelity, so the node label doesn't flicker between renders
-    const b = n.run({}, 1300)!.frame;
+    const b = n.run({ world: virtualTable }, 1300)!.frame;
     expect(a.width).toBe(480); expect(same).toBe(a); expect(b).not.toBe(a); expect(n.h.fidelity).toBe(1);
   });
   it("re-casts rays only when the scene changed, re-noising otherwise", () => {
-    const n = node("source.synthetic", { fps: 20 }); n.run({}, 0);
-    const lum1 = (n.state as any).lum; n.run({}, 100); expect((n.state as any).lum).toBe(lum1);
-    virtualTable.hand = { x: 3, y: 3 }; n.run({}, 200); expect((n.state as any).lum).not.toBe(lum1);
+    const n = node("source.synthetic", { fps: 20 }); n.run({ world: virtualTable }, 0);
+    const lum1 = (n.state as any).lum; n.run({ world: virtualTable }, 100); expect((n.state as any).lum).toBe(lum1);
+    virtualTable.hand = { x: 3, y: 3 }; n.run({ world: virtualTable }, 200); expect((n.state as any).lum).not.toBe(lum1);
   });
-  it("paints its preview", () => { const n = node("source.synthetic"); n.run({}, 0); const c = n.paint(); expect(c).toBeTruthy(); });
+  it("paints its preview", () => { const n = node("source.synthetic"); n.run({ world: virtualTable }, 0); const c = n.paint(); expect(c).toBeTruthy(); });
 });
 
 describe("source.webcam", () => {

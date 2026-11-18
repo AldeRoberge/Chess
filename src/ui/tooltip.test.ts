@@ -47,9 +47,31 @@ describe("Tooltips", () => {
     expect(tt.el.querySelector(".tip-bar b")!.getAttribute("style")).toContain("50%");
     expect(tt.el.querySelector("kbd")!.textContent).toBe("Esc");
     expect(a.getAttribute("aria-describedby")).toBe("tip");
+    expect(a.classList.contains("tip-src")).toBe(true);
     fire(b, "pointerover");
     expect(tt.el.querySelector(".tip-title")!.textContent).toBe("Native");
     expect(b.hasAttribute("title")).toBe(false);
+    expect(a.classList.contains("tip-src")).toBe(false);
+    expect(b.classList.contains("tip-src")).toBe(true);
+  });
+
+  it("an ancestor's real tip beats the generic name of a control inside it", () => {
+    document.body.innerHTML = `<label id="row" data-tip="Row" data-tip-rows="Value:1"><span>Time of day</span><input id="r" type="range" aria-label="Time of day"></label>`;
+    const row = document.getElementById("row")!, input = document.getElementById("r")!;
+    fire(input, "pointerover"); vi.advanceTimersByTime(SHOW_DELAY);
+    expect(tt.el.querySelector(".tip-title")!.textContent).toBe("Row");
+    expect(row.classList.contains("tip-src")).toBe(true);
+    expect(input.classList.contains("tip-src")).toBe(false);
+  });
+
+  it("highlights the element and leaves the title off when the card has none", () => {
+    tt.add((el) => (el.id === "p" ? { title: "", tag: "number", rows: [{ label: "Value", value: "1" }] } : null));
+    fire(plain, "pointerover"); vi.advanceTimersByTime(SHOW_DELAY);
+    expect(plain.classList.contains("tip-src")).toBe(true);
+    expect(tt.el.querySelector(".tip-title")).toBeNull();
+    expect(tt.el.querySelector(".tip-tag")!.textContent).toBe("number");
+    fire(plain, "pointerout");
+    expect(plain.classList.contains("tip-src")).toBe(false);
   });
 
   it("hides when leaving to a plain element or the window, and never shows if left early", () => {
@@ -91,14 +113,31 @@ describe("editor tips", () => {
 
   it("describes nodes, pins and params with live values", () => {
     const n = tip(el("ne-node", { id: node.id }))!;
-    expect(n.title).toBe(reg.title);
-    expect(n.rows!.map((r) => r.label)).toContain("Inputs");
+    // names are left to the highlight: the card never repeats what is under the pointer
+    expect(n.title).toBe("");
+    expect(n.rows!.map((r) => r.label)).toContain("Wired");
     const pin = tip(el("ne-dot", { node: node.id, port: reg.inputs[0].id, dir: "in" }))!;
+    expect(pin.title).toBe("");
     expect(pin.rows!.find((r) => r.label === "Fed by")!.value).toBe("nothing");
     const out = reg.outputs[0] && tip(el("ne-dot", { node: node.id, port: reg.outputs[0].id, dir: "out" }));
     if (out) expect(out.hint).toContain("Drag");
     const p = tip(el("ne-param", { node: node.id, param: reg.params![0].id }))!;
-    expect(p.title).toBe(reg.params![0].label);
+    expect(p.title).toBe("");
+    const value = p.rows![0];
+    expect(value.label).toBe("Value");
+    expect(p.rows!.some((r) => r.label === "Default")).toBe(false);
+    expect(p.hint).toBeUndefined();
+  });
+
+  it("marks a value at its default and only shows the default when it differs", () => {
+    const p = reg.params![0];
+    const at = tip(el("ne-param", { node: node.id, param: p.id }))!;
+    expect(at.rows![0].value).toBe(`${node.params[p.id]} (default)`);
+    node.params[p.id] = p.kind === "number" ? (p.value === p.max ? p.min : p.max) : `${p.value}-changed`;
+    const off = tip(el("ne-param", { node: node.id, param: p.id }))!;
+    expect(off.rows![0].value).toBe(String(node.params[p.id]));
+    expect(off.rows!.find((r) => r.label === "Default")!.value).toBe(String(p.value));
+    node.params[p.id] = p.value;
   });
 
   it("ignores unknown ids and unrelated elements", () => {

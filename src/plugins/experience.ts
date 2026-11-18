@@ -49,7 +49,7 @@ interface ScenState { runner: ScenarioRunner | null; id: string }
 /** Plays a scripted game on the virtual table: the "fake players" for end-to-end tuning. */
 const scenario: NodeSpec<ScenState> = {
   type: "sim.scenario", title: "Scenario Player", category: "Tracking",
-  inputs: [], outputs: [{ id: "events", type: "event" }],
+  inputs: [], outputs: [{ id: "events", type: "event" }, { id: "actions", type: "action" }],
   params: [
     { id: "scenario", kind: "select", label: "Game", options: SCENARIOS.map((s) => s.id), value: SCENARIOS[0].id },
     { id: "play", kind: "bool", label: "Play", value: false },
@@ -58,7 +58,7 @@ const scenario: NodeSpec<ScenState> = {
   init: () => ({ runner: null, id: "" }),
   process(_i, { params, state, now, setFidelity }) {
     const events: ExperienceEvent[] = [];
-    if (!params.play) { state.runner = null; setFidelity(null); return { events }; }
+    if (!params.play) { state.runner = null; setFidelity(null); return { events, actions: [] }; }
     if (!state.runner || state.id !== params.scenario) {
       state.id = String(params.scenario);
       state.runner = new ScenarioRunner(virtualTable, scenarioById(state.id)!, Number(params.pauseMs));
@@ -66,10 +66,11 @@ const scenario: NodeSpec<ScenState> = {
       events.push({ type: "scenario-start", t: now, data: { id: state.id } });
     }
     state.runner.pauseMs = Number(params.pauseMs);
-    state.runner.step(now);
+    state.runner.setHeld(bus.scenarioPaused, now);
+    const actions = state.runner.step(now); // handed to the AI players, who carry them out on the table
     setFidelity(state.runner.index / state.runner.scenario.moves.length);
     if (state.runner.done && !virtualTable.busy) { params.play = false; events.push({ type: "scenario-end", t: now, data: { id: state.id } }); }
-    return { events };
+    return { events, actions };
   },
 };
 

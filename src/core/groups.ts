@@ -5,6 +5,8 @@ export const GROUP_COLORS = ["#f2b84b", "#3fb59a", "#9a78e0", "#62c27a", "#4a8fd
 
 export const NODE_W = 280;
 export const NODE_H = 300;
+/** Narrowest a node may be once organised; anything narrower is widened so its controls and labels breathe. */
+export const AMPLE_W = 360;
 const COL_W = 330, ROW_H = 340, PAD = 24, HEAD = 40, GAP = 56, WRAP = 5;
 
 /** What a node is for. Sections follow this when the patch is organised. */
@@ -35,7 +37,7 @@ export function depths(g: GraphJSON): Map<string, number> {
  */
 export function organize(g: GraphJSON, size?: (id: string) => { w: number; h: number } | null): void {
   const depth = depths(g), groups: GroupDef[] = [];
-  const dims = (x: GraphJSON["nodes"][number]) => { const m = size?.(x.id); return { w: Math.max(x.w ?? 0, m?.w ?? 0, NODE_W), h: Math.max(x.h ?? 0, m?.h ?? 0, NODE_H) }; };
+  const dims = (x: GraphJSON["nodes"][number]) => { const m = size?.(x.id); return { w: Math.max(x.w ?? 0, m?.w ?? 0, AMPLE_W), h: Math.max(x.h ?? 0, m?.h ?? 0, NODE_H) }; };
   let y = 30, n = 0;
   for (const role of [...ROLES, OTHER]) {
     const nodes = g.nodes.filter((x) => roleOf(x.type) === role);
@@ -45,7 +47,8 @@ export function organize(g: GraphJSON, size?: (id: string) => { w: number; h: nu
     const cols = Math.min(WRAP, ordered.length), rows = Math.ceil(ordered.length / WRAP);
     // column widths and row heights follow the largest node in them, so tall or resized nodes never spill out
     const cw = Array<number>(cols).fill(NODE_W), rh = Array<number>(rows).fill(NODE_H);
-    ordered.forEach((node, i) => { const d = dims(node); cw[i % WRAP] = Math.max(cw[i % WRAP], d.w); rh[Math.floor(i / WRAP)] = Math.max(rh[Math.floor(i / WRAP)], d.h); });
+    // nodes narrower than AMPLE_W are widened here, so the new width is kept with the patch
+    ordered.forEach((node, i) => { const d = dims(node); node.w = d.w; cw[i % WRAP] = Math.max(cw[i % WRAP], d.w); rh[Math.floor(i / WRAP)] = Math.max(rh[Math.floor(i / WRAP)], d.h); });
     const colX = cw.map((_, c) => 20 + PAD + cw.slice(0, c).reduce((t, v) => t + v + (COL_W - NODE_W), 0));
     const rowY = rh.map((_, r) => y + HEAD + PAD + rh.slice(0, r).reduce((t, v) => t + v + (ROW_H - NODE_H), 0));
     ordered.forEach((node, i) => { node.x = colX[i % WRAP]; node.y = rowY[Math.floor(i / WRAP)]; });

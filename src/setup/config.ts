@@ -109,11 +109,16 @@ export function buildGraphFromConfig(g: Graph, c: SetupConfig) {
   const wire = (a: { id: string }, ap: string, b: { id: string }, bp: string) => g.connect({ node: a.id, port: ap }, { node: b.id, port: bp });
   const fuse = g.addNode("vision.fuse", 640, 150);
   const sources: { id: string }[] = []; // camera source nodes, in order
+  // virtual cameras look at one Virtual World, which the two AI players sit at (built below)
+  const world = c.cameras.some((x) => x.kind === "virtual") ? g.addNode("world.virtual", 330, 820) : null;
   c.cameras.slice(0, MAX_CAMERAS).forEach((cam, i) => {
     const y = 30 + i * 340;
-    const src = cam.kind === "webcam"
-      ? g.addNode("source.webcam", 20, y, { online: cam.online, device: cam.deviceId || cam.label, channel: cam.channel })
-      : g.addNode("source.synthetic", 20, y, { online: cam.online, cam: cam.rig });
+    let src: { id: string };
+    if (cam.kind === "webcam") src = g.addNode("source.webcam", 20, y, { online: cam.online, device: cam.deviceId || cam.label, channel: cam.channel });
+    else {
+      src = g.addNode("source.synthetic", 20, y, { online: cam.online, cam: cam.rig });
+      if (world) wire(world, "world", src, "world");
+    }
     const rd = g.addNode("vision.boardReader", 330, y, { cam: cam.id, corners: cam.corners, weight: cam.trust });
     wire(src, "frame", rd, "frame"); wire(rd, "obs", fuse, `o${i + 1}`); sources.push(src);
   });
@@ -143,9 +148,13 @@ export function buildGraphFromConfig(g: Graph, c: SetupConfig) {
   wire(trk, "events", nar, "events"); wire(dir, "events", nar, "events2"); wire(eng, "events", nar, "events3"); wire(nar, "lines", ai, "lines"); wire(trk, "events", ai, "events"); wire(dir, "events", ai, "events2"); wire(eng, "events", ai, "events3"); wire(ai, "lines", spk, "lines");
   wire(trk, "events", cues, "events"); wire(dir, "events", cues, "events2"); wire(eng, "events", cues, "events3");
   wire(cues, "scene", out, "scene"); wire(cues, "fired", out, "fired");
-  if (c.cameras.some((x) => x.kind === "virtual")) {
+  if (world) {
     g.addNode("sim.pose", 20, 1500);
+    // the scenario asks for actions; the two AI players carry them out at the world, and the world reports to the tracker's control
     const sc = g.addNode("sim.scenario", 20, 1620, { scenario: c.demo.scenario, play: c.demo.autoplay });
+    const white = g.addNode("sim.player", 330, 1620, { color: "w" }), black = g.addNode("sim.player", 640, 1620, { color: "b" });
     wire(sc, "events", trk, "control");
+    wire(sc, "actions", white, "actions"); wire(sc, "actions", black, "actions");
+    wire(white, "player", world, "white"); wire(black, "player", world, "black");
   }
 }

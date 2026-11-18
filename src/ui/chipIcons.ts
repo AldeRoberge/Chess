@@ -40,8 +40,10 @@ export const chipIcons = {
   tick: (used: number) => line(`<rect x="1.500" y="5" width="13" height="6" rx="2.500"/><rect x="3" y="6.500" width="${(10 * clamp(used)).toFixed(1)}" height="3" rx="1.200" fill="currentColor" stroke="none"/>`),
   /** Pencil with an underline that lengthens as more edits are made. */
   actions: (n: number) => line(`<path d="M10.500 2.500l3 3L6.500 12.500 3 13l.5-3.500z"/><path d="M2 15h${(2 + 12 * clamp(n / 100)).toFixed(1)}"/>`),
-  undo: (n: number) => line(`<g opacity="${n ? 1 : 0.35}"><path d="M5 3L2 6l3 3"/><path d="M2 6h6.500a4 4 0 0 1 0 8H6"/>${n >= 10 ? '<path d="M13.500 3.500h-3" />' : ""}</g>`),
-  redo: (n: number) => line(`<g opacity="${n ? 1 : 0.35}"><path d="M11 3l3 3-3 3"/><path d="M14 6H7.500a4 4 0 0 0 0 8H10"/>${n >= 10 ? '<path d="M2.500 3.500h3" />' : ""}</g>`),
+  /** Curved back-arrow: arrowhead on the left, the loop turns down and returns to the right. */
+  undo: (n: number) => line(`<g opacity="${n ? 1 : 0.35}"><path d="M5.5 3.5 2.5 6.5l3 3"/><path d="M2.5 6.5h6a4.5 4.5 0 0 1 0 9H6"/></g>`),
+  /** Mirror of undo: forward arrow. */
+  redo: (n: number) => line(`<g opacity="${n ? 1 : 0.35}"><path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-6a4.5 4.5 0 0 0 0 9H10"/></g>`),
   /** Workflow JSON size in KB: a page that fills with lines. */
   workflow: (kb: number) => { const n = pick(kb, [[2, 1], [10, 2], [50, 3]], 4); return line(`<path d="M3.500 1.800h6l3 3v9.400h-9z"/>${Array.from({ length: n }, (_, i) => `<path d="M5.500 ${6.500 + i * 2}h5"/>`).join("")}`); },
   /** History memory in KB: a stack of snapshots. */

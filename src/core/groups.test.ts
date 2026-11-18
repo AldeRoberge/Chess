@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Graph } from "./graph";
-import { GROUP_COLORS, fitAround, nextGroupId, nodesInside, organize } from "./groups";
+import { AMPLE_W, GROUP_COLORS, fitAround, nextGroupId, nodesInside, organize } from "./groups";
 import { createRegistry } from "../plugins";
 import { WORKFLOWS } from "../workflows";
 
@@ -33,6 +33,14 @@ describe("organize", () => {
     expect(new Set(json.nodes.slice(0, 7).map((n) => n.y)).size).toBe(2);
     expect(json.groups!.map((s) => s.title)).toEqual(["Analysis", "Other"]);
     expect(nodes).toHaveLength(7);
+  });
+  it("widens narrow nodes to ample width and keeps wider ones as they are", () => {
+    const g = new Graph(createRegistry());
+    g.addNode("vision.boardReader", 0, 0, {}, "narrow"); g.addNode("vision.boardReader", 0, 0, {}, "wide");
+    const json = g.toJSON(); json.nodes.find((n) => n.id === "wide")!.w = 500;
+    organize(json, () => ({ w: 320, h: 300 }));
+    expect(json.nodes.find((n) => n.id === "narrow")!.w).toBe(AMPLE_W);
+    expect(json.nodes.find((n) => n.id === "wide")!.w).toBe(500);
   });
   it("orders by wire depth and survives feedback loops", () => {
     const g = new Graph(createRegistry());

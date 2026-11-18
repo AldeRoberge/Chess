@@ -20,7 +20,7 @@ const paramText = (p: ParamDef) =>
 export function catalog(reg: Registry): string {
   return reg.all().map((s) => {
     const ports = (l: { id: string; type: string }[]) => l.map((p) => `${p.id}:${p.type}`).join(", ") || "-";
-    const params = (s.params ?? []).filter((p) => !SECRET.test(p.id)).map(paramText).join("; ") || "-";
+    const params = (s.params ?? []).filter((p) => p.kind !== "separator" && !SECRET.test(p.id)).map(paramText).join("; ") || "-";
     return `- ${s.type} [${s.category}] "${s.title}"${s.desc ? ` - ${s.desc}` : ""}\n    in: ${ports(s.inputs)}\n    out: ${ports(s.outputs)}\n    params: ${params}`;
   }).join("\n");
 }
@@ -40,7 +40,7 @@ export function systemPrompt(reg: Registry): string {
     "You design node-graph workflows for CE, a real-time chess table: cameras read a physical board, a tracker follows the game, and narration, scenes and projection react to it.",
     "Reply with ONE JSON object and nothing else: {\"name\": string, \"summary\": string (1-2 sentences), \"nodes\": [{\"id\": string, \"type\": string, \"params\": object}], \"edges\": [{\"from\": \"nodeId.outPort\", \"to\": \"nodeId.inPort\"}]}.",
     "Rules: use ONLY node types and port ids from the catalog. A wire joins an output port to an input port of the same type (type 'any' joins anything). Each input port takes at most one wire. Never wire a node to itself. Give short unique ids. Only set params you want to change; keep values inside their stated range or options. Do not invent API keys; leave key params out. Prefer the smallest graph that does what was asked.",
-    "Typical chain: source.* -> vision.boardReader -> vision.fuse -> vision.stabilize -> game.tracker; game.tracker.events feed narration.narrator / scene.cues; sim.scenario.events -> game.tracker.control plays a scripted game with no camera.",
+    "Typical chain: source.* -> vision.boardReader -> vision.fuse -> vision.stabilize -> game.tracker; game.tracker.events feed narration.narrator / scene.cues; sim.scenario.events -> game.tracker.control plays a scripted game with no camera. Virtual cameras need a world.virtual.world input; sim.scenario.actions feed two sim.player nodes (white, black), which wire into world.virtual.white / .black.",
     "Catalog:\n" + catalog(reg),
     "Example (a minimal working workflow):\n" + JSON.stringify(toDraft(ex.graph, ex.name, ex.description)),
   ].join("\n\n");

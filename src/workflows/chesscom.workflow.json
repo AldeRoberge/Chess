@@ -217,6 +217,31 @@
           "gameUrl": "",
           "poll": 8
         }
+      },
+      {
+        "id": "w1",
+        "type": "world.virtual",
+        "x": 700,
+        "y": 94,
+        "params": {}
+      },
+      {
+        "id": "p1",
+        "type": "sim.player",
+        "x": 1000,
+        "y": 94,
+        "params": {
+          "color": "w"
+        }
+      },
+      {
+        "id": "p2",
+        "type": "sim.player",
+        "x": 1000,
+        "y": 300,
+        "params": {
+          "color": "b"
+        }
       }
     ],
     "edges": [
@@ -504,6 +529,72 @@
         "to": {
           "node": "n17",
           "port": "events3"
+        }
+      },
+      {
+        "id": "e1",
+        "from": {
+          "node": "w1",
+          "port": "world"
+        },
+        "to": {
+          "node": "n2",
+          "port": "world"
+        }
+      },
+      {
+        "id": "e2",
+        "from": {
+          "node": "w1",
+          "port": "world"
+        },
+        "to": {
+          "node": "n6",
+          "port": "world"
+        }
+      },
+      {
+        "id": "e3",
+        "from": {
+          "node": "n42",
+          "port": "actions"
+        },
+        "to": {
+          "node": "p1",
+          "port": "actions"
+        }
+      },
+      {
+        "id": "e4",
+        "from": {
+          "node": "n42",
+          "port": "actions"
+        },
+        "to": {
+          "node": "p2",
+          "port": "actions"
+        }
+      },
+      {
+        "id": "e5",
+        "from": {
+          "node": "p1",
+          "port": "player"
+        },
+        "to": {
+          "node": "w1",
+          "port": "white"
+        }
+      },
+      {
+        "id": "e6",
+        "from": {
+          "node": "p2",
+          "port": "player"
+        },
+        "to": {
+          "node": "w1",
+          "port": "black"
         }
       }
     ],

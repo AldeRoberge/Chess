@@ -17,6 +17,9 @@ const PORT_INFO: Record<PortType, string> = {
   text: "Narration lines with their speaker.",
   scene: "Lights, sound and projection state.",
   clock: "Time left on each chess clock, with how certain the estimate is.",
+  world: "The virtual table the virtual cameras look at: pieces, hands and arms.",
+  player: "An AI player seated at the virtual table.",
+  action: "What the scenario asks the players to do: moves, handshakes and the fist.",
   any: "Accepts or carries any signal type.",
 };
 
@@ -78,9 +81,8 @@ export function editorTips(graph: Graph): TipResolver {
     const other = (e: (typeof wires)[number]) => { const o = isOut ? e.to : e.from; return `${titleOf(o.node)} · ${o.port}`; };
     const value = isOut ? graph.outputs.get(n.id)?.[def.id] : wires.length ? graph.outputs.get(wires[0].from.node)?.[wires[0].from.port] : undefined;
     return {
-      title: def.label ?? def.id, tag: def.type, color: PORT_COLOR[def.type], body: PORT_INFO[def.type],
+      title: "", tag: def.type, color: PORT_COLOR[def.type], body: PORT_INFO[def.type],
       rows: [
-        { label: "Direction", value: isOut ? "output" : "input" },
         { label: isOut ? "Sends to" : "Fed by", value: wires.length ? (wires.length > 1 ? `${wires.length} wires` : other(wires[0])) : "nothing", tone: wires.length ? undefined : "warn" },
         { label: "Live", value: describeValue(value) },
       ],
@@ -94,11 +96,12 @@ export function editorTips(graph: Graph): TipResolver {
     const def: ParamDef | undefined = spec?.params?.find((p) => p.id === el.dataset.param);
     if (!n || !def) return null;
     const v = n.params[def.id];
-    const rows: Tip["rows"] = [{ label: "Value", value: String(v), bar: def.kind === "number" ? (Number(v) - def.min) / (def.max - def.min || 1) : undefined }];
+    const atDefault = v === def.value;
+    const rows: Tip["rows"] = [{ label: "Value", value: atDefault ? `${v} (default)` : String(v), bar: def.kind === "number" ? (Number(v) - def.min) / (def.max - def.min || 1) : undefined }];
     if (def.kind === "number") rows.push({ label: "Range", value: `${def.min} – ${def.max}` });
     if (def.kind === "select") rows.push({ label: "Options", value: String(def.options.length) });
-    rows.push({ label: "Default", value: String(def.value) });
-    return { title: def.label, tag: def.kind, color: CAT_COLOR[spec!.category], body: PARAM_DOCS[`${n.type}.${def.id}`], rows, hint: v === def.value ? "At default" : "Changed from default" };
+    if (!atDefault) rows.push({ label: "Default", value: String(def.value) });
+    return { title: "", tag: def.kind, color: CAT_COLOR[spec!.category], body: PARAM_DOCS[`${n.type}.${def.id}`], rows };
   };
 
   const node = (el: HTMLElement): Tip | null => {
@@ -111,8 +114,8 @@ export function editorTips(graph: Graph): TipResolver {
     if (st?.fidelity != null) rows.push({ label: "Fidelity", value: pct(st.fidelity), bar: st.fidelity, tone: tone(st.fidelity) });
     if (st) rows.push({ label: "Time", value: `${st.ms.toFixed(2)} ms` });
     if (n.bypass) for (const [port, val] of Object.entries(graph.inputValues(n.id))) rows.push({ label: `In · ${port}`, value: describeValue(val) });
-    rows.push({ label: "Inputs", value: wired("to", spec.inputs.length) + " wired" }, { label: "Outputs", value: wired("from", spec.outputs.length) + " wired" });
-    return { title: spec.title, tag: spec.category, color: CAT_COLOR[spec.category], body: spec.desc ?? CAT_INFO[spec.category], rows, hint: "Drag the header to move" };
+    rows.push({ label: "Wired", value: `${wired("to", spec.inputs.length)} in · ${wired("from", spec.outputs.length)} out` });
+    return { title: "", tag: spec.category, color: CAT_COLOR[spec.category], body: spec.desc ?? CAT_INFO[spec.category], rows, hint: "Drag the header to move" };
   };
 
   return (el) => {

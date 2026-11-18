@@ -188,21 +188,29 @@ describe("scenarios", () => {
 });
 
 describe("ScenarioRunner", () => {
-  it("waits the pause, plays one physical move at a time, and reports completion", () => {
-    const t = new VirtualTable(), r = new ScenarioRunner(t, { ...SCENARIOS[0], moves: ["e4", "e5"] }, 1000);
+  it("asks for a handshake, then the moves one at a time after the pause, then a handshake, and reports completion", () => {
+    const t = new VirtualTable(), r = new ScenarioRunner(t, { ...SCENARIOS[0], moves: ["e4", "e5"], expect: { ...SCENARIOS[0].expect, mate: false } }, 1000);
     expect(r.done).toBe(false);
-    expect(r.step(0)).toBe(false); // starts the pause timer
-    expect(r.step(500)).toBe(false);
-    expect(r.step(1000)).toBe(true); expect(r.index).toBe(1);
-    expect(r.step(1100)).toBe(false); // hand still moving
-    r.step(3000); // move finished
-    expect(r.step(3000)).toBe(false);
-    expect(r.step(4000)).toBe(true); r.step(6000);
-    expect(r.done).toBe(true); expect(r.step(9000)).toBe(false);
-    expect(t.game.history()).toEqual(["e4", "e5"]);
+    const asked: string[] = [];
+    for (let now = 0; !r.done && now < 20000; now += 100) asked.push(...r.step(now).map((a) => (a.kind === "move" ? a.san : a.kind)));
+    expect(asked).toEqual(["handshake", "e4", "e5", "handshake"]); expect(r.index).toBe(2); expect(r.done).toBe(true);
+    expect(r.loser).toBeNull(); // no mate, so nobody bangs the table
+  });
+  it("waits for the table to finish each action before asking for the next", () => {
+    const t = new VirtualTable(), r = new ScenarioRunner(t, { ...SCENARIOS[0], moves: ["e4", "e5"] }, 1000);
+    r.step(0); r.step(100); r.step(200); // handshake asked, pause starts
+    t.play("e4", 1200); // a player carries the move out: the table is busy until it is done
+    expect(r.step(1300)).toEqual([]); expect(r.index).toBe(0);
+  });
+  it("the checkmated side bangs the table after the closing handshake", () => {
+    const r = new ScenarioRunner(new VirtualTable(), { ...SCENARIOS[0], moves: ["e4", "e5"] }, 0);
+    expect(r.loser).toBe("w"); // two plies: black mated white
+    const scholars = new ScenarioRunner(new VirtualTable(), SCENARIOS[0], 0);
+    expect(scholars.loser).toBe("b"); // seven plies: white mated black
   });
   it("fails loudly on an illegal scripted move", () => {
     const r = new ScenarioRunner(new VirtualTable(), { ...SCENARIOS[0], id: "bad", moves: ["Ke5"] }, 0);
-    expect(() => r.step(0)).toThrow("scenario bad: illegal move Ke5");
+    r.step(0); r.step(1); // primed, then the handshake
+    expect(() => r.step(2)).toThrow("scenario bad: illegal move Ke5");
   });
 });

@@ -106,6 +106,31 @@
           "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
           "model": "eleven_multilingual_v2"
         }
+      },
+      {
+        "id": "w1",
+        "type": "world.virtual",
+        "x": 700,
+        "y": 94,
+        "params": {}
+      },
+      {
+        "id": "p1",
+        "type": "sim.player",
+        "x": 1000,
+        "y": 94,
+        "params": {
+          "color": "w"
+        }
+      },
+      {
+        "id": "p2",
+        "type": "sim.player",
+        "x": 1000,
+        "y": 300,
+        "params": {
+          "color": "b"
+        }
       }
     ],
     "edges": [
@@ -184,6 +209,61 @@
         "to": {
           "node": "n8",
           "port": "lines"
+        }
+      },
+      {
+        "id": "e1",
+        "from": {
+          "node": "w1",
+          "port": "world"
+        },
+        "to": {
+          "node": "n1",
+          "port": "world"
+        }
+      },
+      {
+        "id": "e2",
+        "from": {
+          "node": "n6",
+          "port": "actions"
+        },
+        "to": {
+          "node": "p1",
+          "port": "actions"
+        }
+      },
+      {
+        "id": "e3",
+        "from": {
+          "node": "n6",
+          "port": "actions"
+        },
+        "to": {
+          "node": "p2",
+          "port": "actions"
+        }
+      },
+      {
+        "id": "e4",
+        "from": {
+          "node": "p1",
+          "port": "player"
+        },
+        "to": {
+          "node": "w1",
+          "port": "white"
+        }
+      },
+      {
+        "id": "e5",
+        "from": {
+          "node": "p2",
+          "port": "player"
+        },
+        "to": {
+          "node": "w1",
+          "port": "black"
         }
       }
     ],

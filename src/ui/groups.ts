@@ -43,7 +43,7 @@ export class GroupLayer {
   /** Lay the whole patch out in role bands, each in its own section. Replaces existing sections. */
   organize() {
     const json = this.o.graph.toJSON(); organize(json, (id) => { const b = this.o.box(id); return b ? { w: b.w, h: b.h } : null; });
-    for (const n of json.nodes) { const m = this.o.graph.nodes.get(n.id)!; m.x = n.x; m.y = n.y; this.o.place(n.id); }
+    for (const n of json.nodes) { const m = this.o.graph.nodes.get(n.id)!; m.x = n.x; m.y = n.y; m.w = n.w; this.o.place(n.id); }
     this.o.graph.groups = json.groups ?? []; this.render(); this.o.changed();
   }
 

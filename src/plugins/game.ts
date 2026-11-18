@@ -20,7 +20,7 @@ const track: NodeSpec<TrackState> = {
     { id: "maxCost", kind: "number", label: "Max mismatch cost", min: 0.2, max: 2, step: 0.1, value: 0.8 },
     { id: "minConf", kind: "number", label: "Min square confidence", min: 0, max: 1, step: 0.05, value: 0.5 },
     { id: "promotion", kind: "select", label: "Promote to", options: ["q", "r", "b", "n"], value: "q" },
-    { id: "resync", kind: "bool", label: "Reset to start position", value: false },
+    { id: "resync", kind: "bool", label: "Reset to start position", value: false, action: true },
   ],
   previewSize: [140, 140],
   init: () => ({ tracker: new PositionTracker(), res: null, board: null, prevPhase: "idle" }),
@@ -59,7 +59,7 @@ const engine: NodeSpec<EngState> = {
   inputs: [{ id: "game", type: "game" }, { id: "director", type: "any" }],
   outputs: [{ id: "events", type: "event" }],
   params: [
-    { id: "color", kind: "select", label: "Engine plays", options: ["b", "w"], value: "b" },
+    { id: "color", kind: "select", label: "Engine plays", options: ["b", "w"], labels: ["♛ Black", "♕ White"], value: "b" },
     { id: "virtualHand", kind: "bool", label: "Virtual hand", value: true },
   ],
   init: () => ({ engine: null, loading: false, thinkingFen: "", hintFen: "", out: [], info: "", now: 0 }),

@@ -17,7 +17,7 @@ export function appMenu(ev: MouseEvent): CtxItem[] {
     {
       kind: "submenu", label: "Workflow", items: [
         { kind: "action", label: "Workflows…", run: click("workflows") },
-        { kind: "action", label: "Export workflow", run: click("export") },
+        { kind: "action", label: "Save workflow to file", run: click("export") },
         { kind: "action", label: "Reset workflow", danger: true, run: click("reset") },
       ],
     },

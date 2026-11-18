@@ -11,6 +11,10 @@ describe("AI commentary", () => {
     expect(parseReply(raw, { ...s, voices: 1 }, 5, 2).every((l) => l.speaker === "A")).toBe(true);
     expect(parseReply("nope", s, 5, 2)).toEqual([]);
   });
+  it("asks for English commentary when the language is en", () => {
+    const m = buildMessages([{ type: "check", t: 1 }] as any, ["e4", "e5"], { ...s, lang: "en" });
+    expect(m[0].content).toContain("Speak English"); expect(m[1].content).toContain("Recent moves: e4 e5");
+  });
   it("sends recent moves and events to the model", () => {
     const m = buildMessages([{ type: "check", t: 1 }] as any, ["e4", "e5"], s);
     expect(m[1].content).toContain("e4 e5"); expect(m[1].content).toContain("check");

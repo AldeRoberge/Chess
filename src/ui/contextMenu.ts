@@ -69,6 +69,9 @@ const RULES: [RegExp, string][] = [
   [/sit|stand/i, "people"], [/board look|colou?r/i, "palette"], [/piece/i, "knight"], [/style/i, "palette"], [/perform|quality/i, "bolt"],
   [/resolution/i, "frame"], [/frame rate|fps/i, "clock"], [/shadow/i, "sun"], [/antialias/i, "scan"], [/display/i, "eye"], [/coordinat/i, "grid"],
   [/legal|dots/i, "step"], [/hint/i, "spark"], [/highlight|last/i, "eye"], [/frusta|projector/i, "cube"], [/preview/i, "film"], [/param/i, "sliders"],
+  [/check/i, "check"], [/launch/i, "launch"], [/learn/i, "brain"], [/speak|voice|\bmic\b/i, "voice"], [/thunder/i, "bolt"], [/autoplay|play/i, "play"],
+  [/commentat|narrat/i, "chat"], [/opponent|strength|computer/i, "opponent"], [/dmx|lamp|light/i, "lamp"], [/demo|game/i, "film"], [/mode|kind/i, "list"],
+  [/option|setting/i, "sliders"], [/time|hour/i, "clock"], [/volume|sound|audio/i, "sound"], [/status|fidelity|confiden/i, "wave"],
 ];
 export function iconFor(i: CtxItem): string {
   if (i.kind === "separator") return "";

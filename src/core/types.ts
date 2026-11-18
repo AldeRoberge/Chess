@@ -11,6 +11,9 @@ export type PortType =
   | "text" // NarrationLine[]
   | "scene" // SceneState
   | "clock" // ClockEstimate (time left per side, with certainty)
+  | "world" // the virtual table the cameras look at (VirtualTable)
+  | "player" // an AI player seated at the world
+  | "action" // TableAction[]: what the scenario asks the players to do
   | "any";
 
 export interface PortDef {
@@ -19,12 +22,20 @@ export interface PortDef {
   label?: string;
 }
 
+/** A model a select can offer, with its price per 1M tokens in USD when known. */
+export interface ModelInfo { id: string; input?: number; output?: number }
+
 export type ParamDef =
   | { id: string; kind: "number"; label: string; min: number; max: number; step?: number; value: number }
-  | { id: string; kind: "bool"; label: string; value: boolean }
-  | { id: string; kind: "select"; label: string; options: string[]; value: string }
+  /** `action` marks a one-shot trigger: it shows as a button, and the node resets the param to false after running. */
+  | { id: string; kind: "bool"; label: string; value: boolean; action?: true }
+  /** `labels`, when given, is the display text for each option (same order); the stored value stays `options[i]`. */
+  /** `pick`, when given, adds a "Compare" button that opens a cost chart of `models()`; choosing a bar sets this param. */
+  | { id: string; kind: "select"; label: string; options: string[]; labels?: string[]; value: string; pick?: { title: string; models: () => ModelInfo[] } }
   /** `quad` marks a "x,y;x,y;x,y;x,y" camera-pixel value that gets a drag-the-corners editor (needs the node's `frameOf`). */
-  | { id: string; kind: "text"; label: string; value: string; quad?: { names: string[]; grid: number } };
+  | { id: string; kind: "text"; label: string; value: string; quad?: { names: string[]; grid: number } }
+  /** A non-editable heading row that groups the params below it. `value` is unused (kept so defaults stay uniform). */
+  | { id: string; kind: "separator"; label: string; value: string };
 
 export type ParamValues = Record<string, number | boolean | string>;
 

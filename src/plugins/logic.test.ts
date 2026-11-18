@@ -109,13 +109,29 @@ describe("experience nodes", () => {
     expect(virtualTable.seated).toBe(true); expect(out.seats).toHaveLength(1); expect(out.pointers).toEqual([{ id: "mouse", x: 1, y: 2 }]); expect(virtualTable.carried).toBe(52);
     n.params.seated = false; virtualTable.pointer = null; const off = n.run({}, 700)!; expect(off.seats).toEqual([]); expect(off.pointers).toEqual([]);
   });
-  it("scenario player plays a script, announces start and end, resets the table, and stops itself", () => {
+  it("scenario player plays a script through its two AI players, announces start and end, resets the table, and stops itself", () => {
     const n = node("sim.scenario", { scenario: "scholars-mate", play: true, pauseMs: 500 });
+    const white = node("sim.player", { color: "w" }), black = node("sim.player", { color: "b" });
+    const step = (now: number) => { const out = n.run({}, now)!; white.run({ actions: out.actions }, now); black.run({ actions: out.actions }, now); return out; };
     let events: any[] = [], now = 0;
-    expect(n.run({}, now)!.events.map((e: any) => e.type)).toEqual(["scenario-start"]);
-    for (; now < 60000 && n.params.play; now += 100) events = events.concat(n.run({}, now)!.events);
+    expect(step(now).events.map((e: any) => e.type)).toEqual(["scenario-start"]);
+    for (; now < 60000 && n.params.play; now += 100) events = events.concat(step(now).events);
     expect(events.map((e) => e.type)).toEqual(["scenario-end"]); expect(n.params.play).toBe(false); expect(virtualTable.game.history()).toHaveLength(7); expect(n.h.fidelity).toBe(1);
-    expect(n.run({}, now)).toEqual({ events: [] }); expect(n.h.fidelity).toBeNull(); expect((n.state as any).runner).toBeNull();
+    expect(n.run({}, now)).toEqual({ events: [], actions: [] }); expect(n.h.fidelity).toBeNull(); expect((n.state as any).runner).toBeNull();
+  });
+  it("the AI players shake hands before and after the game, and the checkmated player bangs the table", () => {
+    const n = node("sim.scenario", { scenario: "scholars-mate", play: true, pauseMs: 500 });
+    const white = node("sim.player", { color: "w" }), black = node("sim.player", { color: "b" });
+    const asked: string[] = [];
+    for (let now = 0; now < 60000; now += 100) {
+      const out = n.run({}, now)!;
+      asked.push(...out.actions.map((a: any) => (a.kind === "move" ? a.san : a.kind === "fist" ? `fist:${a.color}` : a.kind)));
+      white.run({ actions: out.actions }, now); black.run({ actions: out.actions }, now);
+      if (!n.params.play) break;
+    }
+    // scholar's mate is white's win, so black is the one checkmated
+    expect(asked).toEqual(["handshake", "e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Qxf7#", "handshake", "fist:b"]);
+    expect(virtualTable.game.history()).toHaveLength(7); expect(virtualTable.busy).toBe(false);
   });
   it("restarts when another scenario is selected mid-play", () => {
     const n = node("sim.scenario", { scenario: "scholars-mate", play: true, pauseMs: 500 });

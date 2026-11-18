@@ -26,10 +26,20 @@ function tinted(f: GrayFrame): HTMLCanvasElement {
   return c;
 }
 
-export function drawFrame(ctx: CanvasRenderingContext2D, w: number, h: number, f: GrayFrame | null | undefined, off = "offline") {
+/** Where a fw×fh image lands inside a w×h box: uniform scale `s`, centred (letterboxed), so it never stretches. */
+export interface FitRect { x: number; y: number; s: number }
+export function fitRect(fw: number, fh: number, w: number, h: number): FitRect {
+  const s = Math.min(w / fw, h / fh);
+  return { x: (w - fw * s) / 2, y: (h - fh * s) / 2, s };
+}
+
+/** Draws the frame uniformly scaled and centred in the box; returns the placed rect so overlays can map onto it. */
+export function drawFrame(ctx: CanvasRenderingContext2D, w: number, h: number, f: GrayFrame | null | undefined, off = "offline"): FitRect | null {
   ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, w, h);
-  if (!f) { ctx.fillStyle = "#566"; ctx.font = "12px system-ui"; ctx.fillText(off, 8, h / 2); return; }
-  ctx.drawImage(tinted(f), 0, 0, w, h);
+  if (!f) { ctx.fillStyle = "#566"; ctx.font = "12px system-ui"; ctx.fillText(off, 8, h / 2); return null; }
+  const r = fitRect(f.width, f.height, w, h);
+  ctx.drawImage(tinted(f), r.x, r.y, f.width * r.s, f.height * r.s);
+  return r;
 }
 
 const GLYPH: Record<string, string> = { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" };

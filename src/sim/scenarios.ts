@@ -1,4 +1,5 @@
-import { VirtualTable } from "./virtualTable";
+import { Chess } from "chess.js";
+import type { TableAction, TableAsk, VirtualTable } from "./virtualTable";
 
 export interface Scenario {
   id: string;
@@ -26,24 +27,66 @@ export const SCENARIOS: Scenario[] = [
 
 export const scenarioById = (id: string) => SCENARIOS.find((s) => s.id === id);
 
-/** Plays a scenario on a VirtualTable, one physical move at a time, with a pause between moves. */
+/**
+ * Plays a scenario one physical move at a time, with a pause between moves. It does not touch the table itself:
+ * it asks for actions (handshake, moves, fist) and the AI players at the table carry them out.
+ */
 export class ScenarioRunner {
   index = 0;
   private nextAt = 0;
+  private nextId = 1;
+  private phase: "start" | "moves" | "shake-end" | "fist" | "settle" | "done" = "start";
+  private primed = false;
+  /** the position the script has reached, to check the script itself (the table only catches up once the players have moved) */
+  private board = new Chess();
   constructor(public table: VirtualTable, public scenario: Scenario, public pauseMs = 2500) {}
 
-  get done() { return this.index >= this.scenario.moves.length; }
+  get done() { return this.phase === "done"; }
+  /** The side that gets checkmated and loses, when the game ends in mate; null otherwise. */
+  get loser(): "w" | "b" | null { return this.scenario.expect.mate ? (this.scenario.moves.length % 2 === 1 ? "b" : "w") : null; }
+  private heldAt: number | null = null;
+
+  get held() { return this.heldAt !== null; }
+
+  /** Pause or resume. While held no new move starts; resuming gives back the time spent held. */
+  setHeld(on: boolean, now: number) {
+    if (on && this.heldAt === null) this.heldAt = now;
+    else if (!on && this.heldAt !== null) { if (this.nextAt) this.nextAt += now - this.heldAt; this.heldAt = null; }
+  }
 
   /** Call every tick; starts the next move once the previous one has finished and the pause elapsed. */
-  step(now: number): boolean {
+  step(now: number): TableAction[] {
     this.table.tick(now);
-    if (this.done || this.table.busy) return false;
-    if (this.nextAt === 0) this.nextAt = now + this.pauseMs;
-    if (now < this.nextAt) return false;
-    const ok = this.table.play(this.scenario.moves[this.index], now);
-    if (!ok) throw new Error(`scenario ${this.scenario.id}: illegal move ${this.scenario.moves[this.index]}`);
-    this.index++;
-    this.nextAt = 0;
-    return true;
+    if (this.done || this.table.busy || this.held) return [];
+    const ask = (a: TableAsk) => [{ ...a, id: this.nextId++ } as TableAction];
+    if (this.phase === "start") {
+      if (!this.primed) { this.primed = true; return []; } // the first tick may also reset the table (scenario-start), so the handshake waits one tick
+      this.phase = "moves";
+      return ask({ kind: "handshake" });
+    }
+    if (this.phase === "moves") {
+      if (this.index < this.scenario.moves.length) {
+        if (this.nextAt === 0) this.nextAt = now + this.pauseMs;
+        if (now < this.nextAt) return [];
+        const san = this.scenario.moves[this.index], color = this.index % 2 === 0 ? "w" : "b";
+        let legal = false;
+        try { legal = !!this.board.move(san); } catch { legal = false; } // chess.js throws on a move it cannot read
+        if (!legal) throw new Error(`scenario ${this.scenario.id}: illegal move ${san}`);
+        this.index++;
+        this.nextAt = 0;
+        return ask({ kind: "move", color, san });
+      }
+      this.phase = "shake-end";
+    }
+    if (this.phase === "shake-end") {
+      this.phase = this.loser ? "fist" : "settle";
+      return ask({ kind: "handshake" });
+    }
+    if (this.phase === "fist") {
+      this.phase = "settle";
+      return ask({ kind: "fist", color: this.loser! });
+    }
+    if (this.phase === "settle") { this.phase = "done"; } // the last action is only finished once the table has been left idle
+    return [];
   }
 }

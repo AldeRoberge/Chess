@@ -48,6 +48,13 @@ button#heat.on{border-color:var(--signal);color:var(--signal)}
 .ne-heat-t{grid-column:1/3;font:400 10px/1.3 var(--font-mono);color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ne.heat .ne-node{box-shadow:0 8px 24px #0009,0 0 0 1px color-mix(in srgb,var(--heat,transparent) 60%,transparent)}
 .ne.heat .ne-ms{color:var(--heat,var(--text-dim))}
+
+/* node timing footer: a darker strip that reads as its own optional section */
+.ne-node .ne-foot{margin-top:0;padding:5px 10px 6px;border-top:1px solid var(--line);border-radius:0 0 5px 5px;background:color-mix(in srgb,var(--ink-1) 78%,#000)}
+[data-mode=light] .ne-node .ne-foot{background:color-mix(in srgb,var(--ink-1) 90%,#000)}
+/* light mode: the latency text is dark green and fully opaque so 0.0ms stays legible */
+[data-mode=light] .ne-node .ne-ms{color:#0b5a23;opacity:1}
+[data-mode=light] .ne-node .ne-ms.crit{color:#b00020}
 .ne.heat .ne-node.over{outline:2px solid var(--bad);outline-offset:2px}
 .perf-table tr.over td:first-child{box-shadow:inset 3px 0 var(--bad)}.perf-table tr.over td:nth-child(2){color:var(--bad)}
 .perf-table td.d.up{color:var(--bad)}.perf-table td.d.down{color:var(--ok)}

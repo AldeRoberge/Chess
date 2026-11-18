@@ -1,9 +1,14 @@
 import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
-import type { NodeSpec, Plugin } from "../core/types";
-import { Narrator, type NarrationLine } from "../narrator/narrator";
+import type { ModelInfo, NodeSpec, Plugin } from "../core/types";
+import { LANGS, Narrator, type Lang, type NarrationLine } from "../narrator/narrator";
+
+/** Language param shared by every narration node; unknown or missing values fall back to French. */
+const langParam = { id: "language", kind: "select" as const, label: "Language", options: LANGS, value: "fr" as Lang };
+const langOf = (v: unknown): Lang => (v === "en" ? "en" : "fr");
 import { commentate, LLM_DEFAULT_MODEL } from "../narrator/llm";
-import { ELEVENLABS_DEFAULTS, speak as speak_, type VoiceSettings } from "../narrator/voice";
+import { chatModelsFrom, fetchOpenAiModelIds, OPENAI_PRICES } from "../narrator/openaiModels";
+import { BROWSER_PROVIDER, ELEVENLABS_DEFAULTS, ELEVENLABS_PROVIDER, speak as speak_, TTS_PROVIDERS, type VoiceSettings } from "../narrator/voice";
 
 interface NarState { n: Narrator; lines: NarrationLine[] }
 /** Newest lines at the bottom, wrapped to the width; as many as fit, so an expanded node shows more history. */
@@ -30,11 +35,13 @@ const narrator: NodeSpec<NarState> = {
     { id: "voices", kind: "select", label: "Commentators", options: ["1", "2"], value: "2" },
     { id: "nameA", kind: "text", label: "Voice A", value: "Jean" },
     { id: "nameB", kind: "text", label: "Voice B", value: "Margot" },
+    langParam,
   ],
   previewSize: [200, 70],
   init: () => ({ n: new Narrator(), lines: [] }),
   process(i, { params, state, span }) {
     state.n.cfg.voices = params.voices === "1" ? 1 : 2;
+    state.n.cfg.lang = langOf(params.language);
     state.n.cfg.names = [String(params.nameA), String(params.nameB)];
     const evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
     const lines = evs.length ? span("narrate events", () => state.n.handle(evs)) : [];
@@ -44,7 +51,23 @@ const narrator: NodeSpec<NarState> = {
   preview: (ctx, w, h, s) => showLines(ctx, w, h, s.lines),
 };
 
-interface AiState { lines: NarrationLine[]; ready: NarrationLine[]; history: string[]; inflight: number }
+/** Models for the OpenAI dropdown: the priced fallback until a key fetches the account's live list. */
+let liveModels: ModelInfo[] | null = null;
+const modelInfos = (): ModelInfo[] => liveModels ?? chatModelsFrom(Object.keys(OPENAI_PRICES));
+const priceLabel = (m: ModelInfo) => (m.input === undefined || m.output === undefined ? m.id : `${m.id}  ($${m.input} in · $${m.output} out /1M)`);
+const aiModelParam = {
+  id: "aiModel", kind: "select" as const, label: "OpenAI model", value: LLM_DEFAULT_MODEL,
+  options: modelInfos().map((m) => m.id), labels: modelInfos().map(priceLabel),
+  pick: { title: "OpenAI models: cost per token", models: modelInfos },
+};
+/** Replaces the dropdown with the models this key can use (called once per key). */
+function adoptLiveModels(ids: string[]) {
+  const ms = chatModelsFrom(ids);
+  if (!ms.length) return;
+  liveModels = ms; aiModelParam.options = ms.map((m) => m.id); aiModelParam.labels = ms.map(priceLabel);
+}
+
+interface AiState { lines: NarrationLine[]; ready: NarrationLine[]; history: string[]; inflight: number; keyFetched: string }
 /** Optional AI commentator: rewrites the Narrator's lines with OpenAI. Without a key (or when off) it passes them through, and they also play if a request fails or is too slow. */
 const aiNarrator: NodeSpec<AiState> = {
   type: "narration.ai", title: "AI commentary (OpenAI)", category: "Narration",
@@ -53,19 +76,22 @@ const aiNarrator: NodeSpec<AiState> = {
   params: [
     { id: "provider", kind: "select", label: "Commentary engine", options: ["builtin", "openai"], value: "openai" },
     { id: "aiKey", kind: "text", label: "OpenAI API key", value: "" },
-    { id: "aiModel", kind: "text", label: "OpenAI model", value: LLM_DEFAULT_MODEL },
+    aiModelParam,
     { id: "voices", kind: "select", label: "Commentators", options: ["1", "2"], value: "2" },
     { id: "nameA", kind: "text", label: "Voice A", value: "Jean" },
     { id: "nameB", kind: "text", label: "Voice B", value: "Margot" },
+    langParam,
   ],
   previewSize: [200, 70],
-  init: () => ({ lines: [], ready: [], history: [], inflight: 0 }),
+  init: () => ({ lines: [], ready: [], history: [], inflight: 0, keyFetched: "" }),
   process(i, { params, state }) {
     const base = (i.lines ?? []) as NarrationLine[];
     const evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
     for (const e of evs) { const san = (e.data as any)?.san; if (san && (e.type === "move" || e.type === "capture" || e.type === "castle" || e.type === "promotion")) state.history.push(san); }
     state.history = state.history.slice(-40);
     const key = String(params.aiKey ?? "").trim();
+    // One model-list request per key; a failed request keeps the priced fallback list.
+    if (key && key !== state.keyFetched) { state.keyFetched = key; fetchOpenAiModelIds(key).then(adoptLiveModels).catch(() => {}); }
     const lines = state.ready.splice(0);
     if (params.provider !== "builtin" && key) {
       if (base.length) {
@@ -73,7 +99,7 @@ const aiNarrator: NodeSpec<AiState> = {
         else {
           state.inflight++;
           const prio = Math.max(...base.map((l) => l.priority));
-          commentate(evs, state.history, { apiKey: key, model: String(params.aiModel || LLM_DEFAULT_MODEL), names: [String(params.nameA), String(params.nameB)], voices: params.voices === "1" ? 1 : 2 }, prio)
+          commentate(evs, state.history, { apiKey: key, model: String(params.aiModel || LLM_DEFAULT_MODEL), names: [String(params.nameA), String(params.nameB)], voices: params.voices === "1" ? 1 : 2, lang: langOf(params.language) }, prio)
             .catch(() => base).then((ls) => { state.ready.push(...ls); }).finally(() => { state.inflight--; });
         }
       }
@@ -91,19 +117,22 @@ const speak: NodeSpec<SpeakState> = {
   params: [
     { id: "enabled", kind: "bool", label: "Speak aloud", value: true },
     { id: "volume", kind: "number", label: "Volume", min: 0, max: 1, step: 0.05, value: 0.9 },
-    { id: "provider", kind: "select", label: "Voice engine", options: ["browser", "elevenlabs"], value: "browser" },
-    { id: "browserA", kind: "text", label: "Browser voice A", value: "" },
-    { id: "browserB", kind: "text", label: "Browser voice B", value: "" },
-    { id: "apiKey", kind: "text", label: "ElevenLabs API key", value: "" },
-    { id: "voiceIdA", kind: "text", label: "ElevenLabs voice ID A", value: ELEVENLABS_DEFAULTS.voiceIdA },
-    { id: "voiceIdB", kind: "text", label: "ElevenLabs voice ID B", value: ELEVENLABS_DEFAULTS.voiceIdB },
-    { id: "model", kind: "text", label: "ElevenLabs model", value: ELEVENLABS_DEFAULTS.model },
+    { id: "provider", kind: "select", label: "Voice engine", options: TTS_PROVIDERS.map((p) => p.id), labels: TTS_PROVIDERS.map((p) => p.label), value: "browser" },
+    { id: "sepBrowser", kind: "separator", label: BROWSER_PROVIDER.label, value: "" },
+    { id: "browserA", kind: "text", label: "Voice A", value: "" },
+    { id: "browserB", kind: "text", label: "Voice B", value: "" },
+    { id: "sepElevenlabs", kind: "separator", label: ELEVENLABS_PROVIDER.label, value: "" },
+    { id: "apiKey", kind: "text", label: "API key", value: "" },
+    { id: "voiceIdA", kind: "text", label: "Voice ID A", value: ELEVENLABS_DEFAULTS.voiceIdA },
+    { id: "voiceIdB", kind: "text", label: "Voice ID B", value: ELEVENLABS_DEFAULTS.voiceIdB },
+    { id: "model", kind: "text", label: "Model", value: ELEVENLABS_DEFAULTS.model },
+    langParam,
   ],
   init: () => ({ enabled: true }),
   process({ lines }, { params }) {
     if (!params.enabled) return;
     const s: VoiceSettings = {
-      provider: params.provider === "elevenlabs" ? "elevenlabs" : "browser", volume: Number(params.volume),
+      provider: params.provider === ELEVENLABS_PROVIDER.id ? ELEVENLABS_PROVIDER.id : BROWSER_PROVIDER.id, lang: langOf(params.language), volume: Number(params.volume),
       browserA: String(params.browserA ?? ""), browserB: String(params.browserB ?? ""),
       apiKey: String(params.apiKey ?? ""), voiceIdA: String(params.voiceIdA ?? ""), voiceIdB: String(params.voiceIdB ?? ""), model: String(params.model ?? ""),
     };
@@ -113,6 +142,6 @@ const speak: NodeSpec<SpeakState> = {
 
 /** TTS with two distinct voices (browser or ElevenLabs); critical lines cut the current utterance. */
 export const speakLine = (text: string, voice: "A" | "B", volume: number, interrupt = false) =>
-  speak_(text, voice, { provider: "browser", volume, browserA: "", browserB: "", apiKey: "", voiceIdA: "", voiceIdB: "", model: "" }, interrupt);
+  speak_(text, voice, { provider: "browser", lang: "fr", volume, browserA: "", browserB: "", apiKey: "", voiceIdA: "", voiceIdB: "", model: "" }, interrupt);
 
 export const narrationPlugin: Plugin = { id: "narration", name: "Narration", register: (r) => { r.register(narrator); r.register(aiNarrator); r.register(speak); } };

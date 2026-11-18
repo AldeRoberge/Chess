@@ -18,7 +18,7 @@ const cues: NodeSpec<CueState> = {
     { id: "hour", kind: "number", label: "Time of day", min: 0, max: 24, step: 0.5, value: -1 },
     { id: "rain", kind: "number", label: "Rain override", min: -1, max: 1, step: 0.05, value: -1 },
     { id: "snow", kind: "number", label: "Snow override", min: -1, max: 1, step: 0.05, value: -1 },
-    { id: "thunder", kind: "bool", label: "Trigger thunder now", value: false },
+    { id: "thunder", kind: "bool", label: "Trigger thunder now", value: false, action: true },
     { id: "rules", kind: "text", label: "Scene rules", value: "" },
   ],
   previewSize: [200, 112],

@@ -86,7 +86,7 @@ const NODE_ICON: Record<string, string> = {
   "game.tracker": "board", "game.engine": "knight", "game.chesscom": "knight",
   "narration.narrator": "chat", "narration.ai": "brain", "narration.speech": "voice",
   "scene.cues": "lamp", "scene.output": "sound",
-  "tracking.pose": "people", "sim.pose": "walk", "sim.person": "opponent", "sim.scenario": "film",
+  "tracking.pose": "people", "sim.pose": "walk", "sim.person": "opponent", "sim.scenario": "film", "sim.player": "opponent", "world.virtual": "cube",
   "experience.director": "spark", "clock.reader": "clock", "clock.overlay": "clock",
 };
 const CAT_ICON: Record<string, string> = { Source: "camera", Vision: "eye", Game: "knight", Narration: "chat", Scene: "lamp", Output: "sound", Tracking: "people", Experience: "spark" };

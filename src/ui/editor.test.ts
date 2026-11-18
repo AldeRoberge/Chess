@@ -83,13 +83,23 @@ describe("live frame updates", () => {
     (ed as any).views.delete(b.id); expect(() => ed.frame(1000)).not.toThrow(); expect(ed.root.querySelectorAll("svg.ne-wires path")).toHaveLength(0);
     const e2 = setup(); e2.ed.frame(0); // no stats yet
   });
-  it("redraws wires when something moved, or at least every 400 ms", () => {
+  it("refreshes wires at least every 400 ms but keeps the same path elements, so CSS flow animations do not restart", () => {
     const { g, ed, a, b } = setup(); g.connect({ node: a.id, port: "o" }, { node: b.id, port: "i" }); g.tick(0);
-    ed.frame(1000); const first = ed.root.querySelector("svg path")!; ed.frame(1100); expect(ed.root.querySelector("svg path")).toBe(first); ed.frame(1500); expect(ed.root.querySelector("svg path")).not.toBe(first);
+    ed.frame(1000); const first = ed.root.querySelector("svg path")!; ed.frame(1100); expect(ed.root.querySelector("svg path")).toBe(first); ed.frame(1500); expect(ed.root.querySelector("svg path")).toBe(first); expect(ed.root.querySelectorAll("svg.ne-wires path")).toHaveLength(1);
   });
 });
 
 describe("parameters", () => {
+  it("action bool params show as a button that fires the node once", () => {
+    const { r } = registry();
+    r.register(spec({ type: "act", category: "Vision", inputs: [{ id: "i", type: "frame" }], outputs: [], params: [{ id: "learn", kind: "bool", label: "Learn now", value: false, action: true }], process: () => undefined }));
+    const g = new Graph(r); const a = g.addNode("act", 10, 10); const ed = new NodeEditor(g); const onChange = vi.fn(); ed.onChange = onChange;
+    const card = node(ed, a.id);
+    expect(card.querySelector("input[type=checkbox]")).toBeNull();
+    const btn = [...card.querySelectorAll<HTMLButtonElement>("button.ne-action")];
+    expect(btn.map((b) => b.textContent)).toEqual(["Learn now"]);
+    btn[0].click(); expect(a.params.learn).toBe(true); expect(onChange).toHaveBeenCalledTimes(1);
+  });
   it("number / bool / select / text widgets write to the node and notify; frame() echoes outside changes unless the widget has focus", () => {
     const { ed, a, onChange, g } = setup(); const card = node(ed, a.id);
     const [range, check, select, text] = [card.querySelector<HTMLInputElement>("input[type=range]")!, card.querySelector<HTMLInputElement>("input[type=checkbox]")!, card.querySelector<HTMLSelectElement>("select")!, card.querySelector<HTMLInputElement>("input[type=text]")!];

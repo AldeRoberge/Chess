@@ -11,6 +11,7 @@
 export interface TipRow { label: string; value: string; bar?: number; tone?: "ok" | "warn" | "bad" }
 /** What a signal is carrying right now: a camera image and/or a short list of fields. */
 export interface TipPreview { frame?: { width: number; height: number; data: ArrayLike<number> }; items?: [string, string][]; more?: number }
+/** An empty title means "describe the element under the pointer": the element is highlighted instead of named. */
 export interface Tip { title: string; body?: string; tag?: string; color?: string; rows?: TipRow[]; keys?: string[]; hint?: string; preview?: TipPreview | null }
 export type TipResolver = (el: Element) => Tip | null;
 
@@ -89,16 +90,18 @@ export class Tooltips {
 
   destroy() { this.hide(); this.off.forEach((f) => f()); this.off = []; this.el.remove(); }
 
+  /** Innermost explicit tip wins; an element's generic fallback (its own name) only applies if no ancestor has a real one. */
   private find(from: EventTarget | null | undefined): { el: Element; tip: Tip } | null {
+    let fallback: { el: Element; tip: Tip } | null = null;
     for (let e = from instanceof Element ? from : null; e && e !== this.doc.body && e !== this.doc.documentElement; e = e.parentElement) {
       if (e === this.el) return null;
       if (e instanceof HTMLElement && e.title && !e.dataset.tip) { e.dataset.tip = e.title; e.removeAttribute("title"); }
       let tip = e instanceof HTMLElement ? parseTip(e) : null;
       for (let i = 0; !tip && i < this.resolvers.length; i++) tip = this.resolvers[i](e);
-      if (!tip && e instanceof HTMLElement) tip = fallbackTip(e);
       if (tip) return { el: e, tip };
+      if (!fallback && e instanceof HTMLElement) { const t = fallbackTip(e); if (t) fallback = { el: e, tip: t }; }
     }
-    return null;
+    return fallback;
   }
 
   private over = (ev: Event) => {
@@ -122,7 +125,7 @@ export class Tooltips {
 
   private show(el: Element, tip: Tip) {
     this.hide(true);
-    this.src = el; this.pending = null;
+    this.setSrc(el); this.pending = null;
     const r = el.getBoundingClientRect();
     this.follow = r.width > 240 || r.height > 90;
     this.render(tip);
@@ -137,7 +140,7 @@ export class Tooltips {
     const at = this.src.isConnected ? this.src : (this.doc.elementFromPoint?.(this.px, this.py) ?? null);
     const f = this.find(at);
     if (!f) { this.hide(); return; }
-    if (f.el !== this.src) this.src = f.el;
+    if (f.el !== this.src) this.setSrc(f.el);
     this.render(f.tip);
     this.place();
   }
@@ -145,7 +148,9 @@ export class Tooltips {
   private render(t: Tip) {
     const head = mk("div", "tip-head");
     const dot = mk("span", "tip-dot"); if (t.color) { dot.style.background = t.color; dot.style.setProperty("--c", t.color); }
-    head.append(dot, mk("span", "tip-title", t.title));
+    // An empty title means the card describes the element under the pointer, which is already highlighted.
+    head.append(dot);
+    if (t.title) head.append(mk("span", "tip-title", t.title));
     if (t.tag) head.append(mk("span", "tip-tag", t.tag));
     const kids: HTMLElement[] = [head];
     if (t.body) kids.push(mk("p", "tip-body", t.body));
@@ -211,10 +216,17 @@ export class Tooltips {
   /** Hide and stay hidden until the pointer leaves this element (used on click / drag / Esc). */
   private dismiss() { this.suppressed = this.src ?? this.pending; this.hide(); }
 
+  /** Moves the open card (and the subtle highlight behind it) to a new source element. */
+  private setSrc(el: Element | null) {
+    this.src?.classList.remove("tip-src");
+    this.src = el;
+    el?.classList.add("tip-src");
+  }
+
   private hide(quiet = false) {
     clearTimeout(this.timer); clearInterval(this.live);
     this.pending = null;
-    if (this.src) { this.src.removeAttribute("aria-describedby"); this.src = null; if (!quiet) this.hiddenAt = Date.now(); }
+    if (this.src) { this.src.removeAttribute("aria-describedby"); this.setSrc(null); if (!quiet) this.hiddenAt = Date.now(); }
     this.el.classList.remove("on");
   }
 }

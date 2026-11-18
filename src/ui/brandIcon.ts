@@ -1,0 +1,12 @@
+/** The CE knight: a friendly horse-head knight with big round eyes. Static markup, safe for innerHTML. Same artwork as public/knight.svg (the favicon). */
+export const KNIGHT_SVG = `<svg class="brand-knight" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+  <rect width="32" height="32" rx="7" fill="#102338"/>
+  <path d="M6 28V22.5C6 18.5 8.5 16 11 14.2 10.2 12.5 10 10 10.6 8.2L13.2 4.4C13.8 3.6 15 3.8 15.4 4.8L16.2 7.2C21.6 7.6 25 11.4 25.6 16.4L26.4 19.6C26.6 20.4 26 21 25.2 20.9L24 20.6V28Z" fill="#e8f6ff" stroke="#5cc8ff" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M6 28H24" stroke="#5cc8ff" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M11.2 9.6 13.4 11.4M11.6 12.2 13.6 13.2" stroke="#5cc8ff" stroke-width="1" stroke-linecap="round" opacity=".7"/>
+  <circle cx="19" cy="13.4" r="2.6" fill="#ffffff"/>
+  <circle cx="19.5" cy="13.8" r="1.5" fill="#102338"/>
+  <circle cx="20.1" cy="13.1" r=".55" fill="#ffffff"/>
+  <circle cx="22.8" cy="17.6" r="1.3" fill="#ff9ec7" opacity=".7"/>
+  <path d="M21.6 20.2q1 .8 2.2 0" fill="none" stroke="#102338" stroke-width=".9" stroke-linecap="round"/>
+</svg>`;

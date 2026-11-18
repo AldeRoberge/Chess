@@ -7,7 +7,22 @@ const say = (n: Narrator, type: string, data: Record<string, any> = {}, t = 1000
 const texts = (l: { text: string }[]) => l.map((x) => x.text).join(" | ");
 
 describe("Narrator", () => {
-  it("has two default commentators with a minimum gap", () => { expect(defaultNarratorConfig()).toEqual({ voices: 2, names: ["Jean", "Margot"], seed: 7, minGapMs: 900 }); });
+  it("has two French default commentators with a minimum gap", () => { expect(defaultNarratorConfig()).toEqual({ voices: 2, names: ["Jean", "Margot"], seed: 7, minGapMs: 900, lang: "fr" }); });
+  it("narrates in English when the language is set to en, same events and speakers", () => {
+    const n = new Narrator({ ...defaultNarratorConfig(), minGapMs: 0, lang: "en" });
+    expect(say(n, "seat")[0]).toMatchObject({ speaker: "A", name: "Jean", priority: 3 });
+    expect(texts(say(n, "capture", { color: "w", piece: "p", captured: "q", to: "d5" }, 200000))).toContain("takes the queen on d5");
+    expect(say(n, "castle", { color: "b", flags: "q" }, 300000)[0].text).toBe("Black castles queenside.");
+    expect(say(n, "mate", { color: "w" }, 400000)[0].text).toBe("Checkmate! White wins.");
+    expect(say(n, "check", {}, 500000)[0].text).toBe("Check!");
+    expect(say(n, "clock-critical", { side: "w", conf: 0.9, ms: 5000 }, 600000)[0].text).toBe("Careful, White have 5 seconds left!");
+    expect(texts(say(n, "clock-flag", { side: "b", conf: 0.9 }, 700000))).toBe("The flag has fallen! Black are out of time.");
+  });
+  it("keeps French clock wording for the French narrator", () => {
+    const n = quiet();
+    expect(say(n, "clock-critical", { side: "w", conf: 0.9, ms: 5000 }, 100000)[0].text).toBe("Attention, il reste 5 secondes aux blancs !");
+    expect(say(n, "clock-flag", { side: "b", conf: 0.9 }, 200000)[0].text).toBe("Le drapeau est tombé ! Les noirs n'ont plus de temps.");
+  });
   it("announces seat and leave events at critical priority", () => {
     const n = quiet();
     expect(say(n, "seat")[0]).toMatchObject({ speaker: "A", name: "Jean", priority: 3 });

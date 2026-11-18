@@ -1,5 +1,5 @@
 import type { NodeSpec, Plugin } from "../core/types";
-import { virtualTable } from "../sim/virtualTable";
+import type { VirtualTable } from "../sim/virtualTable";
 import { applySensor, renderLuminance } from "../sim/render3d";
 import { renderPool } from "../sim/renderPool";
 import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
@@ -63,7 +63,7 @@ const webcam: NodeSpec<WebcamState> = {
 interface SynthState { frame: GrayFrame | null; last: number; seed: number; key: string; lum: Float32Array | null; inflight: boolean; epoch: number }
 const synthetic: NodeSpec<SynthState> = {
   type: "source.synthetic", title: "Virtual Camera (3D)", category: "Source",
-  inputs: [], outputs: [{ id: "frame", type: "frame" }],
+  inputs: [{ id: "world", type: "world", label: "Virtual world" }], outputs: [{ id: "frame", type: "frame" }],
   params: [
     { id: "online", kind: "bool", label: "Online", value: true },
     { id: "cam", kind: "select", label: "Viewpoint", options: ["A", "B", "C"], value: "A" },
@@ -75,21 +75,22 @@ const synthetic: NodeSpec<SynthState> = {
   ],
   previewSize: [160, 120],
   init: () => ({ frame: null, last: 0, seed: 1, key: "", lum: null, inflight: false, epoch: 0 }),
-  process(_i, { params, state, now, setFidelity }) {
-    if (!params.online) { state.frame = null; state.epoch++; setFidelity(null); return { frame: null }; }
+  process(inputs, { params, state, now, setFidelity }) {
+    const table = inputs?.world as VirtualTable | undefined; // the camera looks at a Virtual World; unwired, it sees nothing
+    if (!params.online || !table) { state.frame = null; state.epoch++; setFidelity(null); return { frame: null }; }
     if (state.frame && now - state.last < 1000 / Number(params.fps)) { setFidelity(1); return { frame: state.frame }; } // reused frame is still a live one; without this the label vanishes between renders
     const pool = renderPool();
     if (pool.supported && state.inflight) { setFidelity(state.frame ? 1 : 0); return { frame: state.frame }; } // a render is still running on a worker: keep showing the last frame
     state.last = now;
     const opts = { width: FRAME_W, height: FRAME_H, rig: RIGS[String(params.cam)], noise: Number(params.noise), gain: Number(params.gain), gradient: Number(params.gradient), shadows: !!params.shadows, seed: ++state.seed, t: now };
-    const key = `${params.cam}|${opts.shadows}|${virtualTable.sceneKey}`;
+    const key = `${params.cam}|${opts.shadows}|${table.sceneKey}`;
     if (pool.supported) { // ray-cast off the main thread; the result lands a few ms later and is picked up by a later tick
       state.inflight = true; const epoch = state.epoch;
-      void pool.request({ cam: String(params.cam), key, scene: virtualTable.scene3d(), opts }).then((f) => { if (epoch === state.epoch) state.frame = f; state.inflight = false; });
+      void pool.request({ cam: String(params.cam), key, scene: table.scene3d(), opts }).then((f) => { if (epoch === state.epoch) state.frame = f; state.inflight = false; });
       setFidelity(state.frame ? 1 : 0);
       return { frame: state.frame };
     }
-    if (key !== state.key || !state.lum) { state.key = key; state.lum = renderLuminance(virtualTable.scene3d(), opts); } // ray-cast only when something moved
+    if (key !== state.key || !state.lum) { state.key = key; state.lum = renderLuminance(table.scene3d(), opts); } // ray-cast only when something moved
     state.frame = applySensor(state.lum, opts);
     setFidelity(1);
     return { frame: state.frame };

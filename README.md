@@ -5,6 +5,27 @@ pieces, a legality-checked tracker turns noisy pixels into a clean game state, a
 two-voice narration, Stockfish, weather/decor scenes, DMX and multi-projector mapping of your
 (scanned) room. Think Resolume + Chataigne + TouchDesigner/Blueprints, in a browser tab.
 
+<p align="center">
+  <img src="docs/screenshots/table.png" alt="Table view: a scripted Scholar's mate, the tracker synced on the move list, and the commentator's line under the board" width="100%">
+</p>
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Table view with the live board, cameras and move list](docs/screenshots/table.png) | ![3D / Mapping view: room, table and projector frusta](docs/screenshots/3d-mapping.png) |
+| **Table.** Two virtual cameras feed the board readers; the tracked board, the 2D view and the next suggestions sit on the right. | **3D / Mapping.** The room, the table and the projector frusta (yellow and red beams), with the wall outputs to calibrate. |
+| ![Narration log with the commentators' lines and per-camera quality](docs/screenshots/log.png) | ![Guided setup, Board step: dragging the corner handles onto the board](docs/screenshots/setup-board.png) |
+| **Log.** Every move becomes a line of commentary, with each camera's quality and trust. | **Setup, 03 Board.** Drag the four green handles onto a8, h8, h1, a1 on the live preview. |
+| ![Guided setup, Scenes step: winter forest with snow](docs/screenshots/setup-scenes.png) | |
+| **Setup, 04 Scenes.** Pick the atmosphere; rain, snow and thunder react to the game. | |
+
+The screenshots were taken from the built-in **virtual cameras**, so they show a real run without hardware.
+
+## Quick start
+
+Requires a recent Node.js LTS and a browser with WebGL (Chromium or Edge recommended).
+
 ```bash
 npm install
 npm run setup:stockfish   # copies the single-thread WASM into public/ (otherwise a weak fallback engine plays)
@@ -26,7 +47,7 @@ Esc / PageUp-Down), a **gamepad** (D-pad, A, B, bumpers) or the **mouse**:
 | 02 Cameras | Scan and add webcams, or add *virtual* 3D cameras. Toggle each online / offline. |
 | 03 Board | Per camera: drag the four green corner handles on the live preview (or nudge with sliders), pick the IR channel, trust and lens field of view. |
 | 04 Scenes | Cavern, winter forest, fire watchtower, Christmas forest; rain / snow / time of day; test the thunder. |
-| 05 Narration | One or two French commentators, names, volume, test voices. |
+| 05 Narration | One or two commentators in French (default) or English, names, volume, test voices. |
 | 06 Opponent | Let the player choose at the table (hover menu), or lock Stockfish 500 / 1000 / 1500 or two players. |
 | 07 Room | Projector count, **people tracking** (3D pose), DMX bridge. |
 | 08 Launch | Validation (errors block launching), optional autoplay demo game, **Launch**. |

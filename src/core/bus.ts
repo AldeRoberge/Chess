@@ -23,6 +23,8 @@ export const bus = {
   /** What the projector should show of the clock; set by the Clock Overlay node. */
   clockView: null as ClockView | null,
   cameras: [] as { id: string; online: boolean; quality: number; reliability: number }[],
+  /** Set from the top-bar Pause button: holds the scenario player between moves without resetting it. */
+  scenarioPaused: false,
 };
 
 export function pushLog<T>(arr: T[], items: T[], max = 60) {

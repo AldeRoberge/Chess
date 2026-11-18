@@ -43,6 +43,9 @@ describe("context menu", () => {
   it("picks an icon from the label unless the row names one", () => {
     expect(iconFor({ kind: "action", label: "Delete node", run() {} })).toBe("trash"); expect(iconFor({ kind: "action", label: "Delete node", icon: "x", run() {} })).toBe("x");
     expect(iconFor({ kind: "toggle", label: "Zzz", get: () => true, set() {} })).toBe("toggle");
+    // every row we know by name gets its own icon, not the generic chevron
+    for (const [label, name] of [["Re-run system check", "check"], ["Learn now", "brain"], ["Launch experience", "launch"], ["Speak aloud", "voice"], ["Test thunder", "bolt"], ["Autoplay demo game", "play"], ["Commentators", "chat"], ["Computer strength", "opponent"], ["Mode", "list"], ["Options", "sliders"], ["Time of day", "clock"], ["Volume", "sound"], ["Status", "wave"], ["Reset workflow", "refresh"]] as const)
+      expect(iconFor({ kind: "action", label, run() {} })).toBe(name);
   });
   it("searches nested rows by label and path, label hits first, and shows a search box only on bigger menus", () => {
     const a = (label: string): CtxItem => ({ kind: "action", label, run() {} });

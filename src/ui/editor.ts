@@ -10,11 +10,12 @@ import type { NodeInstance, NodeSpec, ParamDef, PortType } from "../core/types";
 import { drawRows, objRows } from "../plugins/shared";
 import { portsCompatible } from "../core/types";
 import { openQuadEditor } from "./quadEditor";
+import { openModelChart } from "./modelChart";
 import type { GrayFrame } from "../vision/types";
 
 export const PORT_COLOR: Record<PortType, string> = {
   frame: "#5aa9ff", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
-  seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", any: "#9aa4b8",
+  seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", world: "#4fd1c5", player: "#f472b6", action: "#fde047", any: "#9aa4b8",
 };
 export const CAT_COLOR: Record<string, string> = {
   Source: "#4a8fd9", Vision: "#3fb59a", Game: "#d98c4a", Narration: "#4fb0d0", Scene: "#62c27a", Output: "#7c8aa0", Tracking: "#c76fb0", Experience: "#9a78e0",
@@ -60,7 +61,7 @@ export class NodeEditor {
     this.layer = new GroupLayer({
       graph, scale: () => this.view.k,
       box: (id) => { const n = this.graph.nodes.get(id); if (!n) return null; const el = this.views.get(id)?.el; return { x: n.x, y: n.y, w: n.w ?? (el?.offsetWidth || NODE_W), h: n.h ?? (el?.offsetHeight || NODE_H) }; },
-      place: (id) => { const n = this.graph.nodes.get(id), v = this.views.get(id); if (n && v) { v.el.style.left = n.x + "px"; v.el.style.top = n.y + "px"; this.dirty = true; } },
+      place: (id) => { const n = this.graph.nodes.get(id), v = this.views.get(id); if (n && v) { v.el.style.left = n.x + "px"; v.el.style.top = n.y + "px"; if (n.w !== undefined) this.applySize(n); this.dirty = true; } },
       track: (el, e, move, end) => this.track(el, e, move, end),
       changed: () => { this.dirty = true; this.onChange(); },
     });
@@ -183,6 +184,7 @@ export class NodeEditor {
   }
 
   private paramRow(n: NodeInstance, p: ParamDef, sync: Map<string, (v: any) => void>) {
+    if (p.kind === "separator") { const sep = h("div", "ne-param-sep", p.label); sep.setAttribute("role", "separator"); sep.dataset.node = n.id; sep.dataset.param = p.id; return sep; }
     const row = h("label", "ne-param"); row.dataset.node = n.id; row.dataset.param = p.id; const pn = h("span", "ne-pn"); pn.innerHTML = `<span class="ne-pi">${paramIcon(p.id, p.kind)}</span>`; pn.append(p.label); row.append(pn);
     const ic0 = pn.querySelector<HTMLElement>(".ne-pi")!;
     const mark = () => { const ch = n.params[p.id] !== p.value; row.classList.toggle("changed", ch); if (ch) { ic0.dataset.tip = "Reset to default"; ic0.dataset.tipBody = `Back to ${p.value}.`; ic0.dataset.tipHint = "Click the icon"; } else { delete ic0.dataset.tip; delete ic0.dataset.tipBody; delete ic0.dataset.tipHint; } };
@@ -198,12 +200,33 @@ export class NodeEditor {
       r.oninput = () => { val.textContent = r.value; fill(); commit(Number(r.value)); };
       sync.set(p.id, (v) => { if (document.activeElement !== r) { r.value = String(v); val.textContent = String(v); fill(); } });
       row.append(r, val);
+    } else if (p.kind === "bool" && p.action) {
+      const b = h("button", "ne-action", p.label); b.type = "button";
+      b.onpointerdown = (e) => e.stopPropagation();
+      b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); n.params[p.id] = true; this.onChange(); };
+      row.append(b);
     } else if (p.kind === "bool") {
       const c = h("input"); c.type = "checkbox"; c.checked = !!n.params[p.id]; c.onchange = () => commit(c.checked);
       sync.set(p.id, (v) => (c.checked = !!v)); row.append(c);
     } else if (p.kind === "select") {
-      const s = h("select"); for (const o of p.options) { const op = h("option", "", o); op.value = o; s.append(op); }
-      s.value = String(n.params[p.id]); s.onchange = () => commit(s.value); sync.set(p.id, (v) => { if (document.activeElement !== s) s.value = String(v); }); row.append(s);
+      const s = h("select");
+      // Rebuilt from the param's options each time it opens, so a list fetched later (e.g. OpenAI models) shows up; a saved value missing from the list stays visible.
+      const fill = () => {
+        const cur = String(n.params[p.id]), opts = p.options.includes(cur) || !cur ? p.options : [...p.options, cur];
+        s.replaceChildren(...opts.map((o) => { const i = p.options.indexOf(o), op = h("option", "", i >= 0 ? p.labels?.[i] ?? o : o); op.value = o; return op; }));
+        s.value = cur;
+      };
+      fill(); s.onpointerdown = () => fill(); s.onchange = () => commit(s.value);
+      sync.set(p.id, (v) => { if (document.activeElement !== s) fill(); }); row.append(s);
+      if (p.pick) {
+        const pick = p.pick, b = h("button", "ne-qbtn", "◫ Compare"); b.type = "button"; b.dataset.tip = "Compare options"; b.dataset.tipBody = "See each option's price per token on a chart and pick one.";
+        b.onpointerdown = (e) => e.stopPropagation();
+        b.onclick = (e) => {
+          e.preventDefault(); e.stopPropagation();
+          openModelChart({ title: `${this.spec(n).title} — ${pick.title}`, current: String(n.params[p.id]), models: pick.models(), pick: (v) => { commit(v); fill(); } });
+        };
+        pn.append(b);
+      }
     } else {
       const t = h("input"); t.type = "text"; t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
       sync.set(p.id, (v) => { if (document.activeElement !== t) t.value = String(v); }); row.append(t);
@@ -262,7 +285,19 @@ export class NodeEditor {
     }
   }
 
-  private refreshSel() { for (const [id, v] of this.views) v.el.classList.toggle("sel", this.selected.has(id)); }
+  private refreshSel() { for (const [id, v] of this.views) v.el.classList.toggle("sel", this.selected.has(id)); this.onSelect([...this.selected]); }
+  /** Called whenever the selection changes; the top ribbon uses it to offer the matching actions. */
+  onSelect: (ids: string[]) => void = () => {};
+  selection(): string[] { return [...this.selected]; }
+  /** Copy a node next to itself (same type and settings). */
+  duplicate(id: string) {
+    const n = this.graph.nodes.get(id); if (!n) return;
+    const c = this.graph.addNode(n.type, n.x + 40, n.y + 40); Object.assign(c.params, JSON.parse(JSON.stringify(n.params))); this.addView(c); this.dirty = true; this.onChange();
+  }
+  toggleBypass(id: string) {
+    const n = this.graph.nodes.get(id); if (!n) return;
+    n.bypass = !n.bypass; this.views.get(id)?.el.classList.toggle("bypass", !!n.bypass); this.onChange();
+  }
 
   /** Right-click menu: a wire, a node, or the empty canvas (the "add node" palette lives under Add node…). */
   private contextItems(ev: MouseEvent): CtxItem[] {
@@ -275,7 +310,7 @@ export class NodeEditor {
       return [
         { kind: "toggle", label: "Bypass", get: () => !!n.bypass, set: (b) => { n.bypass = b; v?.el.classList.toggle("bypass", b); this.onChange(); } },
         { kind: "action", label: big ? "Collapse" : "Expand", run: () => { if (big) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); } },
-        { kind: "action", label: "Duplicate", run: () => { const c = this.graph.addNode(n.type, n.x + 40, n.y + 40); Object.assign(c.params, JSON.parse(JSON.stringify(n.params))); this.addView(c); this.dirty = true; this.onChange(); } },
+        { kind: "action", label: "Duplicate", run: () => this.duplicate(n.id) },
         { kind: "action", label: "Reset parameters", disabled: !spec.params?.length, run: () => { for (const p of spec.params ?? []) n.params[p.id] = p.value; this.dirty = true; this.onChange(); } },
         ...(spec.preview ? [{ kind: "submenu" as const, label: "Preview quality", items: renderItems }] : []),
         { kind: "action", label: "Copy node id", run: () => void navigator.clipboard?.writeText(n.id) },
@@ -465,11 +500,30 @@ export class NodeEditor {
     return now - o.since;
   }
 
+  private wirePaths = new Map<string, SVGPathElement>();
+  /** Updates existing wire paths in place, adds new ones and removes gone ones, so unchanged wires keep their CSS animation running. */
+  private reconcileWires(wanted: Map<string, { d: string; stroke: string; cls: string; tip: string; style: string; e?: string }>) {
+    for (const [key, p] of this.wirePaths) if (!wanted.has(key)) { p.remove(); this.wirePaths.delete(key); }
+    for (const [key, w] of wanted) {
+      let p = this.wirePaths.get(key);
+      if (!p) {
+        p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        p.append(document.createElementNS("http://www.w3.org/2000/svg", "title"));
+        this.wirePaths.set(key, p);
+        this.svg.append(p); // only new paths are appended: moving an element in the DOM restarts its CSS animation
+      }
+      p.setAttribute("d", w.d); p.setAttribute("stroke", w.stroke); p.setAttribute("class", w.cls); p.setAttribute("style", w.style);
+      if (w.e) p.setAttribute("data-e", w.e); else p.removeAttribute("data-e");
+      p.firstChild!.textContent = w.tip;
+    }
+  }
+
   /** Called every frame by the app: refreshes wires, live meters, previews, param echoes. */
   frame(now: number) {
     if (this.dirty || now - this.lastWire > 400) {
       this.lastWire = now; this.dirty = false;
-      const parts: string[] = [];
+      // Wires are reconciled in place rather than rebuilt: replacing the <path> elements would restart their CSS flow animation on every refresh (the visible back-and-forth jitter).
+      const wanted = new Map<string, { d: string; stroke: string; cls: string; tip: string; style: string; e?: string }>();
       for (const e of this.graph.edges) {
         const a = this.pinPos(e.from.node, "out:" + e.from.port), b = this.pinPos(e.to.node, "in:" + e.to.port);
         if (!a || !b) continue;
@@ -480,13 +534,13 @@ export class NodeEditor {
         const fid = this.graph.stats.get(e.from.node)?.fidelity ?? null;
         const cls = live ? wireClass(this.settle(e.id, t === "frame" ? undefined : val, now), fid) : "idle";
         const tip = !live ? "No data yet" : cls === "constant" ? "Constant: has not changed" : fid == null ? "Live data" : `Certainty ${Math.round(fid * 100)}%`;
-        parts.push(`<path d="${this.wirePath(a, b)}" stroke="${PORT_COLOR[t]}" class="${cls}" data-e="${e.id}" style="pointer-events:stroke${fid != null && live ? `;opacity:${(0.5 + 0.5 * fid).toFixed(2)}` : ""}"><title>${tip}</title></path>`);
+        wanted.set(e.id, { d: this.wirePath(a, b), stroke: PORT_COLOR[t], cls, tip, style: `pointer-events:stroke${fid != null && live ? `;opacity:${(0.5 + 0.5 * fid).toFixed(2)}` : ""}`, e: e.id });
       }
       if (this.drag) {
         const a = this.pinPos(this.drag.from.node, "out:" + this.drag.from.port);
-        if (a) parts.push(`<path d="${this.wirePath(a, { x: this.drag.x, y: this.drag.y })}" stroke="#fff" class="drag"/>`);
+        if (a) wanted.set("\0drag", { d: this.wirePath(a, { x: this.drag.x, y: this.drag.y }), stroke: "#fff", cls: "drag", tip: "", style: "" });
       }
-      this.svg.innerHTML = parts.join("");
+      this.reconcileWires(wanted);
     }
     const doPrev = now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
     if (doPrev) this.lastPrev = now;

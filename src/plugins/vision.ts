@@ -16,7 +16,7 @@ const reader: NodeSpec<ReaderState> = {
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.1, max: 0.6, step: 0.01, value: 0.22 },
     { id: "weight", kind: "number", label: "Trust", min: 0, max: 2, step: 0.1, value: 1 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
-    { id: "learn", kind: "bool", label: "Learn now", value: false },
+    { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
   ],
   previewSize: [160, 120],
   frameOf: (s) => s.frame,
@@ -35,12 +35,13 @@ const reader: NodeSpec<ReaderState> = {
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, [160, 120], (pw, ph) => {
-      drawFrame(ctx, pw, ph, s.frame);
-      if (!s.frame) return;
-      const sx = pw / s.frame.width, sy = ph / s.frame.height, c = s.sampler.cfg.corners;
-      ctx.strokeStyle = "#35e0b4"; ctx.beginPath(); c.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy))); ctx.closePath(); ctx.stroke();
+      const r = drawFrame(ctx, pw, ph, s.frame);
+      if (!s.frame || !r) return;
+      const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * r.s, y: r.y + p.y * r.s }), c = s.sampler.cfg.corners;
+      ctx.strokeStyle = "#35e0b4"; ctx.beginPath(); c.forEach((p, i) => { const q = at(p); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath(); ctx.stroke();
       ctx.fillStyle = "rgba(255,90,110,.6)"; // a frame always comes with its observation
-      for (let i = 0; i < 64; i++) if (s.obs!.handSquares[i]) ctx.fillRect(pw - 6, 4 + (i % 8), 4, 1);
+      const right = r.x + s.frame.width * r.s;
+      for (let i = 0; i < 64; i++) if (s.obs!.handSquares[i]) ctx.fillRect(right - 6, r.y + 4 + (i % 8), 4, 1);
     }, (): DetailRow[] => {
       const o = s.obs, cfg = s.sampler.cfg;
       return [["camera", s.sampler.cam], ["calibrated", brief(s.sampler.calibrated)], ["corners", fmtCorners(cfg.corners)], ["threshold", brief(cfg.threshold)],
