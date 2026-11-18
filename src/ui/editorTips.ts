@@ -4,6 +4,7 @@ import { CAT_COLOR, PORT_COLOR } from "./editor";
 import { PARAM_DOCS } from "./paramDocs";
 import { brief } from "../plugins/shared";
 import type { Tip, TipPreview, TipResolver } from "./tooltip";
+import { previewPoint } from "./previewHover";
 
 const PORT_INFO: Record<PortType, string> = {
   frame: "A grayscale camera image.",
@@ -104,6 +105,26 @@ export function editorTips(graph: Graph): TipResolver {
     return { title: "", tag: def.kind, color: CAT_COLOR[spec!.category], body: PARAM_DOCS[`${n.type}.${def.id}`], rows };
   };
 
+  /** What is under the pointer on a node's preview: the node's own answer, else a readout of the output being pointed at. */
+  const preview = (el: HTMLElement): Tip | null => {
+    const nodeEl = el.closest<HTMLElement>(".ne-node"), id = nodeEl?.dataset.id ?? "";
+    const n = graph.nodes.get(id), spec = n && graph.registry.get(n.type), pt = previewPoint(id);
+    if (!n || !spec || !pt) return null;
+    const outs = graph.outputs.get(id) ?? {};
+    const color = CAT_COLOR[spec.category];
+    if (!n.bypass && spec.hover) {
+      const info = spec.hover(pt.p, pt.w, pt.h, graph.states.get(id), outs);
+      if (info) return { title: info.title, tag: info.tag, color: info.color ?? color, body: info.body, rows: info.rows, preview: info.preview };
+    }
+    // A readout canvas (expanded node, bypassed node, or a preview with nothing under the pointer): point at one value.
+    const src = n.bypass ? graph.inputValues(id) : outs, entries = Object.entries(src as Record<string, unknown>);
+    const generic = !spec.preview || n.bypass;
+    const hit = generic ? entries[Math.floor((pt.p.y - 4) / 15)] : undefined;
+    if (hit) return { title: hit[0], tag: `${n.bypass ? "passing through" : "output"} · ${describeValue(hit[1])}`, color, preview: previewOf(hit[1]), body: PORT_INFO[spec.outputs.find((o) => o.id === hit[0])?.type ?? "any"] };
+    if (!entries.length) return { title: spec.title, tag: "no data", color, body: "This node has not produced anything yet." };
+    return { title: spec.title, tag: "live outputs", color, rows: entries.map(([k, v]) => ({ label: k, value: describeValue(v) })), preview: previewOf(entries[0][1]) };
+  };
+
   const node = (el: HTMLElement): Tip | null => {
     const n = graph.nodes.get(el.dataset.id ?? ""); const spec = n && graph.registry.get(n.type);
     if (!n || !spec) return null;
@@ -114,12 +135,14 @@ export function editorTips(graph: Graph): TipResolver {
     if (st?.fidelity != null) rows.push({ label: "Fidelity", value: pct(st.fidelity), bar: st.fidelity, tone: tone(st.fidelity) });
     if (st) rows.push({ label: "Time", value: `${st.ms.toFixed(2)} ms` });
     if (n.bypass) for (const [port, val] of Object.entries(graph.inputValues(n.id))) rows.push({ label: `In · ${port}`, value: describeValue(val) });
+    else for (const [port, val] of Object.entries(graph.outputs.get(n.id) ?? {})) rows.push({ label: `Out · ${port}`, value: describeValue(val) });
     rows.push({ label: "Wired", value: `${wired("to", spec.inputs.length)} in · ${wired("from", spec.outputs.length)} out` });
     return { title: "", tag: spec.category, color: CAT_COLOR[spec.category], body: spec.desc ?? CAT_INFO[spec.category], rows, hint: "Drag the header to move" };
   };
 
   return (el) => {
     if (!(el instanceof HTMLElement)) return null;
+    if (el.classList.contains("ne-preview")) return preview(el);
     if (el.classList.contains("ne-dot")) return pin(el);
     if (el.classList.contains("ne-param")) return param(el);
     if (el.classList.contains("ne-node")) return node(el);

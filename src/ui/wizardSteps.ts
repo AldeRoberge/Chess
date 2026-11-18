@@ -135,7 +135,6 @@ const aiItems = (c: StepCtx): Item[] => {
     { kind: "choice", label: "Commentary", options: [{ value: "builtin", label: "Built-in (free, offline)" }, { value: "openai", label: "AI by OpenAI" }], get: () => ai.engine, set: (v) => { ai.engine = v as typeof ai.engine; },
       hint: ai.engine === "openai" ? "OpenAI writes fresh commentary for each move. If it is slow or fails, the built-in line plays instead, so the game never waits." : "Ready-made lines. Nothing to set up: no account, no key, no cost." },
   ];
-  if (ai.engine !== "openai") return out;
   out.push(
     howTo(1, "Get an OpenAI account", "Sign in or sign up at platform.openai.com. This is the developer platform, separate from a ChatGPT subscription."),
     howTo(2, "Add a little credit", "Open Billing and add a few dollars. The API is pay as you go, and short live commentary costs very little."),
@@ -143,6 +142,9 @@ const aiItems = (c: StepCtx): Item[] => {
     howTo(4, "Paste it below", "The key starts with sk-. It is kept in this browser and only ever sent to OpenAI."),
     link(c, "Open OpenAI billing", OPENAI_BILLING_URL),
     link(c, "Open OpenAI API keys", OPENAI_KEYS_URL),
+  );
+  if (ai.engine !== "openai") return out; // the steps above are always listed; the key fields only matter once OpenAI is chosen
+  out.push(
     { kind: "text", label: "OpenAI API key", secret: true, get: () => ai.apiKey, set: (v) => { ai.apiKey = v.trim(); delete c.state.tests.openai; c.refresh(); }, hint: "Paste the key you just copied, then press Enter." },
     { kind: "choice", label: "Model", options: Object.keys(OPENAI_PRICES).map((id) => ({ value: id, label: `${id} · $${OPENAI_PRICES[id].input} in / $${OPENAI_PRICES[id].output} out per 1M` })), get: () => ai.model, set: (v) => { ai.model = v; },
       hint: "Small models are fast and cheap, which suits live commentary. Prices are per million tokens." },

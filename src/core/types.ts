@@ -1,3 +1,4 @@
+import type { TipPreview, TipRow } from "../ui/tooltip";
 /** Port data types. Ports only connect when types match (or either side is "any"). */
 export type PortType =
   | "frame" // GrayFrame
@@ -57,6 +58,14 @@ export interface NodeRuntime<S = any> {
   span<T>(name: string, fn: () => T): T;
 }
 
+/** What is under the pointer on a node preview: shown in the hover card, and `mark` paints the highlight onto the preview itself. */
+export interface HoverInfo {
+  title: string; tag?: string; color?: string; body?: string;
+  rows?: TipRow[]; preview?: TipPreview | null;
+  /** Draws in the preview's own logical coordinates (same as `preview`), after the normal painting. */
+  mark?(ctx: CanvasRenderingContext2D): void;
+}
+
 export interface NodeSpec<S = any> {
   type: string;
   title: string;
@@ -72,6 +81,8 @@ export interface NodeSpec<S = any> {
   /** Optional live preview painter (UI only). */
   preview?(ctx: CanvasRenderingContext2D, w: number, h: number, state: S, outputs: Record<string, any>): void;
   previewSize?: [number, number];
+  /** Describes whatever is at `p` (preview logical coordinates, `w`×`h` canvas); null = nothing there. */
+  hover?(p: { x: number; y: number }, w: number, h: number, state: S, outputs: Record<string, any>): HoverInfo | null;
   /** The camera picture the corner editor draws on. */
   frameOf?(state: S): { width: number; height: number; data: Uint8ClampedArray; t: number } | null;
 }

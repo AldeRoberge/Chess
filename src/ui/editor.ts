@@ -13,6 +13,7 @@ import { portsCompatible } from "../core/types";
 import { openQuadEditor } from "./quadEditor";
 import { openModelChart } from "./modelChart";
 import type { GrayFrame } from "../vision/types";
+import { previewPoint, setPreviewPointer, setPreviewSize } from "./previewHover";
 
 export const PORT_COLOR: Record<PortType, string> = {
   frame: "#5aa9ff", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
@@ -126,6 +127,7 @@ export class NodeEditor {
       preview = h("canvas", "ne-preview");
       const [w, hh] = spec.previewSize ?? [160, 100];
       preview.width = w; preview.height = hh; preview.style.aspectRatio = `${w} / ${hh}`; body.append(preview);
+      this.watchPreview(n.id, preview, w, hh);
     }
     const params = new Map<string, (v: any) => void>();
     if (spec.params?.length) {
@@ -176,6 +178,14 @@ export class NodeEditor {
     });
   }
 
+  /** Follows the pointer over a preview so the hover card and the highlight know what is under the mouse. */
+  private watchPreview(id: string, c: HTMLCanvasElement, w: number, hh: number) {
+    c.dataset.tipLive = "1";
+    const at = (e: PointerEvent) => { const r = c.getBoundingClientRect(); if (r.width > 0 && r.height > 0) setPreviewPointer(id, { fx: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), fy: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)), w: previewPoint(id)?.w ?? w, h: previewPoint(id)?.h ?? hh }); };
+    c.addEventListener("pointermove", at); c.addEventListener("pointerenter", at);
+    c.addEventListener("pointerleave", () => setPreviewPointer(id, null));
+  }
+
   /** Applies the node's chosen size: a fixed height lets the body and preview stretch to fill it. */
   private applySize(n: NodeInstance) {
     const el = this.views.get(n.id)?.el; if (!el) return;
@@ -183,7 +193,7 @@ export class NodeEditor {
     el.classList.toggle("sized", !!n.h); el.classList.toggle("wide", (n.w ?? 0) >= 360);
     const v = this.views.get(n.id)!;
     if (n.h && !v.preview && !this.spec(n).preview) { // a node without a preview gets a live readout of its outputs once it is expanded
-      v.preview = h("canvas", "ne-preview"); v.generic = true; v.preview.width = 160; v.preview.height = 100;
+      v.preview = h("canvas", "ne-preview"); v.generic = true; v.preview.width = 160; v.preview.height = 100; this.watchPreview(n.id, v.preview, 160, 100);
       const body = el.querySelector(".ne-body")!; body.insertBefore(v.preview, body.querySelector(".ne-params"));
     } else if (!n.h && v.generic) { v.preview?.remove(); v.preview = undefined; v.generic = false; }
   }
@@ -367,7 +377,7 @@ export class NodeEditor {
     ];
   }
 
-  removeNode(id: string) { this.graph.removeNode(id); this.views.get(id)?.el.remove(); this.views.delete(id); this.selected.delete(id); this.dirty = true; this.onChange(); }
+  removeNode(id: string) { setPreviewPointer(id, null); this.graph.removeNode(id); this.views.get(id)?.el.remove(); this.views.delete(id); this.selected.delete(id); this.dirty = true; this.onChange(); }
 
   addNodeAt(type: string, cx: number, cy: number) {
     const n = this.graph.addNode(type, (cx - this.view.x) / this.view.k, (cy - this.view.y) / this.view.k);
@@ -621,8 +631,13 @@ export class NodeEditor {
         if (v.preview.width !== bw || v.preview.height !== bh) { v.preview.width = bw; v.preview.height = bh; }
         const ctx = v.preview.getContext("2d")!; ctx.setTransform(k, 0, 0, k, 0, 0);
         const outs = this.graph.outputs.get(id) ?? {};
+        setPreviewSize(id, lw, lh);
         if (v.generic) { ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh); drawRows(ctx, 0, 0, lw, lh, objRows(outs).length ? objRows(outs) : [["outputs", "none yet"]]); }
-        else profiler.span(`${spec.title} preview`, () => spec.preview!(ctx, lw, lh, this.graph.states.get(id), outs), id);
+        else {
+          profiler.span(`${spec.title} preview`, () => spec.preview!(ctx, lw, lh, this.graph.states.get(id), outs), id);
+          const hp = spec.hover && previewPoint(id); // light up whatever the pointer is over
+          if (hp) { try { spec.hover!(hp.p, lw, lh, this.graph.states.get(id), outs)?.mark?.(ctx); } catch { /* a hover glitch must never break painting */ } }
+        }
       }
     }
     if (this.heat) this.paintHeat(now);

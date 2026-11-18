@@ -32,6 +32,8 @@ const P: Record<string, string> = {
   launch: '<path d="M8 5v14l11-7z"/>',
   briefing: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
   sound: '<path d="M4 10v4h4l5 4V6l-5 4z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11"/>',
+  open: '<path d="M3 19V6a1 1 0 0 1 1-1h5l2 2.5h8a1 1 0 0 1 1 1V10"/><path d="M3 19l2.6-8.2a1 1 0 0 1 .95-.7H22l-2.7 8.4a1 1 0 0 1-.95.7z"/>',
+  save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
   export: '<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',

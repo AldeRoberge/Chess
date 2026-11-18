@@ -14,6 +14,7 @@ import { GamepadPoller, keyToAction, type NavAction } from "./nav";
 import type { VoiceSettings } from "../narrator/voice";
 import type { Sfx } from "./sfx";
 import { icon } from "./icons";
+import { KNIGHT_SVG } from "./brandIcon";
 import { resizableColumns } from "./colResize";
 import { spinnerHTML } from "./spinner";
 import { STEPS, sceneStateFor, type StepCtx, type WizardState } from "./wizardSteps";
@@ -79,13 +80,13 @@ export class SetupWizard {
     this.step = Math.max(0, Math.min(STEPS.length - 1, Math.floor(startStep) || 0));
     this.state = { checks: null, detected: [], scanning: false, boardCam: 0, scenePreview: sceneStateFor(cfg), tests: {}, groups: {}, frame: null, board: {}, autoMsg: "" };
     this.canvas.width = FRAME_W; this.canvas.height = FRAME_H;
-    const brand = el("div", "halo-brand"); brand.innerHTML = `<span class="halo-brand-ic">${icon("knight", 22)}</span>`; brand.append(el("span", "halo-logo", "Chess XP"));
+    const brand = el("div", "halo-brand"); brand.innerHTML = `<span class="halo-brand-ic">${KNIGHT_SVG}</span>`; brand.append(el("span", "halo-logo", "Chess XP"));
     const head = el("header"); head.append(brand, this.progress);
     if (deps.canCancel?.() !== false) { // first run can't be skipped, so there is nothing to close back to
-      const x = el("button", "halo-close", "✕"); x.type = "button"; x.title = "Close setup (Esc)"; x.setAttribute("aria-label", "Close setup");
+      const x = el("button", "halo-close"); x.innerHTML = icon("x", 14); x.type = "button"; x.title = "Close setup (Esc)"; x.setAttribute("aria-label", "Close setup");
       x.onclick = () => this.cancel(); head.append(x);
     }
-    const foot = el("footer", "halo-keys"); foot.innerHTML = "<span><b>↑↓</b> Select</span><span><b>←→</b> Adjust</span><span><b>Enter / A</b> Confirm</span><span><b>Esc / B</b> Back</span>";
+    const foot = el("footer", "halo-keys"); foot.innerHTML = "<span><kbd>↑</kbd><kbd>↓</kbd> Select</span><span><kbd>←</kbd><kbd>→</kbd> Adjust</span><span><kbd>Enter</kbd> / <kbd>A</kbd> Confirm</span><span><kbd>Esc</kbd> / <kbd>B</kbd> Back</span>";
     this.pane.append(this.title, this.blurb, this.extra, this.list, this.hint, this.nav); // previews first: they are what you drag
     const body = el("div", "halo-body"); body.append(this.stepsEl, this.splitter(), this.pane);
     this.root.append(el("div", "halo-bg"), head, body, foot);
@@ -302,11 +303,18 @@ export class SetupWizard {
 
   // ---- rendering
   private render() {
-    this.stepsEl.replaceChildren();
-    STEPS.forEach((s, i) => {
-      const li = el("li", `halo-step${i === this.step ? " cur" : ""}${i === this.step && this.zone === "steps" ? " sel" : ""}`, `${String(i + 1).padStart(2, "0")}  ${s.title}`);
-      li.onclick = () => { this.step = i; this.focus = 0; this.zone = "steps"; this.deps.sfx.play("tick"); this.enterStep(); this.render(); };
-      this.stepsEl.append(li);
+    // Built once: recreating the items on every edit would replay their entry animation.
+    if (this.stepsEl.children.length !== STEPS.length) {
+      this.stepsEl.replaceChildren();
+      STEPS.forEach((s, i) => {
+        const li = el("li", "halo-step", `${String(i + 1).padStart(2, "0")}  ${s.title}`);
+        li.onclick = () => { this.step = i; this.focus = 0; this.zone = "steps"; this.deps.sfx.play("tick"); this.enterStep(); this.render(); };
+        this.stepsEl.append(li);
+      });
+    }
+    Array.from(this.stepsEl.children).forEach((li, i) => {
+      li.classList.toggle("cur", i === this.step);
+      li.classList.toggle("sel", i === this.step && this.zone === "steps");
     });
     this.progress.replaceChildren(...STEPS.map((_, i) => el("i", i < this.step ? "done" : i === this.step ? "cur" : "")), el("span", "", `Step ${this.step + 1} of ${STEPS.length}`));
     this.title.textContent = STEPS[this.step].title;
@@ -679,10 +687,15 @@ export class SetupWizard {
           li.append(rng, num);
           if (it.visual) { li.classList.add("has-visual"); li.append(it.visual.el); }
         } else if (it.kind === "choice") {
-          const s = el("span", "halo-value halo-stepper");
-          s.innerHTML = `<span class="halo-arr">◂</span> <span class="halo-num"></span> <span class="halo-arr">▸</span>`;
-          s.querySelector(".halo-num")!.textContent = valueText(it);
-          li.append(s);
+          // a dropdown, so any option is one pick away (←/→ on the focused row still steps through them)
+          const sel = el("select", "halo-select"); sel.setAttribute("aria-label", it.label);
+          const cur = it.get();
+          for (const o of it.options) { const op = el("option", "", o.label); op.value = o.value; op.selected = o.value === cur; sel.append(op); }
+          sel.onclick = (e) => e.stopPropagation();
+          sel.onchange = () => { it.set(sel.value); this.deps.sfx.play("tick"); this.afterChange(); };
+          const at = k; // clicking the row opens the list instead of cycling to the next option (hover already focused it)
+          li.onclick = () => { this.zone = "pane"; this.focus = at; try { sel.showPicker(); } catch { sel.focus(); } };
+          li.append(sel);
         } else li.append(el("span", "halo-value", valueText(it)));
         if ((it.kind === "slider" || it.kind === "choice") && it.auto) li.append(this.autoButton(it.auto));
         if (it.kind === "action" && it.disabled) li.classList.add("disabled");

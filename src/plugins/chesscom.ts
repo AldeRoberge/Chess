@@ -4,8 +4,9 @@ import type { NodeSpec } from "../core/types";
 import type { TrackResult } from "../chess/tracker";
 import type { DirectorOut } from "../experience/director";
 import { API, nextRemoteMove, pickGame, type RemoteGame } from "../chess/chesscom";
-import { sqIndex } from "../vision/types";
+import { sqIndex, sqName } from "../vision/types";
 import { drawBoard, withDetail } from "./shared";
+import { boardHover, visualSize } from "./hover";
 
 type Tone = "idle" | "wait" | "move" | "ok" | "warn" | "err";
 interface ComState { game: RemoteGame | null; info: string; tone: Tone; lastPoll: number; busy: boolean; hintFen: string; announced: string; fen: string; hint: { from: string; to: string } | null; san: string; lastPgn: string }
@@ -66,6 +67,21 @@ export const chesscomNode: NodeSpec<ComState> = {
     }
     pushLog(bus.events, out);
     return { events: out };
+  },
+  hover(p, W, H, s) {
+    const v = visualSize(W, H, [220, 250]), bh = Math.min(v.w, v.h - 52);
+    if (p.x > v.w || p.y > v.h) return null;
+    if (p.y > bh) return {
+      title: s.info, tag: "chess.com status", color: TONES[s.tone],
+      rows: [{ label: "Opponent", value: s.game?.opponent ?? "—" }, { label: "You play", value: s.game ? (s.game.color === "w" ? "white" : "black") : "—" }, { label: "Turn", value: s.game?.turn ?? "—" },
+        { label: "Next move", value: s.hint ? `${s.hint.from} → ${s.hint.to}${s.san ? ` (${s.san})` : ""}` : "—" }, { label: "Request", value: s.busy ? "in flight" : "idle" }],
+    };
+    return boardHover(p, v.w, bh, null, {
+      title: "chess.com", fen: s.fen || undefined,
+      extra: (sq) => (s.hint && (sqName(sq) === s.hint.from || sqName(sq) === s.hint.to) ? [{ label: "Suggested move", value: sqName(sq) === s.hint.from ? `move from here to ${s.hint.to}` : `move ${s.hint.from} here`, tone: "ok" as const }] : []),
+      also: (sq) => (s.hint && sqName(sq) === s.hint.from ? [sqIndex(s.hint.to)] : s.hint && sqName(sq) === s.hint.to ? [sqIndex(s.hint.from)] : []),
+      body: () => "The position is the tracked game on your board; the green arrow is the next chess.com move for you to play.",
+    });
   },
   preview(ctx, W, H, s) {
     withDetail(ctx, W, H, [220, 250], (w, h) => {

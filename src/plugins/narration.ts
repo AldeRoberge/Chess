@@ -1,6 +1,6 @@
 import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
-import type { ModelInfo, NodeSpec, Plugin } from "../core/types";
+import type { HoverInfo, ModelInfo, NodeSpec, Plugin } from "../core/types";
 import { LANGS, Narrator, type Lang, type NarrationLine } from "../narrator/narrator";
 
 /** Language param shared by every narration node; unknown or missing values fall back to French. */
@@ -12,20 +12,49 @@ import { BROWSER_PROVIDER, ELEVENLABS_DEFAULTS, ELEVENLABS_PROVIDER, speak as sp
 
 interface NarState { n: Narrator; lines: NarrationLine[] }
 /** Newest lines at the bottom, wrapped to the width; as many as fit, so an expanded node shows more history. */
-const showLines = (ctx: CanvasRenderingContext2D, w: number, h: number, ls: NarrationLine[]) => {
-  ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, w, h);
-  const fs = Math.max(10.5, Math.min(16, h / 12)), lh = fs + 4.5; ctx.font = `${fs}px system-ui`;
-  const rows: { c: string; t: string }[] = [];
-  for (const l of ls) {
+function layoutLines(measure: (t: string) => number, w: number, h: number, ls: NarrationLine[]) {
+  const fs = Math.max(10.5, Math.min(16, h / 12)), lh = fs + 4.5;
+  const rows: { c: string; t: string; li: number }[] = [];
+  ls.forEach((l, li) => {
     const c = l.speaker === "A" ? "#7fd4ff" : "#ffb86b"; let cur = "";
     for (const word of `${l.name}: ${l.text}`.split(" ")) {
       const next = cur ? `${cur} ${word}` : word;
-      if (cur && ctx.measureText(next).width > w - 10) { rows.push({ c, t: cur }); cur = word; } else cur = next;
+      if (cur && measure(next) > w - 10) { rows.push({ c, t: cur, li }); cur = word; } else cur = next;
     }
-    if (cur) rows.push({ c, t: cur });
-  }
+    if (cur) rows.push({ c, t: cur, li });
+  });
   const fit = Math.max(1, Math.floor((h - 6) / lh));
-  rows.slice(-fit).forEach((r, k) => { ctx.fillStyle = r.c; ctx.fillText(r.t, 5, 4 + fs + k * lh); });
+  return { fs, lh, shown: rows.slice(-fit) };
+}
+const showLines = (ctx: CanvasRenderingContext2D, w: number, h: number, ls: NarrationLine[]) => {
+  ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, w, h);
+  const fs0 = Math.max(10.5, Math.min(16, h / 12)); ctx.font = `${fs0}px system-ui`;
+  const { fs, lh, shown } = layoutLines((t) => ctx.measureText(t).width, w, h, ls);
+  shown.forEach((r, k) => { ctx.fillStyle = r.c; ctx.fillText(r.t, 5, 4 + fs + k * lh); });
+};
+let scratch: CanvasRenderingContext2D | null = null;
+/** Card for the spoken line under the pointer: who says it, how important it is, and the full text. */
+const lineHover = (title: string) => (p: { x: number; y: number }, w: number, h: number, s: { lines: NarrationLine[] }): HoverInfo | null => {
+  scratch ??= document.createElement("canvas").getContext("2d");
+  if (!scratch || !s.lines.length) return { title, tag: "no lines yet", body: "Nothing has been said yet." };
+  scratch.font = `${Math.max(10.5, Math.min(16, h / 12))}px system-ui`;
+  const { lh, shown } = layoutLines((t) => scratch!.measureText(t).width, w, h, s.lines);
+  const k = Math.floor((p.y - 4) / lh), row = shown[Math.max(0, Math.min(shown.length - 1, k))];
+  if (!row) return null;
+  const l = s.lines[row.li], first = shown.findIndex((r) => r.li === row.li), last = shown.length - 1 - [...shown].reverse().findIndex((r) => r.li === row.li);
+  const PRIO = ["chatter", "normal", "important", "critical"];
+  return {
+    title: l.name, tag: `${title} · voice ${l.speaker}`, color: l.speaker === "A" ? "#7fd4ff" : "#ffb86b", body: l.text,
+    rows: [
+      { label: "Priority", value: `${PRIO[l.priority] ?? l.priority} (${l.priority}/3)`, bar: l.priority / 3, tone: l.priority >= 3 ? "bad" : l.priority === 2 ? "warn" : undefined },
+      { label: "Said at", value: `${Math.round(l.t / 1000)} s` },
+      { label: "Line", value: `${row.li + 1} of ${s.lines.length}` },
+      { label: "Length", value: `${l.text.length} characters · ${l.text.split(/\s+/).length} words` },
+    ],
+    mark: (ctx) => {
+      ctx.save(); ctx.fillStyle = "rgba(255,228,92,.14)"; ctx.fillRect(1, 4 + first * lh - 1, w - 2, (last - first + 1) * lh); ctx.strokeStyle = "#ffe45c"; ctx.lineWidth = 1; ctx.strokeRect(1.5, 4 + first * lh - 0.5, w - 3, (last - first + 1) * lh); ctx.restore();
+    },
+  };
 };
 const narrator: NodeSpec<NarState> = {
   type: "narration.narrator", title: "Narrator", category: "Narration",
@@ -48,6 +77,7 @@ const narrator: NodeSpec<NarState> = {
     if (lines.length) { state.lines.push(...lines); state.lines = state.lines.slice(-30); pushLog(bus.lines, lines); }
     return { lines };
   },
+  hover: lineHover("Narrator"),
   preview: (ctx, w, h, s) => showLines(ctx, w, h, s.lines),
 };
 
@@ -107,6 +137,7 @@ const aiNarrator: NodeSpec<AiState> = {
     if (lines.length) { state.lines.push(...lines); state.lines = state.lines.slice(-30); }
     return { lines };
   },
+  hover: lineHover("AI commentary"),
   preview: (ctx, w, h, s) => showLines(ctx, w, h, s.lines),
 };
 

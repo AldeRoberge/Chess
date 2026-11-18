@@ -181,7 +181,7 @@ export function boot(root: HTMLElement): Boot {
     </main>
     <footer id="sub"></footer>`;
 
-  installTooltips().add(editorTips(graph));
+  const tips = installTooltips().add(editorTips(graph));
   // ---- ribbon: tab headers switch panes; "File" dropdown closes on outside click / Escape
   for (const t of app.querySelectorAll<HTMLElement>("[data-rtab]")) t.onclick = () => {
     for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) { const on = o === t; o.classList.toggle("on", on); o.setAttribute("aria-selected", String(on)); }
@@ -226,8 +226,10 @@ export function boot(root: HTMLElement): Boot {
   tool("Organize", "Organize into sections", "Lay the workflow out in bands: demo & input, analysis, game & experience, output (sound & narration). Undo with Ctrl+Z.", () => editor.organize());
   document.getElementById("graph")!.append(tools);
 
-  const table = new TablePanel(), world = new WorldPanel(graph), log = new LogPanel();
+  const table = new TablePanel(); tips.add(table.tips);
+  const world = new WorldPanel(graph), log = new LogPanel(); tips.add(log.tips);
   const perf = new PerfPanel(graph, { reveal: (id) => editor.reveal(id), setHeat: (on) => setHeat(on), heatOn: () => editor.heatOn });
+  tips.add(perf.tips);
   const panels: [string, { root: HTMLElement }][] = [["Table", table], ["3D / Mapping", world], ["Log", log], ["Performance", perf]];
   const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);
@@ -408,8 +410,9 @@ export function boot(root: HTMLElement): Boot {
   function refreshNext(force = false) {
     const b = bus.board;
     const list = suggestNext({ route, setupDone: !!loadSetup()?.completed, soundOn, boardFidelity: b ? b.fidelity : 0, cameras: graph.nodes.size ? 1 : 0 });
-    const key = list.map((x) => x.id).join("|");
-    if (!force && key === nextKey) return;
+    // Keyed on everything rendered, so an unchanged bar is never rebuilt (rebuilding replays the cards' entry animation).
+    const key = list.map((x) => `${x.id}\u0001${x.title}\u0001${x.hint}\u0001${x.icon}`).join("\u0002");
+    if (key === nextKey) return;
     nextKey = key;
     nextEl.replaceChildren();
     const lead = document.createElement("span"); lead.className = "next-lead"; lead.innerHTML = `${icon("spark", 14)}<span>Next</span>`; nextEl.append(lead);

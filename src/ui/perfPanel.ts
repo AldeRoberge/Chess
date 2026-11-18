@@ -2,6 +2,7 @@ import type { Graph } from "../core/graph";
 import { loadPrefs, patchPrefs } from "../setup/prefs";
 import { aggregateBoxes, delta, frameBoxes, hueOf, percentile, profiler, slowestFrame, toTrace, type FlameBox, type FrameRecord } from "../core/profiler";
 import { CAT_COLOR } from "./editor";
+import type { Tip } from "./tooltip";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 const ms = (v: number) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + " ms";
@@ -34,6 +35,7 @@ export class PerfPanel {
   private zoom: FlameBox | null = null;
   private hits: { x: number; y: number; w: number; box: FlameBox }[] = [];
   private tlHits: { x: number; w: number; i: number }[] = [];
+  private tlOver = -1; // frame index under the pointer on the timeline
   private sort: SortKey = "avg";
   private desc = true;
   /** User-resized column widths in px (empty = automatic layout). Drag a header edge; double-click to reset. */
@@ -94,6 +96,9 @@ export class PerfPanel {
       if (this.selected !== null && !profiler.paused) this.pauseBtn.click();
       this.syncModeButtons(); this.draw(true);
     };
+    this.timeline.dataset.tipLive = "1";
+    this.timeline.onmousemove = (e) => { const x = e.clientX - this.timeline.getBoundingClientRect().left; const i = this.tlHits.find((t) => x >= t.x && x < t.x + t.w)?.i ?? -1; if (i !== this.tlOver) { this.tlOver = i; this.drawTimeline(); } };
+    this.timeline.onmouseleave = () => { this.tlOver = -1; this.drawTimeline(); };
     this.flame.onmousemove = (e) => this.hover(e);
     this.flame.onmouseleave = () => { this.tip.hidden = true; };
     this.flame.onclick = (e) => { const h = this.pick(e); if (h) { this.zoom = this.zoom === h.box ? null : h.box; this.draw(true); } };
@@ -128,6 +133,41 @@ export class PerfPanel {
     });
   }
 
+  /** Hover cards for the timeline bars and the node cost table. */
+  tips = (e: Element): Tip | null => {
+    if (e === this.timeline) {
+      const f = this.frames()[this.tlOver];
+      if (!f) return null;
+      const top = new Map<string, number>();
+      for (const sp of f.spans) if (sp.depth === 0) top.set(sp.name, (top.get(sp.name) ?? 0) + sp.dur);
+      const parts = [...top].sort((a, b) => b[1] - a[1]).slice(0, 5), other = f.dur - [...top.values()].reduce((a, b) => a + b, 0);
+      const fps = f.dur > 0 ? 1000 / f.dur : 0;
+      return {
+        title: `Frame ${this.tlOver + 1} of ${this.frames().length}`, tag: ms(f.dur), color: f.dur > 33.3 ? "#ff5a6e" : f.dur > 16.7 ? "#ffb340" : "#35e0b4",
+        body: f.dur > 16.7 ? "This frame missed the 60 fps budget. The colours are the biggest sections of work in it." : "This frame was inside the 60 fps budget. The colours are the biggest sections of work in it.",
+        rows: [{ label: "Cost", value: ms(f.dur), bar: Math.min(1, f.dur / 33.3), tone: f.dur > 33.3 ? "bad" : f.dur > 16.7 ? "warn" : "ok" }, { label: "Would run at", value: `${fps.toFixed(0)} fps` },
+          ...parts.map(([n, d]) => ({ label: n, value: ms(d), bar: f.dur ? d / f.dur : 0 })), ...(other > 0.05 ? [{ label: "Everything else", value: ms(other), bar: f.dur ? other / f.dur : 0 }] : [])],
+        hint: "Click to pin this frame in the flamegraph",
+      };
+    }
+    const row = e instanceof HTMLElement ? e.closest<HTMLElement>("tr[data-id]") : null;
+    if (row && e instanceof HTMLElement && this.table.contains(e)) {
+      const n = this.graph.nodes.get(row.dataset.id ?? ""), spec = n && this.graph.registry.get(n.type), sm = n && profiler.summarize(n.id);
+      if (!n || !spec) return null;
+      const all = [...this.graph.nodes.keys()].reduce((a, id) => a + (profiler.summarize(id)?.avg ?? 0), 0) || 1;
+      if (!sm) return { title: spec.title, tag: spec.category, color: CAT_COLOR[spec.category], body: "No timing captured for this node yet." };
+      const over = profiler.budget > 0 && sm.avg > profiler.budget;
+      return {
+        title: spec.title, tag: spec.category, color: CAT_COLOR[spec.category],
+        body: `Averaged over the last ${sm.samples} ticks. ${n.bypass ? "This node is bypassed, so it costs almost nothing. " : ""}${over ? `It is over your ${profiler.budget} ms budget.` : ""}`,
+        rows: [{ label: "Average", value: ms(sm.avg), bar: Math.min(1, sm.avg / 66), tone: over ? "bad" : undefined }, { label: "Slowest 5%", value: ms(sm.p95) }, { label: "Worst", value: ms(sm.max) }, { label: "Last tick", value: ms(sm.last) },
+          { label: "Share of graph", value: `${((sm.avg / all) * 100).toFixed(0)}%`, bar: sm.avg / all }],
+        hint: "Click to find it on the canvas",
+      };
+    }
+    return null;
+  };
+
   private syncModeButtons() { const segs = this.root.querySelectorAll(".perf-bar .seg"); segs[0]?.querySelectorAll("button").forEach((b, i) => b.classList.toggle("on", (i === 0) === (this.mode === "window"))); }
 
   private frames(): FrameRecord[] { return profiler.frames; }
@@ -152,7 +192,15 @@ export class PerfPanel {
     const long = durs.filter((d) => d > 16.7).length;
     let tick = 0; for (const s of this.graph.stats.values()) tick += s.ms;
     const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-    const card = (label: string, value: string, sub: string, lvl = "") => `<div class="kpi ${lvl}"><small>${label}</small><b>${value}</b><span>${sub}</span></div>`;
+    const WHAT: Record<string, string> = {
+      "Frame rate": "How many screen frames per second the app draws. 60 is smooth; under 30 feels laggy.",
+      "Frame cost": "Average time to produce one frame. It must stay under 16.7 ms to hold 60 fps.",
+      "p95 frame": "95% of frames were faster than this. It shows the hiccups an average hides.",
+      "Graph tick": "Time to run every node once. The graph runs at 15 Hz, so it has 66 ms before the next tick.",
+      "Slow frames": "Share of captured frames that took longer than 16.7 ms (a missed 60 fps frame).",
+      "JS heap": "Memory the page's JavaScript is using right now.",
+    };
+    const card = (label: string, value: string, sub: string, lvl = "") => `<div class="kpi ${lvl}" data-tip="${esc(label)}" data-tip-tag="${esc(value)}" data-tip-body="${esc(WHAT[label] ?? "")}" data-tip-hint="${esc(sub)}" data-tip-color="${lvl === "bad" ? "#ff5a6e" : lvl === "warn" ? "#ffb340" : "#35e0b4"}"><small>${label}</small><b>${value}</b><span>${sub}</span></div>`;
     this.kpis.innerHTML = [
       card("Frame rate", fps ? fps.toFixed(0) + " fps" : "—", n ? `${n} frames captured` : profiler.enabled ? "capturing…" : "idle", fps && fps < 30 ? "bad" : fps && fps < 50 ? "warn" : ""),
       card("Frame cost", ms(avg), `of 16.7 ms budget · ${((avg / 16.7) * 100).toFixed(0)}%`, avg > 16.7 ? "bad" : avg > 10 ? "warn" : ""),
@@ -190,6 +238,7 @@ export class PerfPanel {
         g.fillRect(x, y(acc + s.dur), Math.max(1, bw - 0.5), y(acc) - y(acc + s.dur)); acc += s.dur;
       }
       if (f.dur > acc) { g.fillStyle = "#4a5568"; g.fillRect(x, y(f.dur), Math.max(1, bw - 0.5), y(acc) - y(f.dur)); }
+      if (this.tlOver === i) { g.fillStyle = "rgba(255,255,255,.18)"; g.fillRect(x - 1, 2, bw + 2, h - 14); }
       if (this.selected === i) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(x - 0.5, 2, bw + 1, h - 14); }
     });
     g.font = "10px IBM Plex Mono, monospace"; g.textBaseline = "bottom";

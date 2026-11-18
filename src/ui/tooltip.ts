@@ -69,6 +69,7 @@ export class Tooltips {
   private px = 0;
   private py = 0;
   private follow = false;
+  private raf = 0;
   private off: (() => void)[] = [];
 
   constructor(private doc: Document = document) {
@@ -76,7 +77,12 @@ export class Tooltips {
     doc.body.append(this.el);
     const on = (t: EventTarget, type: string, fn: (e: any) => void, cap = false) => { t.addEventListener(type, fn, cap); this.off.push(() => t.removeEventListener(type, fn, cap)); };
     on(doc, "pointerover", this.over);
-    on(doc, "pointermove", (e: MouseEvent) => { this.px = e.clientX; this.py = e.clientY; if (this.src && this.follow) this.place(); });
+    on(doc, "pointermove", (e: MouseEvent) => {
+      this.px = e.clientX; this.py = e.clientY;
+      if (!this.src) return;
+      if (this.follow) this.place();
+      if (this.src.hasAttribute("data-tip-live") && !this.raf) this.raf = requestAnimationFrame(() => { this.raf = 0; this.refresh(); }); // content depends on where the pointer is
+    });
     on(doc, "pointerout", (e: MouseEvent) => { if (!e.relatedTarget) this.hide(); });
     on(doc, "pointerdown", () => this.dismiss(), true);
     on(doc, "wheel", () => this.hide(), true);
@@ -111,7 +117,7 @@ export class Tooltips {
     this.suppressed = null;
     clearTimeout(this.timer);
     this.pending = f.el;
-    if (this.src || Date.now() - this.hiddenAt < WARM_MS) this.show(f.el, f.tip);
+    if (this.src || Date.now() - this.hiddenAt < WARM_MS || f.el.hasAttribute("data-tip-live")) this.show(f.el, f.tip);
     else this.timer = setTimeout(() => this.show(f.el, f.tip), SHOW_DELAY);
   };
 
@@ -127,7 +133,7 @@ export class Tooltips {
     this.hide(true);
     this.setSrc(el); this.pending = null;
     const r = el.getBoundingClientRect();
-    this.follow = r.width > 240 || r.height > 90;
+    this.follow = r.width > 240 || r.height > 90 || el.hasAttribute("data-tip-live");
     this.render(tip);
     this.place();
     this.el.classList.add("on");
@@ -225,6 +231,7 @@ export class Tooltips {
 
   private hide(quiet = false) {
     clearTimeout(this.timer); clearInterval(this.live);
+    if (this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
     this.pending = null;
     if (this.src) { this.src.removeAttribute("aria-describedby"); this.setSrc(null); if (!quiet) this.hiddenAt = Date.now(); }
     this.el.classList.remove("on");

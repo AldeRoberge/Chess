@@ -6,6 +6,7 @@ import { fmtClock, type ClockEstimate, type Side } from "../clock/types";
 import { readClock, type ClockKind, type ClockRead } from "../vision/clockReader";
 import type { GrayFrame, Pt } from "../vision/types";
 import { brief, drawFrame, fmtCorners, parseCorners, withDetail, type DetailRow } from "./shared";
+import { pct, tone, visualSize } from "./hover";
 
 const rect = (x: number, y: number, w: number, h: number): Pt[] => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
 const SIDES: Side[] = ["w", "b"];
@@ -86,6 +87,29 @@ const reader: NodeSpec<ClockState> = {
     if (events.length) pushLog(bus.events, events);
     setFidelity(Math.min(e.white.conf, e.black.conf));
     return { clock: e, events };
+  },
+  hover(p, w, h, s) {
+    const v = visualSize(w, h, [160, 100]);
+    if (p.x > v.w || p.y > v.h) return null;
+    const e = s.est;
+    if (!e) return { title: "Clock", tag: "no estimate yet", body: "The clock model has not produced an estimate." };
+    const side: Side = p.x < v.w / 2 ? "w" : "b", c = side === "w" ? e.white : e.black, rd = s.reads[side], name = side === "w" ? "White" : "Black", col = side === "w" ? "#ffd35a" : "#7fd4ff";
+    return {
+      title: `${name} · ${fmtClock(c.ms, c.ms < 20000)}`, tag: `Clock · ${c.src}`, color: col,
+      body: `${c.src === "read" ? "Read from the camera" : c.src === "fused" ? "Camera reading blended with the running count" : "Estimated by counting down from the last reading"}; the true time is within about ±${brief(c.sigmaMs / 1000)} s.`,
+      rows: [
+        { label: "Time left", value: fmtClock(c.ms, true) },
+        { label: "Uncertainty", value: `±${brief(c.sigmaMs / 1000)} s` },
+        { label: "Certainty", value: pct(c.conf), bar: c.conf, tone: tone(c.conf) },
+        { label: "Source", value: c.src },
+        { label: "Running", value: e.running === side ? "yes, ticking" : "stopped", tone: e.running === side ? "ok" : undefined },
+        { label: "Camera read", value: rd?.text ? `"${rd.text}" · ${pct(rd.conf)}` : "none", bar: rd?.conf, tone: rd ? tone(rd.conf) : "warn" },
+        { label: "Display box", value: s.quads[side] ? "set on the camera picture" : "not set", tone: s.quads[side] ? undefined : "warn" },
+        { label: "Last read", value: e.lastRead === null ? "never" : `${brief((e.t - e.lastRead) / 1000)} s ago` },
+        { label: "Flag", value: e.flagged === side ? "fallen" : "up", tone: e.flagged === side ? "bad" : "ok" },
+      ],
+      mark: (ctx) => { ctx.save(); ctx.fillStyle = col + "24"; ctx.strokeStyle = col; ctx.lineWidth = 1.5; const x = side === "w" ? 1 : v.w / 2 + 1; ctx.fillRect(x, 1, v.w / 2 - 2, v.h - 2); ctx.strokeRect(x, 1, v.w / 2 - 2, v.h - 2); ctx.restore(); },
+    };
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, [160, 100], (pw, ph) => {

@@ -136,7 +136,7 @@ describe("WorldView", () => {
     v.render(0); v.render(30); v.render(100);
     v.showFrusta = false; v.render(200); expect(v.frusta.visible).toBe(false);
     v.showProjection = false; v.setMapping(defaultMapping()); v.render(300); bus.scene = null; v.render(400);
-    expect(v.room.children.length).toBe(6); expect(v.frusta.children.length).toBe(6); // three projector frusta + bodies
+    expect(v.room.children.length).toBe(4); expect(v.frusta.children.length).toBe(6); // three projector frusta + bodies
   });
   it("replaces the room when a new mapping (e.g. a scanned room) arrives", () => {
     const v = new WorldView(mk(), defaultMapping()) as any, m = defaultMapping(); m.surfaces = m.surfaces.slice(0, 2); m.projectors = m.projectors.slice(0, 1);

@@ -6,9 +6,11 @@ import { PositionTracker, type TrackResult } from "../chess/tracker";
 import { createEngine, type Engine } from "../chess/engine";
 import type { DirectorOut } from "../experience/director";
 import { virtualTable } from "../sim/virtualTable";
-import type { BoardBelief } from "../vision/types";
+import { sqIndex, sqName, type BoardBelief } from "../vision/types";
 import { chesscomNode } from "./chesscom";
 import { drawBoard, withDetail } from "./shared";
+import { boardHover, pct, tone, visualSize } from "./hover";
+import type { TipRow } from "../ui/tooltip";
 
 interface TrackState { tracker: PositionTracker; res: TrackResult | null; board: BoardBelief | null; prevPhase: string }
 const track: NodeSpec<TrackState> = {
@@ -37,6 +39,38 @@ const track: NodeSpec<TrackState> = {
     bus.game = state.res;
     setFidelity(Math.min(state.res.fidelity, state.res.status === "illegal" ? 0.2 : 1));
     return { game: state.res, events: state.res.events };
+  },
+  hover(p, w, h, s) {
+    const v = visualSize(w, h, [140, 140]), r = s.res;
+    if (p.x > v.w || p.y > v.h) return null;
+    if (p.y >= v.h - 20) {
+      if (!r) return { title: "Move Tracker", tag: "no position yet", body: "Waiting for a board reading." };
+      return {
+        title: `ply ${r.ply}`, tag: "Move Tracker", color: r.status === "illegal" ? "#ff5a6e" : "#35e0b4",
+        body: r.last ? `Last move ${r.last.san}. ${r.over ? "The game is over." : r.turn === "w" ? "White to move." : "Black to move."}` : "No move recorded yet.",
+        rows: [
+          { label: "Status", value: r.status, tone: r.status === "illegal" ? "bad" : r.status === "synced" ? "ok" : "warn" },
+          { label: "Fidelity", value: pct(r.fidelity), bar: r.fidelity, tone: tone(r.fidelity) },
+          { label: "Last move certainty", value: pct(r.moveFidelity), bar: r.moveFidelity, tone: tone(r.moveFidelity) },
+          { label: "Squares disagreeing", value: String(r.diff.length), tone: r.diff.length ? "warn" : "ok" },
+          ...(r.lifted ? [{ label: "Piece in hand", value: r.lifted, tone: "warn" as const }] : []),
+          { label: "History", value: r.history.slice(-6).join(" ") || "—" },
+        ],
+      };
+    }
+    const legal = (sq: number): { san: string; to: string }[] => { try { return r ? (new Chess(r.fen).moves({ square: sqName(sq) as any, verbose: true }) as any[]) : []; } catch { return []; } };
+    return boardHover(p, v.w, v.h - 20, s.board, {
+      title: "Move Tracker", fen: r?.fen, flagged: r?.diff, flagLabel: "Mismatch vs. expected",
+      also: (sq) => legal(sq).map((m) => sqIndex(m.to)),
+      extra: (sq): TipRow[] => {
+        if (!r) return [];
+        const out: TipRow[] = [], ms = legal(sq);
+        if (ms.length) out.push({ label: "Legal moves", value: `${ms.length}: ${ms.slice(0, 6).map((m) => m.san).join(" ")}${ms.length > 6 ? " …" : ""}` });
+        if (r.last && (r.last.from === sqName(sq) || r.last.to === sqName(sq))) out.push({ label: "Last move", value: `${r.last.from} → ${r.last.to}` });
+        return out;
+      },
+      body: (sq) => (r ? `Green squares are where the piece on ${sqName(sq)} can legally go. Red-outlined squares are where the cameras disagree with the tracked game.` : undefined),
+    });
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, [140, 140], (pw, ph) => {

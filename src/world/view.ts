@@ -13,7 +13,7 @@ import { SQUARE, TABLE_Y, boardToWorld } from "./coords";
 import { projectorCamera } from "./blend";
 import { drawTableOverlay } from "./overlay";
 import { pieceGeometry } from "./pieces";
-import { surfaceMesh } from "./surfaces";
+import { projectableSurfaces, surfaceMesh } from "./surfaces";
 
 /** The simulation model: room, table + board, chairs, people, projector frusta, live projected content. */
 export class WorldView {
@@ -77,7 +77,7 @@ export class WorldView {
     this.cfg = cfg;
     this.room.clear(); this.frusta.clear();
     const mat = new THREE.MeshBasicMaterial({ map: this.contentTex, side: THREE.DoubleSide, transparent: true, opacity: this.showProjection ? 0.95 : 0 });
-    for (const s of cfg.surfaces) { const m = surfaceMesh(s, mat); this.room.add(m); }
+    for (const s of projectableSurfaces(cfg.surfaces)) { const m = surfaceMesh(s, mat); this.room.add(m); }
     const colors = [0xff6b6b, 0x6bd0ff, 0xb8ff6b, 0xffd36b];
     cfg.projectors.forEach((p, i) => {
       const cam = projectorCamera(p); cam.far = 4;

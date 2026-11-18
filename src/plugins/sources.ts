@@ -5,6 +5,7 @@ import { renderPool } from "../sim/renderPool";
 import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
 import type { GrayFrame } from "../vision/types";
 import { drawFrame, withDetail } from "./shared";
+import { frameHover } from "./hover";
 
 interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number }
 
@@ -77,6 +78,7 @@ const webcam: NodeSpec<WebcamState> = {
     return { frame: state.frame };
   },
   dispose(s) { s.stream?.getTracks().forEach((t) => t.stop()); },
+  hover: (p, w, h, s) => frameHover(p, w, h, [160, 120], s.frame, "Webcam", [{ label: "Status", value: s.err ? "error" : s.frame ? "live" : "offline", tone: s.err ? "bad" : s.frame ? "ok" : "warn" }, ...(s.err ? [{ label: "Error", value: s.err, tone: "bad" as const }] : [])]),
   preview: (ctx, w, h, s) => withDetail(ctx, w, h, [160, 120], (pw, ph) => drawFrame(ctx, pw, ph, s.frame, s.err ? "no camera" : "offline"), () => [
     ["status", s.err ? "error" : s.frame ? "live" : "offline", s.err ? "#ff5a6e" : undefined], ["error", s.err || "none"],
     ["resolution", s.frame ? `${s.frame.width}×${s.frame.height}` : "—"], ["frame t", s.frame ? `${Math.round(s.frame.t)} ms` : "—"]]),
@@ -117,6 +119,7 @@ const synthetic: NodeSpec<SynthState> = {
     setFidelity(1);
     return { frame: state.frame };
   },
+  hover: (p, w, h, s) => frameHover(p, w, h, [160, 120], s.frame, "Virtual Camera", [{ label: "Render", value: s.inflight ? "in flight (worker)" : "idle" }, { label: "Frames", value: String(s.seed) }]),
   preview: (ctx, w, h, s) => withDetail(ctx, w, h, [160, 120], (pw, ph) => drawFrame(ctx, pw, ph, s.frame), () => [
     ["status", s.frame ? "rendering" : "offline"], ["resolution", s.frame ? `${s.frame.width}×${s.frame.height}` : "—"], ["frame t", s.frame ? `${Math.round(s.frame.t)} ms` : "—"],
     ["scene key", s.key || "—"], ["render", s.inflight ? "in flight (worker)" : "idle"], ["frames", String(s.seed)]]),

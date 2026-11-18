@@ -5,7 +5,7 @@ import type { SceneState } from "../scene/types";
 import { drawTableOverlay, type OverlayInput } from "./overlay";
 import { makeBlendMaterial, projectorCamera } from "./blend";
 import { SQUARE, TABLE_Y } from "./coords";
-import { surfaceMesh } from "./surfaces";
+import { projectableSurfaces, surfaceMesh } from "./surfaces";
 
 /**
  * One projector's output: renders the room's surfaces (scanned or default) from the projector's
@@ -40,7 +40,7 @@ export class ProjectorOutput {
     this.cfg = cfg; this.index = index;
     this.scene.clear();
     const mat = makeBlendMaterial(this.contentTex, cfg.projectors, index, cfg.feather, cfg.gamma);
-    for (const s of cfg.surfaces) this.scene.add(surfaceMesh(s, mat));
+    for (const s of projectableSurfaces(cfg.surfaces)) this.scene.add(surfaceMesh(s, mat));
     const size = (8 + this.margin * 2) * SQUARE;
     const ov = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: this.overlayTex, transparent: true, depthWrite: false }));
     ov.rotation.x = -Math.PI / 2; ov.position.y = TABLE_Y + 0.002;

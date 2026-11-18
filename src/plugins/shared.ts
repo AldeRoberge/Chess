@@ -43,7 +43,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, w: number, h: number, f
 }
 
 const GLYPH: Record<string, string> = { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" };
-function fenPieces(fen: string | undefined): (string | null)[] {
+export function fenPieces(fen: string | undefined): (string | null)[] {
   const out: (string | null)[] = [];
   for (const ch of (fen ?? "").split(" ")[0]) { if (ch === "/") continue; if (ch >= "1" && ch <= "8") for (let k = 0; k < +ch; k++) out.push(null); else out.push(ch); }
   return out.length === 64 ? out : [];
@@ -118,13 +118,19 @@ export function drawRows(ctx: CanvasRenderingContext2D, x: number, y: number, w:
  * Preview that grows into more information instead of just zooming: at about its default size the visual fills the
  * canvas; once the node is expanded the visual keeps a sensible size and the extra space lists live details.
  */
-export function withDetail(ctx: CanvasRenderingContext2D, w: number, h: number, base: [number, number], paint: (w: number, h: number) => void, rows: () => DetailRow[]) {
+export function detailLayout(w: number, h: number, base: [number, number]): { vw: number; vh: number; side: boolean } | null {
   const [bw, bh] = base, aspect = bw / bh;
-  if (Math.min(w / bw, h / bh) <= 1.5) return paint(w, h);
-  ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, w, h);
+  if (Math.min(w / bw, h / bh) <= 1.5) return null;
   const side = w / h >= aspect * 1.3;
   const vw = side ? Math.min(w - 170, h * aspect) : w, vh = side ? h : Math.min(h - 90, w / aspect);
-  if (vw < 80 || vh < 60) return paint(w, h);
+  return vw < 80 || vh < 60 ? null : { vw, vh, side };
+}
+
+export function withDetail(ctx: CanvasRenderingContext2D, w: number, h: number, base: [number, number], paint: (w: number, h: number) => void, rows: () => DetailRow[]) {
+  const L = detailLayout(w, h, base);
+  if (!L) return paint(w, h);
+  const { vw, vh, side } = L;
+  ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, w, h);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, vw, vh); ctx.clip(); paint(vw, vh); ctx.restore();
   if (side) drawRows(ctx, vw, 0, w - vw, h, rows()); else drawRows(ctx, 0, vh, w, h - vh, rows());
 }

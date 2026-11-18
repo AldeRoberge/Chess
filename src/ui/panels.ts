@@ -5,7 +5,7 @@ import { runCalibration } from "../mapping/calibrator";
 import { loadMapping, saveMapping, defaultMapping, type MappingConfig } from "../mapping/store";
 import { virtualTable } from "../sim/virtualTable";
 import { SQUARE } from "../world/coords";
-import { sqName } from "../vision/types";
+import { sqIndex, sqName } from "../vision/types";
 import { WorldView } from "../world/view";
 import { drawTableOverlay } from "../world/overlay";
 import { registerContextMenu } from "./contextMenu";
@@ -14,7 +14,11 @@ import { dueFrame, pixelRatio, setDisplay, viewSettings } from "./viewSettings";
 import { PIECE_SETS, pieceColors, pieceImage, pieceSet, setPieceColors, setPieceSet } from "./pieceSets";
 import { BOARD_THEMES, boardTheme, setBoardTheme } from "./boardThemes";
 import { openChannel, type InMsg } from "./channel";
+import type { Tip, TipRow } from "./tooltip";
+import { fenPieces } from "../plugins/shared";
+import { isLightSquare, pct, pieceLabel, tone } from "../plugins/hover";
 
+const o2 = (n: string) => sqIndex(n);
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔", bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚" };
 
@@ -23,13 +27,15 @@ export class TablePanel {
   root = el("div", "panel table");
   private cv = el("canvas"); private info = el("div", "muted");
   private px = 44; private margin = 3; private sel: number | null = null;
+  /** Square (0 = a8) under the mouse, or null; the margin ring counts as off the board. */
+  private over: number | null = null; private overMargin: { x: number; y: number } | null = null;
 
   constructor() {
     this.cv.width = this.cv.height = (8 + this.margin * 2) * this.px;
-    this.cv.className = "table-cv";
+    this.cv.className = "table-cv"; this.cv.dataset.tipLive = "1";
     const bar = el("div", "bar");
-    const reset = el("button", "", "Reset table"); reset.onclick = () => virtualTable.reset();
-    const seat = el("button", "", "Sit / stand"); seat.onclick = () => { virtualTable.seated = !virtualTable.seated; this.seatCb(virtualTable.seated); };
+    const reset = el("button", "", "Reset table"); reset.dataset.tip = "Reset table"; reset.dataset.tipBody = "Puts every piece back on its starting square."; reset.onclick = () => virtualTable.reset();
+    const seat = el("button", "", "Sit / stand"); seat.dataset.tip = "Sit / stand"; seat.dataset.tipBody = "Seats or removes the virtual player, so the cameras and tracking see a person at the table."; seat.onclick = () => { virtualTable.seated = !virtualTable.seated; this.seatCb(virtualTable.seated); };
     const look = el("select", "board-look"); look.title = "Board look";
     for (const t of BOARD_THEMES) { const o = el("option", "", t.name); o.value = t.id; look.append(o); }
     look.value = boardTheme().id; look.onchange = () => setBoardTheme(look.value);
@@ -40,10 +46,11 @@ export class TablePanel {
     this.info.textContent = "Click a piece, then a square. Hover a menu button to test dwell selection.";
     const pos = (e: MouseEvent) => { const r = this.cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * (8 + 2 * this.margin) - this.margin, y: ((e.clientY - r.top) / r.height) * (8 + 2 * this.margin) - this.margin }; };
     this.cv.onmousemove = (e) => {
-      virtualTable.pointer = pos(e);
+      const q = pos(e); virtualTable.pointer = q;
+      const c = Math.floor(q.x), r = Math.floor(q.y); this.over = c >= 0 && c < 8 && r >= 0 && r < 8 ? r * 8 + c : null; this.overMargin = this.over === null ? q : null;
       if (virtualTable.hoverHand && !virtualTable.busy) { virtualTable.hand = { ...virtualTable.pointer }; virtualTable.carried = null; virtualTable.setHoverHand(); }
     };
-    this.cv.onmouseleave = () => { virtualTable.pointer = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
+    this.cv.onmouseleave = () => { virtualTable.pointer = null; this.over = null; this.overMargin = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
     this.cv.onclick = (e) => {
       const p = pos(e); const c = Math.floor(p.x), r = Math.floor(p.y);
       if (c < 0 || c > 7 || r < 0 || r > 7) return;
@@ -56,6 +63,42 @@ export class TablePanel {
     };
   }
   seatCb: (seated: boolean) => void = () => {};
+
+  /** Hover card for the virtual table: what is on the square, what the cameras and tracker think, and what every colour on it means. */
+  tips = (e: Element): Tip | null => {
+    if (e !== this.cv) return null;
+    const g = bus.game, d = bus.director, b = bus.board;
+    if (this.over === null) {
+      const m = this.overMargin, btn = d?.phase === "menu" && m ? d.menu.find((x) => Math.hypot(x.x - (m.x + 0), x.y - m.y) <= x.r) : null;
+      if (btn) return { title: btn.label, tag: "menu button", color: "#8caaff", body: "A projected button. Hold a hand over it until the ring fills to select it.", rows: [{ label: "Dwell progress", value: pct(d!.progress[btn.id] ?? 0), bar: d!.progress[btn.id] ?? 0 }] };
+      return { title: "Table edge", tag: "virtual table", color: "#8caaff", body: "Outside the board. Menu buttons and the simulated arms appear here.", rows: [{ label: "Phase", value: d?.phase ?? "idle" }, ...(virtualTable.hand ? [{ label: "Hand", value: virtualTable.carried !== null ? "carrying a piece" : "over the table" }] : [])] };
+    }
+    const sq = this.over, name = sqName(sq), r = Math.floor(sq / 8), c = sq % 8;
+    const real = virtualTable.game.board()[r][c], realCh = real ? (real.color === "w" ? real.type.toUpperCase() : real.type) : null;
+    const tracked = fenPieces(g?.fen)[sq] ?? null;
+    const rows: TipRow[] = [{ label: "On the table", value: pieceLabel(realCh) }];
+    if (g) rows.push({ label: "Tracker thinks", value: pieceLabel(tracked), tone: (tracked ?? null) === realCh ? "ok" : "bad" });
+    if (b) {
+      const occ = b.occ[sq], seen = occ > 0.5, white = b.white[sq];
+      rows.push({ label: "Cameras see", value: seen ? `a ${white > 0.5 ? "white" : "black"} piece` : "empty", bar: b.conf[sq], tone: tone(b.conf[sq]) });
+    } else rows.push({ label: "Cameras see", value: "no reading yet", tone: "warn" });
+    // Every colour on this square, with its reason.
+    const why: string[] = [];
+    const mark = (label: string, value: string, t?: TipRow["tone"]) => rows.push({ label, value, tone: t });
+    if (this.sel === sq) { mark("Yellow", "your selected piece", "warn"); why.push("Yellow: the piece you clicked; click a highlighted square to move it."); }
+    if (g?.lifted === name) { mark("Amber", "piece picked up", "warn"); why.push("Amber: the tracker saw this piece leave its square."); }
+    if (g?.last && o2(g.last.from) === sq) { mark("Blue", "last move started here", "ok"); why.push("Blue: the last move the tracker confirmed."); }
+    if (g?.last && o2(g.last.to) === sq) { mark("Blue", "last move ended here", "ok"); }
+    if (g?.status === "illegal" && g.diff.includes(sq)) { mark("Red outline", "cameras ≠ expected", "bad"); why.push(`Red outline: the cameras disagree with the position the tracker expects here, so it flags the position illegal (${g.diff.length} squares disagree). Usually the cameras are not calibrated or are not seeing the board yet.`); }
+    if (bus.engineHint && (bus.engineHint.from === name || bus.engineHint.to === name)) { mark("Green", bus.engineHint.from === name ? "engine move: pick up here" : "engine move: put down here", "ok"); why.push("Green: Stockfish's move. Play it on the board for the engine."); }
+    if (this.sel !== null && viewSettings().display.legalMoves && virtualTable.game.moves({ verbose: true }).some((m) => m.from === sqName(this.sel!) && m.to === name)) { mark("Dot", "legal move for the selected piece"); }
+    if (g) rows.push({ label: "Tracker status", value: g.status, tone: g.status === "illegal" ? "bad" : g.status === "synced" ? "ok" : "warn" });
+    return {
+      title: name, tag: `${isLightSquare(sq) ? "light" : "dark"} square · virtual table`, color: "#ffe45c",
+      body: why.length ? why.join(" ") : real ? `A ${pieceLabel(realCh)} stands here. No overlay colours on this square.` : "Empty square. No overlay colours on this square.",
+      rows, hint: this.sel === null ? "Click a piece to select it" : "Click a square to move there",
+    };
+  };
 
   /** Top-down view of both arms: sleeve, forearm, palm and fingers, higher parts drawn on top. */
   private drawArms(c: CanvasRenderingContext2D, px: number) {
@@ -107,6 +150,7 @@ export class TablePanel {
       const g = GLYPH["b" + p.type]; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.strokeStyle = p.color === "w" ? "#3b3a37" : "#0d0d0d"; c.lineWidth = p.color === "w" ? 2.2 : 1.2; c.strokeText(g, (col + 0.5) * px, (r + 0.55) * px); c.fillText(g, (col + 0.5) * px, (r + 0.55) * px);
     }));
     this.drawArms(c, px);
+    if (this.over !== null) { c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.strokeRect((this.over % 8) * px + 1, Math.floor(this.over / 8) * px + 1, px - 2, px - 2); }
     c.restore();
     drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);
     const g = bus.game, d = bus.director;
@@ -129,9 +173,9 @@ export class WorldPanel {
     const bar = el("div", "bar");
     const frusta = this.toggle("Projector frusta", viewSettings().display.frusta, (v) => { this.view.showFrusta = v; setDisplay({ frusta: v }); });
     const proj = this.toggle("Projected content", true, (v) => { this.view.showProjection = v; this.view.setMapping(this.cfg); });
-    const scan = el("label", "btn", "Import room scan (.glb/.obj)"); const file = el("input"); file.type = "file"; file.accept = ".glb,.gltf,.obj"; file.hidden = true; scan.append(file);
+    const scan = el("label", "btn", "Import room scan (.glb/.obj)"); scan.dataset.tip = "Import room scan"; scan.dataset.tipBody = "Loads a 3D scan of the room, finds the flat surfaces (table, walls, floor) and maps the projectors onto them."; scan.dataset.tipTag = "file .glb · .obj"; const file = el("input"); file.type = "file"; file.accept = ".glb,.gltf,.obj"; file.hidden = true; scan.append(file);
     file.onchange = () => file.files?.[0] && void this.importScan(file.files[0]);
-    const reset = el("button", "", "Default room"); reset.onclick = () => { this.cfg = defaultMapping(); this.apply(); };
+    const reset = el("button", "", "Default room"); reset.dataset.tip = "Default room"; reset.dataset.tipBody = "Forgets the imported scan and projector poses and goes back to the built-in room."; reset.dataset.tipTag = "resets mapping"; reset.onclick = () => { this.cfg = defaultMapping(); this.apply(); };
     bar.append(frusta, proj, scan, reset);
     const rig = el("div", "rig");
     this.root.append(bar, this.cv, rig, this.status);
@@ -145,7 +189,8 @@ export class WorldPanel {
   }
 
   private toggle(label: string, on: boolean, cb: (v: boolean) => void) {
-    const l = el("label", "chk"); const c = el("input"); c.type = "checkbox"; c.checked = on; c.onchange = () => cb(c.checked); l.append(c, document.createTextNode(label)); return l;
+    const l = el("label", "chk"); l.dataset.tip = label; l.dataset.tipTag = "toggle";
+    l.dataset.tipBody = { "Projector frusta": "Draws the cone of light each projector throws, so you can see what it covers.", "Projected content": "Shows the overlay (move hints, clock, menu) as it lands on the table, as the projector would draw it." }[label] ?? ""; const c = el("input"); c.type = "checkbox"; c.checked = on; c.onchange = () => cb(c.checked); l.append(c, document.createTextNode(label)); return l;
   }
 
   private apply() { saveMapping(this.cfg); this.view.setMapping(this.cfg); this.ch.postMessage({ type: "mapping" }); }
@@ -154,8 +199,8 @@ export class WorldPanel {
     rig.replaceChildren();
     this.cfg.projectors.forEach((p, i) => {
       const row = el("div", "rig-row"); row.append(el("b", "", p.id));
-      const open = el("button", "", "Open output"); open.onclick = () => { this.wins.set(i, window.open(`?output=${i}`, `cx-out-${i}`, "popup,width=960,height=540")); };
-      const cal = el("button", "", this.cfg.calibration[p.id] ? `Re-calibrate (${this.cfg.calibration[p.id].rms.toFixed(1)}px)` : "Auto-calibrate"); cal.onclick = () => void this.calibrate(i);
+      const open = el("button", "", "Open output"); open.dataset.tip = `Open output for ${p.id}`; open.dataset.tipBody = "Opens the picture this projector shows in its own window. Drag it onto the projector and double-click for fullscreen."; open.onclick = () => { this.wins.set(i, window.open(`?output=${i}`, `cx-out-${i}`, "popup,width=960,height=540")); };
+      const cal = el("button", "", this.cfg.calibration[p.id] ? `Re-calibrate (${this.cfg.calibration[p.id].rms.toFixed(1)}px)` : "Auto-calibrate"); cal.dataset.tip = `Calibrate ${p.id}`; cal.dataset.tipBody = "Projects dots and watches them with the webcam to learn where the projector lands on the table. Needs the output window open and a webcam Online."; cal.dataset.tipRows = this.cfg.calibration[p.id] ? `Last error:${this.cfg.calibration[p.id].rms.toFixed(1)} px` : "Calibrated:no"; cal.onclick = () => void this.calibrate(i);
       row.append(open, cal); rig.append(row);
     });
   }
@@ -213,11 +258,30 @@ export class LogPanel {
   private chips = el("div", "chips"); private lines = el("div", "lines"); private ev = el("div", "events");
   private n = 0;
   constructor() { this.root.append(this.chips, el("h4", "", "Narration"), this.lines, el("h4", "", "Events"), this.ev); }
+  /** Hover cards for camera chips, narration lines and events: the full record behind each short row. */
+  tips = (e: Element): Tip | null => {
+    if (!(e instanceof HTMLElement) || !this.root.contains(e)) return null;
+    if (e.dataset.cam) {
+      const c = bus.cameras.find((x) => x.id === e.dataset.cam);
+      return c ? { title: `Camera ${c.id}`, tag: c.online ? "online" : "offline", color: "#35e0b4", body: "Image quality is how clean this camera's picture is; trust is how often it agreed with the other cameras, and it scales its vote in Fusion.",
+        rows: [{ label: "Picture quality", value: pct(c.quality), bar: c.quality, tone: tone(c.quality) }, { label: "Trust", value: pct(c.reliability), bar: c.reliability, tone: tone(c.reliability) }] } : null;
+    }
+    if (e.classList.contains("ln")) {
+      const l = bus.lines.find((x) => String(x.t) === e.dataset.t && x.speaker === e.dataset.who);
+      return l ? { title: l.name, tag: `voice ${l.speaker}`, color: l.speaker === "A" ? "#7fd4ff" : "#ffb86b", body: l.text, rows: [{ label: "Priority", value: `${l.priority} / 3`, bar: l.priority / 3 }, { label: "Said at", value: `${Math.round(l.t / 1000)} s` }] } : null;
+    }
+    if (e.classList.contains("evt")) {
+      const v = bus.events.find((x) => String(x.t) === e.dataset.t && x.type === e.dataset.type);
+      return v ? { title: v.type, tag: "event", color: "#ff5a6e", body: "Something worth reacting to; the narrator and scene cues listen for these.",
+        rows: [{ label: "At", value: `${Math.round(v.t / 1000)} s` }, ...Object.entries((v.data ?? {}) as Record<string, unknown>).slice(0, 10).map(([k, x]) => ({ label: k, value: typeof x === "object" ? JSON.stringify(x).slice(0, 40) : String(x) }))] } : null;
+    }
+    return null;
+  };
   frame() {
-    this.chips.innerHTML = bus.cameras.map((c) => `<span class="chip ok">cam ${c.id} · q ${Math.round(c.quality * 100)}% · trust ${Math.round(c.reliability * 100)}%</span>`).join("") || `<span class="chip">no camera online</span>`;
+    this.chips.innerHTML = bus.cameras.map((c) => `<span class="chip ok" data-cam="${c.id}">cam ${c.id} · q ${Math.round(c.quality * 100)}% · trust ${Math.round(c.reliability * 100)}%</span>`).join("") || `<span class="chip">no camera online</span>`;
     const sig = bus.lines.length + bus.events.length;
     if (sig === this.n) return; this.n = sig;
-    this.lines.innerHTML = bus.lines.slice(-12).reverse().map((l) => `<div class="ln ${l.speaker}"><b>${l.name}</b> ${l.text}</div>`).join("");
-    this.ev.innerHTML = bus.events.slice(-14).reverse().map((e) => `<div class="evt"><b>${e.type}</b> ${e.data ? JSON.stringify(e.data).slice(0, 90) : ""}</div>`).join("");
+    this.lines.innerHTML = bus.lines.slice(-12).reverse().map((l) => `<div class="ln ${l.speaker}" data-t="${l.t}" data-who="${l.speaker}"><b>${l.name}</b> ${l.text}</div>`).join("");
+    this.ev.innerHTML = bus.events.slice(-14).reverse().map((e) => `<div class="evt" data-t="${e.t}" data-type="${e.type}"><b>${e.type}</b> ${e.data ? JSON.stringify(e.data).slice(0, 90) : ""}</div>`).join("");
   }
 }

@@ -1,12 +1,14 @@
 import { bus } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import type { NodeSpec, Plugin } from "../core/types";
+import type { TipRow } from "../ui/tooltip";
 import { AudioEngine } from "../scene/audio";
 import { CueEngine, DEFAULT_RULES, type FiredAction } from "../scene/cues";
 import { DmxSink } from "../scene/dmx";
 import { SceneRenderer } from "../scene/renderer";
 import { SCENES, type CueRule, type SceneId, type SceneState } from "../scene/types";
 import { objRows, withDetail } from "./shared";
+import { pct, visualSize } from "./hover";
 
 interface CueState { cues: CueEngine; rulesJson: string; r: SceneRenderer; last: number; forced: string }
 const cues: NodeSpec<CueState> = {
@@ -40,6 +42,23 @@ const cues: NodeSpec<CueState> = {
     if (Number(params.snow) >= 0) c.state.snow = Number(params.snow);
     bus.scene = c.state;
     return { scene: c.state, fired };
+  },
+  hover(p, w, h, s) {
+    const v = visualSize(w, h, [200, 112]), st = s.cues.state, zone = p.y < v.h * 0.4 ? 0 : p.y < v.h * 0.75 ? 1 : 2;
+    if (p.x > v.w || p.y > v.h) return null;
+    const hh = Math.floor(st.timeOfDay), mm = Math.round((st.timeOfDay - hh) * 60), clock = `${String(hh).padStart(2, "0")}:${String(mm % 60).padStart(2, "0")}`;
+    const lit = st.dmx.filter((x) => x > 0).length;
+    const rows: TipRow[][] = [
+      [{ label: "Time of day", value: clock, bar: st.timeOfDay / 24 }, { label: "Sky", value: st.timeOfDay >= 6 && st.timeOfDay < 18 ? "day" : "night" }, { label: "Lightning flash", value: pct(st.flash), bar: st.flash }],
+      [{ label: "Rain", value: pct(st.rain), bar: st.rain }, { label: "Snow", value: pct(st.snow), bar: st.snow }, { label: "Fog", value: pct(st.fog), bar: st.fog }, { label: "Wind", value: pct(st.wind), bar: st.wind }],
+      [{ label: "Fire glow", value: pct(st.fire), bar: st.fire }, { label: "Decor", value: st.decor.join(", ") || "none" }, { label: "Ambient audio", value: `rain ${pct(st.ambience.rain)} · wind ${pct(st.ambience.wind)} · drip ${pct(st.ambience.drip)}` }],
+    ];
+    const names = ["Sky", "Weather", "Ground & effects"], bodies = ["The sky colour follows the time of day; stars and the moon fade in at night.", "Particles and haze are drawn from the rain, snow, fog and wind levels.", "Decor and the fire glow, with the matching ambient audio levels."];
+    return {
+      title: names[zone], tag: `Scene · ${st.scene}`, color: "#c8a2ff", body: bodies[zone],
+      rows: [...rows[zone], { label: "Scene", value: st.scene }, ...(st.banner ? [{ label: "Banner", value: st.banner }] : []), { label: "Rules", value: String(s.cues.rules.length) }, { label: "Lights on (DMX)", value: `${lit} of ${st.dmx.length} channels` }],
+      mark: (ctx) => { const y0 = [0, v.h * 0.4, v.h * 0.75][zone], y1 = [v.h * 0.4, v.h * 0.75, v.h][zone]; ctx.save(); ctx.fillStyle = "rgba(255,228,92,.10)"; ctx.fillRect(0, y0, v.w, y1 - y0); ctx.strokeStyle = "#ffe45c"; ctx.lineWidth = 1; ctx.strokeRect(0.5, y0 + 0.5, v.w - 1, y1 - y0 - 1); ctx.restore(); },
+    };
   },
   preview(ctx, w, h, s) {
     const now = performance.now();
