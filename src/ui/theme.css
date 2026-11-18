@@ -1,0 +1,82 @@
+/*
+ * App themes: each is a token set over style.css's :root, in dark and light.
+ * Selected by <html data-theme data-mode> (see appTheme.ts). Extra tokens: --shadow, --scrim, --halo-bg, --track, --on-signal.
+ */
+
+/* Classic: the original cyan on navy */
+[data-theme=classic][data-mode=light]{
+  --ink-0:#e9eff6;--ink-1:#f6f9fc;--ink-2:#edf2f8;--ink-3:#dbe5f0;
+  --line:#b4c4d6;--line-hi:#6f94b8;--text:#0c1b2c;--text-dim:#44586e;
+  --signal:#0a78b8;--signal-hi:#055a8c;--amber:#a86500;--ok:#13804a;--bad:#c42b3a;
+  --shadow:#1a2c4033;--scrim:#1a2c4040;--halo-bg:linear-gradient(170deg,#f8fbfffa,#eaf1f8fa);--track:#c9d6e480;--on-signal:#fff;color-scheme:light;
+}
+
+/* Nodes: dense neutral greys, teal + orange */
+[data-theme=nodes][data-mode=dark]{
+  --ink-0:#0b0b0b;--ink-1:#151515;--ink-2:#1d1d1d;--ink-3:#2a2a2a;
+  --line:#3a3a3a;--line-hi:#5a5a5a;--text:#e6e6e6;--text-dim:#9a9a9a;
+  --signal:#19d1c0;--signal-hi:#8ff3e8;--amber:#ff9a2e;--ok:#5be37d;--bad:#ff5a5a;
+  --radius:2px;--font-ui:"IBM Plex Mono",ui-monospace,monospace;--halo-bg:linear-gradient(170deg,#1b1b1bf5,#101010f5);--on-signal:#041513;
+}
+[data-theme=nodes][data-mode=light]{
+  --ink-0:#d4d4d4;--ink-1:#e4e4e4;--ink-2:#ececec;--ink-3:#d9d9d9;
+  --line:#b0b0b0;--line-hi:#7d7d7d;--text:#161616;--text-dim:#555;
+  --signal:#007f74;--signal-hi:#005c54;--amber:#b25d00;--ok:#1a7d38;--bad:#c22a2a;
+  --radius:2px;--font-ui:"IBM Plex Mono",ui-monospace,monospace;--shadow:#00000033;--scrim:#00000040;--halo-bg:linear-gradient(170deg,#f2f2f2fa,#e2e2e2fa);--track:#bdbdbd80;--on-signal:#fff;color-scheme:light;
+}
+
+/* Engine: flat charcoal, blue-grey selection */
+[data-theme=engine][data-mode=dark]{
+  --ink-0:#282828;--ink-1:#383838;--ink-2:#424242;--ink-3:#4e4e4e;
+  --line:#1f1f1f;--line-hi:#6b6b6b;--text:#d2d2d2;--text-dim:#9d9d9d;
+  --signal:#4d8fd6;--signal-hi:#a9cdf2;--amber:#e6b34a;--ok:#7bc77b;--bad:#e56a6a;
+  --radius:3px;--font-ui:system-ui,"Segoe UI",Roboto,sans-serif;--halo-bg:linear-gradient(170deg,#3c3c3cf8,#333f);--on-signal:#06121f;
+}
+[data-theme=engine][data-mode=light]{
+  --ink-0:#b8b8b8;--ink-1:#cbcbcb;--ink-2:#d6d6d6;--ink-3:#c0c0c0;
+  --line:#999;--line-hi:#6a6a6a;--text:#0a0a0a;--text-dim:#444;
+  --signal:#1f5fae;--signal-hi:#123f78;--amber:#8f5e00;--ok:#1d6b1d;--bad:#b02323;
+  --radius:3px;--font-ui:system-ui,"Segoe UI",Roboto,sans-serif;--shadow:#00000040;--scrim:#00000045;--halo-bg:linear-gradient(170deg,#d9d9d9fa,#c9c9c9fa);--track:#a8a8a880;--on-signal:#fff;color-scheme:light;
+}
+
+/* Studio: near-black, hairlines, bright blue + orange */
+[data-theme=studio][data-mode=dark]{
+  --ink-0:#0a0a0a;--ink-1:#141414;--ink-2:#1c1c1c;--ink-3:#262626;
+  --line:#2b2b2b;--line-hi:#4a4a4a;--text:#ececec;--text-dim:#8e8e8e;
+  --signal:#2f9bff;--signal-hi:#a6d3ff;--amber:#ff8c1a;--ok:#4cd18a;--bad:#ff5252;
+  --radius:2px;--font-ui:system-ui,"Segoe UI",Roboto,sans-serif;--halo-bg:linear-gradient(170deg,#181818f8,#0f0f0ff8);--on-signal:#00101f;
+}
+[data-theme=studio][data-mode=light]{
+  --ink-0:#dcdcdc;--ink-1:#ececec;--ink-2:#f3f3f3;--ink-3:#e0e0e0;
+  --line:#c2c2c2;--line-hi:#8a8a8a;--text:#111;--text-dim:#5a5a5a;
+  --signal:#0a6fd6;--signal-hi:#064c97;--amber:#b85a00;--ok:#16793f;--bad:#c92a2a;
+  --radius:2px;--font-ui:system-ui,"Segoe UI",Roboto,sans-serif;--shadow:#00000030;--scrim:#00000040;--halo-bg:linear-gradient(170deg,#f6f6f6fa,#e8e8e8fa);--track:#c9c9c980;--on-signal:#fff;color-scheme:light;
+}
+
+/* Glass: soft greys, big radii, translucent panels, system blue */
+[data-theme=glass][data-mode=dark]{
+  --ink-0:#000;--ink-1:#1c1c1ecc;--ink-2:#2c2c2eb3;--ink-3:#3a3a3c;
+  --line:#ffffff1f;--line-hi:#ffffff40;--text:#f5f5f7;--text-dim:#a1a1a6;
+  --signal:#0a84ff;--signal-hi:#9ccbff;--amber:#ff9f0a;--ok:#32d74b;--bad:#ff453a;
+  --radius:10px;--font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;--halo-bg:#1c1c1ee6;--on-signal:#fff;
+}
+[data-theme=glass][data-mode=light]{
+  --ink-0:#f2f2f7;--ink-1:#ffffffcc;--ink-2:#f5f5f7b3;--ink-3:#e5e5ea;
+  --line:#0000001a;--line-hi:#00000040;--text:#1d1d1f;--text-dim:#6e6e73;
+  --signal:#007aff;--signal-hi:#0058b8;--amber:#c76e00;--ok:#1f8f3a;--bad:#d70015;
+  --radius:10px;--font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;--shadow:#0000002b;--scrim:#00000033;--halo-bg:#ffffffeb;--track:#00000014;--on-signal:#fff;color-scheme:light;
+}
+[data-theme=glass] header,[data-theme=glass] aside,[data-theme=glass] footer,[data-theme=glass] .rmenu,[data-theme=glass] .notice,[data-theme=glass] .bk-card,[data-theme=glass] .halo,[data-theme=glass] .ne-palette{
+  -webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6)}
+[data-theme=glass] button{border-radius:8px}
+
+/* chrome that stays legible in every theme */
+.ne-chip.on,.halo-item.sel{color:var(--on-signal)}
+
+/* dropdowns: flat, token-driven, custom chevron */
+select{appearance:none;-webkit-appearance:none;background-color:var(--ink-2);color:var(--text);border:1px solid var(--line);border-radius:var(--radius);padding:6px 28px 6px 12px;cursor:pointer;font:inherit;
+  background-image:linear-gradient(45deg,transparent 50%,var(--text-dim) 50%),linear-gradient(135deg,var(--text-dim) 50%,transparent 50%);
+  background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px;background-repeat:no-repeat;transition:border-color .12s,background-color .12s}
+select:hover{border-color:var(--line-hi);background-color:var(--ink-3)}
+select option{background:var(--ink-1);color:var(--text)}
+#theme{align-self:center;min-width:104px}

@@ -1,0 +1,274 @@
+{
+  "app": "chess-experience",
+  "kind": "workflow",
+  "name": "Basic setup",
+  "description": "One virtual camera reads a scripted game; the tracker follows it and a narrator speaks. The smallest patch that does something.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "source.synthetic",
+        "x": 44,
+        "y": 94,
+        "params": {
+          "online": true,
+          "cam": "A",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n2",
+        "type": "vision.boardReader",
+        "x": 44,
+        "y": 538,
+        "params": {
+          "cam": "A",
+          "corners": "142,84;338,84;352,285;128,285",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n3",
+        "type": "vision.fuse",
+        "x": 374,
+        "y": 538,
+        "params": {
+          "staleMs": 600,
+          "handMotion": 0.08
+        }
+      },
+      {
+        "id": "n4",
+        "type": "vision.stabilize",
+        "x": 704,
+        "y": 538,
+        "params": {
+          "memory": 0.8,
+          "hysteresis": 3,
+          "settleMs": 700,
+          "holdOnHand": true
+        }
+      },
+      {
+        "id": "n5",
+        "type": "game.tracker",
+        "x": 44,
+        "y": 982,
+        "params": {
+          "confirm": 2,
+          "maxCost": 0.8,
+          "promotion": "q",
+          "resync": false
+        }
+      },
+      {
+        "id": "n6",
+        "type": "sim.scenario",
+        "x": 374,
+        "y": 94,
+        "params": {
+          "scenario": "scholars-mate",
+          "play": true,
+          "pauseMs": 2500
+        }
+      },
+      {
+        "id": "n7",
+        "type": "narration.narrator",
+        "x": 44,
+        "y": 1426,
+        "params": {
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "narration.speech",
+        "x": 374,
+        "y": 1426,
+        "params": {
+          "enabled": true,
+          "volume": 0.9,
+          "provider": "browser",
+          "browserA": "",
+          "browserB": "",
+          "apiKey": "",
+          "voiceIdA": "pNInz6obpgDQGcFmaJgB",
+          "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
+          "model": "eleven_multilingual_v2"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e9",
+        "from": {
+          "node": "n1",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n2",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e10",
+        "from": {
+          "node": "n2",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n3",
+          "port": "o1"
+        }
+      },
+      {
+        "id": "e11",
+        "from": {
+          "node": "n3",
+          "port": "board"
+        },
+        "to": {
+          "node": "n4",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e12",
+        "from": {
+          "node": "n4",
+          "port": "board"
+        },
+        "to": {
+          "node": "n5",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e13",
+        "from": {
+          "node": "n6",
+          "port": "events"
+        },
+        "to": {
+          "node": "n5",
+          "port": "control"
+        }
+      },
+      {
+        "id": "e14",
+        "from": {
+          "node": "n5",
+          "port": "events"
+        },
+        "to": {
+          "node": "n7",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e15",
+        "from": {
+          "node": "n7",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n8",
+          "port": "lines"
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "title": "Demo & input",
+        "color": "#f2b84b",
+        "x": 20,
+        "y": 30,
+        "w": 658,
+        "h": 388
+      },
+      {
+        "id": "g2",
+        "title": "Analysis",
+        "color": "#3fb59a",
+        "x": 20,
+        "y": 474,
+        "w": 988,
+        "h": 388
+      },
+      {
+        "id": "g3",
+        "title": "Game & experience",
+        "color": "#9a78e0",
+        "x": 20,
+        "y": 918,
+        "w": 328,
+        "h": 388
+      },
+      {
+        "id": "g4",
+        "title": "Output: sound & narration",
+        "color": "#62c27a",
+        "x": 20,
+        "y": 1362,
+        "w": 658,
+        "h": 388
+      }
+    ]
+  },
+  "setup": {
+    "version": 1,
+    "completed": true,
+    "cameras": [
+      {
+        "id": "A",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera A",
+        "online": true,
+        "channel": "luma",
+        "rig": "A",
+        "corners": "142,84;338,84;352,285;128,285",
+        "trust": 1,
+        "fov": 42
+      }
+    ],
+    "scene": "auto",
+    "rain": -1,
+    "snow": -1,
+    "hour": -1,
+    "narrator": {
+      "voices": 2,
+      "nameA": "Jean",
+      "nameB": "Margot",
+      "speak": true,
+      "volume": 0.9
+    },
+    "opponent": {
+      "mode": "menu",
+      "elo": 1000
+    },
+    "projectors": {
+      "count": 0,
+      "dmx": false,
+      "dmxUrl": "ws://127.0.0.1:8787"
+    },
+    "tracking": {
+      "pose": false
+    },
+    "demo": {
+      "autoplay": true,
+      "scenario": "scholars-mate"
+    }
+  }
+}

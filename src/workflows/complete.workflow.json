@@ -1,0 +1,746 @@
+{
+  "app": "chess-experience",
+  "kind": "workflow",
+  "name": "Complete setup",
+  "description": "Three virtual cameras, fusion, tracker, director with a player menu, Stockfish opponent, two-voice narrator with AI commentary, scenes and projector output.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "vision.fuse",
+        "x": 1034,
+        "y": 878,
+        "params": {
+          "staleMs": 600,
+          "handMotion": 0.08
+        }
+      },
+      {
+        "id": "n2",
+        "type": "source.synthetic",
+        "x": 44,
+        "y": 94,
+        "params": {
+          "online": true,
+          "cam": "A",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n3",
+        "type": "vision.boardReader",
+        "x": 44,
+        "y": 878,
+        "params": {
+          "cam": "A",
+          "corners": "142,84;338,84;352,285;128,285",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n6",
+        "type": "source.synthetic",
+        "x": 374,
+        "y": 94,
+        "params": {
+          "online": true,
+          "cam": "B",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n7",
+        "type": "vision.boardReader",
+        "x": 374,
+        "y": 878,
+        "params": {
+          "cam": "B",
+          "corners": "259,309;106,192;226,80;369,164",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n10",
+        "type": "source.synthetic",
+        "x": 704,
+        "y": 94,
+        "params": {
+          "online": true,
+          "cam": "C",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n11",
+        "type": "vision.boardReader",
+        "x": 704,
+        "y": 878,
+        "params": {
+          "cam": "C",
+          "corners": "240,103;361,177;240,286;119,177",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n14",
+        "type": "vision.stabilize",
+        "x": 1364,
+        "y": 878,
+        "params": {
+          "memory": 0.8,
+          "hysteresis": 3,
+          "settleMs": 700,
+          "holdOnHand": true
+        }
+      },
+      {
+        "id": "n15",
+        "type": "game.tracker",
+        "x": 44,
+        "y": 1662,
+        "params": {
+          "confirm": 2,
+          "maxCost": 0.8,
+          "promotion": "q",
+          "resync": false
+        }
+      },
+      {
+        "id": "n16",
+        "type": "experience.director",
+        "x": 374,
+        "y": 1662,
+        "params": {
+          "dwellMs": 1500,
+          "introMs": 6000,
+          "outroMs": 8000,
+          "preset": "menu",
+          "presetElo": "1000"
+        }
+      },
+      {
+        "id": "n17",
+        "type": "game.engine",
+        "x": 704,
+        "y": 1662,
+        "params": {
+          "color": "b",
+          "virtualHand": true
+        }
+      },
+      {
+        "id": "n18",
+        "type": "narration.narrator",
+        "x": 704,
+        "y": 2106,
+        "params": {
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot"
+        }
+      },
+      {
+        "id": "n19",
+        "type": "narration.ai",
+        "x": 1034,
+        "y": 2106,
+        "params": {
+          "provider": "openai",
+          "aiKey": "",
+          "aiModel": "gpt-4.1-nano",
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot"
+        }
+      },
+      {
+        "id": "n20",
+        "type": "narration.speech",
+        "x": 1364,
+        "y": 2106,
+        "params": {
+          "enabled": true,
+          "volume": 0.9,
+          "provider": "browser",
+          "browserA": "",
+          "browserB": "",
+          "apiKey": "",
+          "voiceIdA": "pNInz6obpgDQGcFmaJgB",
+          "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
+          "model": "eleven_multilingual_v2"
+        }
+      },
+      {
+        "id": "n21",
+        "type": "scene.cues",
+        "x": 44,
+        "y": 2446,
+        "params": {
+          "scene": "(auto)",
+          "hour": -1,
+          "rain": -1,
+          "snow": -1,
+          "thunder": false,
+          "rules": ""
+        }
+      },
+      {
+        "id": "n22",
+        "type": "scene.output",
+        "x": 44,
+        "y": 2106,
+        "params": {
+          "audio": true,
+          "dmx": false,
+          "dmxUrl": "ws://127.0.0.1:8787",
+          "universe": 0
+        }
+      },
+      {
+        "id": "n27",
+        "type": "sim.person",
+        "x": 1034,
+        "y": 94,
+        "params": {
+          "seated": false
+        }
+      },
+      {
+        "id": "n45",
+        "type": "sim.pose",
+        "x": 1364,
+        "y": 94,
+        "params": {
+          "show": true
+        }
+      },
+      {
+        "id": "n46",
+        "type": "sim.scenario",
+        "x": 44,
+        "y": 434,
+        "params": {
+          "scenario": "scholars-mate",
+          "play": true,
+          "pauseMs": 2500
+        }
+      },
+      {
+        "id": "n60",
+        "type": "clock.reader",
+        "x": 44,
+        "y": 1218,
+        "params": {
+          "kind": "manual",
+          "control": "10+5",
+          "lowSec": 60,
+          "critSec": 15,
+          "minConf": 0.5
+        }
+      },
+      {
+        "id": "n61",
+        "type": "clock.overlay",
+        "x": 374,
+        "y": 2106,
+        "params": {
+          "mode": "digits",
+          "showCert": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e4",
+        "from": {
+          "node": "n2",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n3",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e5",
+        "from": {
+          "node": "n3",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n1",
+          "port": "o1"
+        }
+      },
+      {
+        "id": "e8",
+        "from": {
+          "node": "n6",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n7",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e9",
+        "from": {
+          "node": "n7",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n1",
+          "port": "o2"
+        }
+      },
+      {
+        "id": "e12",
+        "from": {
+          "node": "n10",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n11",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e13",
+        "from": {
+          "node": "n11",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n1",
+          "port": "o3"
+        }
+      },
+      {
+        "id": "e23",
+        "from": {
+          "node": "n1",
+          "port": "board"
+        },
+        "to": {
+          "node": "n14",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e24",
+        "from": {
+          "node": "n14",
+          "port": "board"
+        },
+        "to": {
+          "node": "n15",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e25",
+        "from": {
+          "node": "n16",
+          "port": "director"
+        },
+        "to": {
+          "node": "n15",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e26",
+        "from": {
+          "node": "n15",
+          "port": "events"
+        },
+        "to": {
+          "node": "n16",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e28",
+        "from": {
+          "node": "n27",
+          "port": "seats"
+        },
+        "to": {
+          "node": "n16",
+          "port": "seats"
+        }
+      },
+      {
+        "id": "e29",
+        "from": {
+          "node": "n27",
+          "port": "pointers"
+        },
+        "to": {
+          "node": "n16",
+          "port": "pointers"
+        }
+      },
+      {
+        "id": "e30",
+        "from": {
+          "node": "n15",
+          "port": "game"
+        },
+        "to": {
+          "node": "n17",
+          "port": "game"
+        }
+      },
+      {
+        "id": "e31",
+        "from": {
+          "node": "n16",
+          "port": "director"
+        },
+        "to": {
+          "node": "n17",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e32",
+        "from": {
+          "node": "n15",
+          "port": "events"
+        },
+        "to": {
+          "node": "n18",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e33",
+        "from": {
+          "node": "n16",
+          "port": "events"
+        },
+        "to": {
+          "node": "n18",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e34",
+        "from": {
+          "node": "n17",
+          "port": "events"
+        },
+        "to": {
+          "node": "n18",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e35",
+        "from": {
+          "node": "n18",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n19",
+          "port": "lines"
+        }
+      },
+      {
+        "id": "e36",
+        "from": {
+          "node": "n15",
+          "port": "events"
+        },
+        "to": {
+          "node": "n19",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e37",
+        "from": {
+          "node": "n16",
+          "port": "events"
+        },
+        "to": {
+          "node": "n19",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e38",
+        "from": {
+          "node": "n17",
+          "port": "events"
+        },
+        "to": {
+          "node": "n19",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e39",
+        "from": {
+          "node": "n19",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n20",
+          "port": "lines"
+        }
+      },
+      {
+        "id": "e40",
+        "from": {
+          "node": "n15",
+          "port": "events"
+        },
+        "to": {
+          "node": "n21",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e41",
+        "from": {
+          "node": "n16",
+          "port": "events"
+        },
+        "to": {
+          "node": "n21",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e42",
+        "from": {
+          "node": "n17",
+          "port": "events"
+        },
+        "to": {
+          "node": "n21",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e43",
+        "from": {
+          "node": "n21",
+          "port": "scene"
+        },
+        "to": {
+          "node": "n22",
+          "port": "scene"
+        }
+      },
+      {
+        "id": "e44",
+        "from": {
+          "node": "n21",
+          "port": "fired"
+        },
+        "to": {
+          "node": "n22",
+          "port": "fired"
+        }
+      },
+      {
+        "id": "e47",
+        "from": {
+          "node": "n46",
+          "port": "events"
+        },
+        "to": {
+          "node": "n15",
+          "port": "control"
+        }
+      },
+      {
+        "id": "e900",
+        "from": {
+          "node": "n15",
+          "port": "game"
+        },
+        "to": {
+          "node": "n60",
+          "port": "game"
+        }
+      },
+      {
+        "id": "e901",
+        "from": {
+          "node": "n60",
+          "port": "clock"
+        },
+        "to": {
+          "node": "n61",
+          "port": "clock"
+        }
+      },
+      {
+        "id": "e902",
+        "from": {
+          "node": "n60",
+          "port": "events"
+        },
+        "to": {
+          "node": "n18",
+          "port": "events4"
+        }
+      },
+      {
+        "id": "e903",
+        "from": {
+          "node": "n60",
+          "port": "events"
+        },
+        "to": {
+          "node": "n19",
+          "port": "events4"
+        }
+      },
+      {
+        "id": "e904",
+        "from": {
+          "node": "n60",
+          "port": "events"
+        },
+        "to": {
+          "node": "n21",
+          "port": "events4"
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "title": "Demo & input",
+        "color": "#f2b84b",
+        "x": 20,
+        "y": 30,
+        "w": 1648,
+        "h": 728
+      },
+      {
+        "id": "g2",
+        "title": "Analysis",
+        "color": "#3fb59a",
+        "x": 20,
+        "y": 814,
+        "w": 1648,
+        "h": 728
+      },
+      {
+        "id": "g3",
+        "title": "Game & experience",
+        "color": "#9a78e0",
+        "x": 20,
+        "y": 1598,
+        "w": 988,
+        "h": 388
+      },
+      {
+        "id": "g4",
+        "title": "Output: sound & narration",
+        "color": "#62c27a",
+        "x": 20,
+        "y": 2042,
+        "w": 1648,
+        "h": 728
+      }
+    ]
+  },
+  "setup": {
+    "version": 1,
+    "completed": true,
+    "cameras": [
+      {
+        "id": "A",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera A",
+        "online": true,
+        "channel": "luma",
+        "rig": "A",
+        "corners": "142,84;338,84;352,285;128,285",
+        "trust": 1,
+        "fov": 42
+      },
+      {
+        "id": "B",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera B",
+        "online": true,
+        "channel": "luma",
+        "rig": "B",
+        "corners": "259,309;106,192;226,80;369,164",
+        "trust": 1,
+        "fov": 44
+      },
+      {
+        "id": "C",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera C",
+        "online": true,
+        "channel": "luma",
+        "rig": "C",
+        "corners": "240,103;361,177;240,286;119,177",
+        "trust": 1,
+        "fov": 46
+      }
+    ],
+    "scene": "auto",
+    "rain": -1,
+    "snow": -1,
+    "hour": -1,
+    "narrator": {
+      "voices": 2,
+      "nameA": "Jean",
+      "nameB": "Margot",
+      "speak": true,
+      "volume": 0.9
+    },
+    "opponent": {
+      "mode": "menu",
+      "elo": 1000
+    },
+    "projectors": {
+      "count": 2,
+      "dmx": false,
+      "dmxUrl": "ws://127.0.0.1:8787"
+    },
+    "tracking": {
+      "pose": false
+    },
+    "demo": {
+      "autoplay": true,
+      "scenario": "scholars-mate"
+    }
+  }
+}

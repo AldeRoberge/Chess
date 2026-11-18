@@ -1,0 +1,96 @@
+import { Chess } from "chess.js";
+import { describe, expect, it } from "vitest";
+import { Fusion } from "../vision/fusion";
+import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
+import { Stabilizer } from "../vision/stabilizer";
+import { render3D } from "../sim/render3d";
+import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
+import { VirtualTable } from "../sim/virtualTable";
+import type { BoardBelief } from "../vision/types";
+import { PositionTracker } from "./tracker";
+
+const settled = (g: Chess, flip?: number[]): BoardBelief => {
+  const occ = new Float32Array(64), white = new Float32Array(64), conf = new Float32Array(64).fill(0.95);
+  g.board().flat().forEach((p, i) => { occ[i] = p ? 1 : 0; white[i] = p?.color === "w" ? 1 : 0; });
+  for (const i of flip ?? []) { occ[i] = occ[i] ? 0 : 1; conf[i] = 0.3; }
+  return { t: 1, occ, white, conf, fidelity: 0.9, handOver: false, settled: true, cams: 2 };
+};
+
+describe("PositionTracker", () => {
+  it("accepts a legal move after the confirm count and emits events", () => {
+    const t = new PositionTracker();
+    const g = new Chess(); g.move("e4");
+    expect(t.observe(settled(g)).status).toBe("pending");
+    const r = t.observe(settled(g));
+    expect(r.status).toBe("moved");
+    expect(r.last?.san).toBe("e4");
+    expect(r.events.map((e) => e.type)).toContain("move");
+  });
+  it("never explains an extra occupied square as a move: a forearm or shadow on the board is waited out", () => {
+    const t = new PositionTracker(), g = new Chess(); g.move("Nc3");
+    const covered = settled(new Chess(), [42]); // start position + a phantom piece on c3, nothing vanished
+    covered.white[42] = 1; covered.conf[42] = 0.2;
+    for (let i = 0; i < 5; i++) { const r = t.observe(covered); expect(r.status).toBe("pending"); expect(r.history).toEqual([]); }
+    expect(t.observe(settled(g)).status).toBe("pending"); expect(t.observe(settled(g)).history).toEqual(["Nc3"]); // once the arm is gone the real move is accepted
+  });
+  it("will not commit a king step while the rook's square is still unread: half a castle waits, then O-O is accepted", () => {
+    const castled = new Chess("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1"), after = new Chess(castled.fen()); after.move("O-O");
+    const t = new PositionTracker(); t.reset(castled.fen());
+    const half = settled(castled); // e8 gone, f8 and g8 ambiguous (low confidence), h8 rook still read
+    half.occ[4] = 0; half.occ[5] = 0; half.occ[6] = 0; half.conf[5] = 0.2; half.conf[6] = 0.2;
+    for (let i = 0; i < 5; i++) { const r = t.observe(half); expect(r.history).toEqual([]); expect(r.status).not.toBe("moved"); }
+    t.observe(settled(after)); expect(t.observe(settled(after)).history).toEqual(["O-O"]);
+  });
+  it("recovers two plies when frames were dropped", () => {
+    const t = new PositionTracker();
+    const g = new Chess(); g.move("e4"); g.move("e5");
+    t.observe(settled(g));
+    const r = t.observe(settled(g));
+    expect(r.history).toEqual(["e4", "e5"]);
+  });
+  it("detects a piece in hand and illegal placement", () => {
+    const t = new PositionTracker();
+    const g = new Chess(); g.move("e4");
+    const lifted = settled(new Chess());
+    lifted.occ[52] = 0; // e2 vanished, nothing landed
+    lifted.conf.fill(0.99);
+    expect(t.observe(lifted).status).toBe("lifted");
+    const bad = settled(new Chess());
+    bad.occ[52] = 0; bad.occ[20] = 1; bad.white[20] = 1; // e2 -> e6: not a legal pawn move
+    bad.conf.fill(0.99);
+    expect(t.observe(bad).status).toBe("illegal");
+  });
+  it("detects captures, castling and checkmate", () => {
+    const t = new PositionTracker();
+    const g = new Chess();
+    for (const m of ["f3", "e5", "g4", "Qh4#"]) {
+      g.move(m);
+      t.observe(settled(g)); const r = t.observe(settled(g));
+      if (m === "Qh4#") expect(r.events.map((e) => e.type)).toContain("mate");
+    }
+  });
+  it("tolerates one low-confidence wrong square", () => {
+    const t = new PositionTracker();
+    const g = new Chess(); g.move("d4");
+    t.observe(settled(g, [0])); // a8 rook "missing" but low confidence
+    expect(t.observe(settled(g, [0])).last?.san).toBe("d4");
+  });
+});
+
+describe("full vision pipeline on 3D camera feeds", () => {
+  it("tracks e2-e4 through perspective, occlusion, noise, and a hand over the board", () => {
+    const table = new VirtualTable();
+    const sA = new BoardSampler("A", { ...defaultSamplerConfig(), corners: rigCorners(RIGS.A) }), sB = new BoardSampler("B", { ...defaultSamplerConfig(), corners: rigCorners(RIGS.B) });
+    const fusion = new Fusion(), stab = new Stabilizer(), tracker = new PositionTracker();
+    let t = 0, seed = 1, last: any;
+    const frame = (rig: string) => render3D(table.scene3d(), { width: FRAME_W, height: FRAME_H, rig: RIGS[rig], noise: 10, gradient: 0.15, seed: ++seed, t });
+    sA.calibrateFromStart(frame("A")); sB.calibrateFromStart(frame("B"));
+    const run = (ms: number) => { for (let k = 0; k < ms; k += 100) { t += 100; table.tick(t); last = tracker.observe(stab.step(fusion.fuse([sA.read(frame("A")), sB.read(frame("B"))], t))); } };
+    run(1500);
+    expect(last.status).toBe("synced");
+    table.play("e4", t);
+    run(6000);
+    expect(last.history).toEqual(["e4"]);
+    expect(last.fidelity).toBeGreaterThan(0.5);
+  });
+});

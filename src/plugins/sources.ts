@@ -1,0 +1,102 @@
+import type { NodeSpec, Plugin } from "../core/types";
+import { virtualTable } from "../sim/virtualTable";
+import { applySensor, renderLuminance } from "../sim/render3d";
+import { renderPool } from "../sim/renderPool";
+import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
+import type { GrayFrame } from "../vision/types";
+import { drawFrame, withDetail } from "./shared";
+
+interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string }
+
+const webcam: NodeSpec<WebcamState> = {
+  type: "source.webcam", title: "Webcam / IR", category: "Source",
+  inputs: [], outputs: [{ id: "frame", type: "frame" }],
+  params: [
+    { id: "online", kind: "bool", label: "Online", value: true },
+    { id: "device", kind: "text", label: "Device", value: "" },
+    { id: "channel", kind: "select", label: "Channel", options: ["luma", "red", "green", "blue"], value: "luma" },
+    { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 12 },
+  ],
+  previewSize: [160, 120],
+  init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "" }),
+  process(_i, { params, state, now, setFidelity }) {
+    const stop = () => { state.stream?.getTracks().forEach((t) => t.stop()); state.stream = null; state.video = null; state.frame = null; };
+    if (!params.online) { if (state.stream) stop(); setFidelity(null); return { frame: null }; }
+    if (!state.stream && !state.starting && navigator.mediaDevices) {
+      state.starting = true;
+      void (async () => {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const want = String(params.device);
+          const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: 640, height: 480 } });
+          const v = document.createElement("video"); v.srcObject = stream; v.muted = true; await v.play();
+          state.stream = stream; state.video = v; state.canvas = document.createElement("canvas"); state.canvas.width = 480; state.canvas.height = 360; state.err = "";
+          stream.getVideoTracks()[0].onended = () => stop(); // unplugged -> camera simply goes offline
+        } catch (e) { state.err = String(e); }
+        state.starting = false;
+      })();
+    }
+    if (state.video && now - state.last >= 1000 / Number(params.fps)) {
+      state.last = now;
+      const ctx = state.canvas!.getContext("2d", { willReadFrequently: true })!;
+      ctx.drawImage(state.video, 0, 0, 480, 360);
+      const px = ctx.getImageData(0, 0, 480, 360).data;
+      const g = new Uint8ClampedArray(480 * 360);
+      const ch = String(params.channel);
+      const n = g.length; // channel chosen once, not per pixel
+      if (ch === "red") for (let i = 0; i < n; i++) g[i] = px[i * 4];
+      else if (ch === "green") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 1];
+      else if (ch === "blue") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 2];
+      else for (let i = 0; i < n; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
+      state.frame = { width: 480, height: 360, data: g, t: now };
+    }
+    setFidelity(state.frame ? 1 : 0);
+    return { frame: state.frame };
+  },
+  dispose(s) { s.stream?.getTracks().forEach((t) => t.stop()); },
+  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [160, 120], (pw, ph) => drawFrame(ctx, pw, ph, s.frame, s.err ? "no camera" : "offline"), () => [
+    ["status", s.err ? "error" : s.frame ? "live" : "offline", s.err ? "#ff5a6e" : undefined], ["error", s.err || "none"],
+    ["resolution", s.frame ? `${s.frame.width}×${s.frame.height}` : "—"], ["frame t", s.frame ? `${Math.round(s.frame.t)} ms` : "—"]]),
+};
+
+interface SynthState { frame: GrayFrame | null; last: number; seed: number; key: string; lum: Float32Array | null; inflight: boolean; epoch: number }
+const synthetic: NodeSpec<SynthState> = {
+  type: "source.synthetic", title: "Virtual Camera (3D)", category: "Source",
+  inputs: [], outputs: [{ id: "frame", type: "frame" }],
+  params: [
+    { id: "online", kind: "bool", label: "Online", value: true },
+    { id: "cam", kind: "select", label: "Viewpoint", options: ["A", "B", "C"], value: "A" },
+    { id: "noise", kind: "number", label: "Noise", min: 0, max: 40, step: 1, value: 8 },
+    { id: "gain", kind: "number", label: "Exposure", min: 0.4, max: 1.6, step: 0.05, value: 1 },
+    { id: "gradient", kind: "number", label: "Light falloff", min: 0, max: 0.6, step: 0.05, value: 0.15 },
+    { id: "shadows", kind: "bool", label: "Shadows", value: true },
+    { id: "fps", kind: "number", label: "FPS", min: 1, max: 20, step: 1, value: 8 },
+  ],
+  previewSize: [160, 120],
+  init: () => ({ frame: null, last: 0, seed: 1, key: "", lum: null, inflight: false, epoch: 0 }),
+  process(_i, { params, state, now, setFidelity }) {
+    if (!params.online) { state.frame = null; state.epoch++; setFidelity(null); return { frame: null }; }
+    if (state.frame && now - state.last < 1000 / Number(params.fps)) { setFidelity(1); return { frame: state.frame }; } // reused frame is still a live one; without this the label vanishes between renders
+    const pool = renderPool();
+    if (pool.supported && state.inflight) { setFidelity(state.frame ? 1 : 0); return { frame: state.frame }; } // a render is still running on a worker: keep showing the last frame
+    state.last = now;
+    const opts = { width: FRAME_W, height: FRAME_H, rig: RIGS[String(params.cam)], noise: Number(params.noise), gain: Number(params.gain), gradient: Number(params.gradient), shadows: !!params.shadows, seed: ++state.seed, t: now };
+    const key = `${params.cam}|${opts.shadows}|${virtualTable.sceneKey}`;
+    if (pool.supported) { // ray-cast off the main thread; the result lands a few ms later and is picked up by a later tick
+      state.inflight = true; const epoch = state.epoch;
+      void pool.request({ cam: String(params.cam), key, scene: virtualTable.scene3d(), opts }).then((f) => { if (epoch === state.epoch) state.frame = f; state.inflight = false; });
+      setFidelity(state.frame ? 1 : 0);
+      return { frame: state.frame };
+    }
+    if (key !== state.key || !state.lum) { state.key = key; state.lum = renderLuminance(virtualTable.scene3d(), opts); } // ray-cast only when something moved
+    state.frame = applySensor(state.lum, opts);
+    setFidelity(1);
+    return { frame: state.frame };
+  },
+  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [160, 120], (pw, ph) => drawFrame(ctx, pw, ph, s.frame), () => [
+    ["status", s.frame ? "rendering" : "offline"], ["resolution", s.frame ? `${s.frame.width}×${s.frame.height}` : "—"], ["frame t", s.frame ? `${Math.round(s.frame.t)} ms` : "—"],
+    ["scene key", s.key || "—"], ["render", s.inflight ? "in flight (worker)" : "idle"], ["frames", String(s.seed)]]),
+};
+
+export const sourcesPlugin: Plugin = { id: "sources", name: "Sources", register: (r) => { r.register(webcam); r.register(synthetic); } };

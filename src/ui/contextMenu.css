@@ -1,0 +1,29 @@
+/* Right-click menu. Same tokens as the tooltip card: ink surface, hairline border, signal accent. */
+.cm{position:fixed;z-index:1100;min-width:200px;max-width:320px;padding:5px;border:1px solid var(--line-hi);border-radius:9px;
+  background:color-mix(in srgb,var(--ink-1) 94%,transparent);-webkit-backdrop-filter:blur(12px) saturate(1.2);backdrop-filter:blur(12px) saturate(1.2);
+  box-shadow:0 14px 36px -8px rgb(0 0 0/.7),0 0 0 1px rgb(0 0 0/.35);color:var(--text);font:400 var(--t-sm)/1.3 var(--font-ui);outline:none;
+  animation:cm-in .09s ease-out}
+.cm-sub{z-index:1101}
+@keyframes cm-in{from{opacity:0;transform:translateY(-3px) scale(.985)}}
+.cm-row{display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:default;user-select:none;outline:none;white-space:nowrap}
+.cm-row:hover,.cm-row:focus{background:color-mix(in srgb,var(--signal) 18%,transparent)}
+.cm-label{flex:1}
+.cm-val{color:var(--text-dim);font:500 var(--t-xs) var(--font-mono,monospace);min-width:1ch;text-align:right}
+.cm-row.on .cm-val{color:var(--signal-hi)}
+.cm-row.disabled{opacity:.4;pointer-events:none}
+.cm-row.danger .cm-label{color:var(--bad)}
+.cm-row.info{opacity:.75}
+.cm-sep{height:1px;margin:5px 4px;background:var(--line)}
+.cm-range{width:96px;accent-color:var(--signal)}
+.cm-swatch{width:26px;height:18px;padding:0;border:1px solid var(--line-hi);border-radius:4px;background:none;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.cm{animation:none}}
+.cm-list{max-height:min(70vh,520px);overflow-y:auto;overscroll-behavior:contain}
+.cm-ic{display:inline-flex;width:18px;justify-content:center;color:var(--text-dim);flex:none}
+.cm-row:hover .cm-ic,.cm-row:focus .cm-ic{color:var(--signal-hi)}
+.cm-row.danger .cm-ic{color:var(--bad)}
+.cm-crumb{display:block;margin-top:1px;color:var(--text-dim);font:400 var(--t-xs)/1.2 var(--font-ui)}
+.cm-search{display:flex;align-items:center;gap:6px;margin:1px 1px 5px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--ink-0)}
+.cm-search:focus-within{border-color:var(--signal)}
+.cm-search input{flex:1;min-width:0;border:0;outline:0;background:none;color:var(--text);font:400 var(--t-sm) var(--font-ui)}
+.cm-search input::-webkit-search-cancel-button{display:none}
+.cm{min-width:230px}

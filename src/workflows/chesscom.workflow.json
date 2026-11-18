@@ -1,0 +1,606 @@
+{
+  "app": "chess-experience",
+  "kind": "workflow",
+  "name": "Chess.com opponent",
+  "description": "Play a real chess.com daily game on your physical board. Set your username on the Chess.com Opponent node; the app shows each move to play and tracks yours.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "vision.fuse",
+        "x": 704,
+        "y": 538,
+        "params": {
+          "staleMs": 600,
+          "handMotion": 0.08
+        }
+      },
+      {
+        "id": "n2",
+        "type": "source.synthetic",
+        "x": 44,
+        "y": 94,
+        "params": {
+          "online": true,
+          "cam": "A",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n3",
+        "type": "vision.boardReader",
+        "x": 44,
+        "y": 538,
+        "params": {
+          "cam": "A",
+          "corners": "142,84;338,84;352,285;128,285",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n6",
+        "type": "source.synthetic",
+        "x": 374,
+        "y": 94,
+        "params": {
+          "online": true,
+          "cam": "B",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        }
+      },
+      {
+        "id": "n7",
+        "type": "vision.boardReader",
+        "x": 374,
+        "y": 538,
+        "params": {
+          "cam": "B",
+          "corners": "259,309;106,192;226,80;369,164",
+          "threshold": 0.22,
+          "weight": 1,
+          "autoCal": true,
+          "learn": false
+        }
+      },
+      {
+        "id": "n10",
+        "type": "vision.stabilize",
+        "x": 1034,
+        "y": 538,
+        "params": {
+          "memory": 0.8,
+          "hysteresis": 3,
+          "settleMs": 700,
+          "holdOnHand": true
+        }
+      },
+      {
+        "id": "n11",
+        "type": "game.tracker",
+        "x": 44,
+        "y": 982,
+        "params": {
+          "confirm": 2,
+          "maxCost": 0.8,
+          "promotion": "q",
+          "resync": false
+        }
+      },
+      {
+        "id": "n12",
+        "type": "experience.director",
+        "x": 374,
+        "y": 982,
+        "params": {
+          "dwellMs": 1500,
+          "introMs": 6000,
+          "outroMs": 8000,
+          "preset": "human",
+          "presetElo": "1000"
+        }
+      },
+      {
+        "id": "n14",
+        "type": "narration.narrator",
+        "x": 374,
+        "y": 1426,
+        "params": {
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot"
+        }
+      },
+      {
+        "id": "n15",
+        "type": "narration.ai",
+        "x": 704,
+        "y": 1426,
+        "params": {
+          "provider": "openai",
+          "aiKey": "",
+          "aiModel": "gpt-4.1-nano",
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot"
+        }
+      },
+      {
+        "id": "n16",
+        "type": "narration.speech",
+        "x": 44,
+        "y": 1426,
+        "params": {
+          "enabled": true,
+          "volume": 0.9,
+          "provider": "browser",
+          "browserA": "",
+          "browserB": "",
+          "apiKey": "",
+          "voiceIdA": "pNInz6obpgDQGcFmaJgB",
+          "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
+          "model": "eleven_multilingual_v2"
+        }
+      },
+      {
+        "id": "n17",
+        "type": "scene.cues",
+        "x": 1034,
+        "y": 1426,
+        "params": {
+          "scene": "(auto)",
+          "hour": -1,
+          "rain": -1,
+          "snow": -1,
+          "thunder": false,
+          "rules": ""
+        }
+      },
+      {
+        "id": "n18",
+        "type": "scene.output",
+        "x": 1364,
+        "y": 1426,
+        "params": {
+          "audio": true,
+          "dmx": false,
+          "dmxUrl": "ws://127.0.0.1:8787",
+          "universe": 0
+        }
+      },
+      {
+        "id": "n23",
+        "type": "sim.person",
+        "x": 704,
+        "y": 94,
+        "params": {
+          "seated": false
+        }
+      },
+      {
+        "id": "n41",
+        "type": "sim.pose",
+        "x": 1034,
+        "y": 94,
+        "params": {
+          "show": true
+        }
+      },
+      {
+        "id": "n42",
+        "type": "sim.scenario",
+        "x": 1364,
+        "y": 94,
+        "params": {
+          "scenario": "scholars-mate",
+          "play": false,
+          "pauseMs": 2500
+        }
+      },
+      {
+        "id": "n44",
+        "type": "game.chesscom",
+        "x": 704,
+        "y": 982,
+        "params": {
+          "username": "",
+          "gameUrl": "",
+          "poll": 8
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e4",
+        "from": {
+          "node": "n2",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n3",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e5",
+        "from": {
+          "node": "n3",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n1",
+          "port": "o1"
+        }
+      },
+      {
+        "id": "e8",
+        "from": {
+          "node": "n6",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n7",
+          "port": "frame"
+        }
+      },
+      {
+        "id": "e9",
+        "from": {
+          "node": "n7",
+          "port": "obs"
+        },
+        "to": {
+          "node": "n1",
+          "port": "o2"
+        }
+      },
+      {
+        "id": "e19",
+        "from": {
+          "node": "n1",
+          "port": "board"
+        },
+        "to": {
+          "node": "n10",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e20",
+        "from": {
+          "node": "n10",
+          "port": "board"
+        },
+        "to": {
+          "node": "n11",
+          "port": "board"
+        }
+      },
+      {
+        "id": "e21",
+        "from": {
+          "node": "n12",
+          "port": "director"
+        },
+        "to": {
+          "node": "n11",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e22",
+        "from": {
+          "node": "n11",
+          "port": "events"
+        },
+        "to": {
+          "node": "n12",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e24",
+        "from": {
+          "node": "n23",
+          "port": "seats"
+        },
+        "to": {
+          "node": "n12",
+          "port": "seats"
+        }
+      },
+      {
+        "id": "e25",
+        "from": {
+          "node": "n23",
+          "port": "pointers"
+        },
+        "to": {
+          "node": "n12",
+          "port": "pointers"
+        }
+      },
+      {
+        "id": "e28",
+        "from": {
+          "node": "n11",
+          "port": "events"
+        },
+        "to": {
+          "node": "n14",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e29",
+        "from": {
+          "node": "n12",
+          "port": "events"
+        },
+        "to": {
+          "node": "n14",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e31",
+        "from": {
+          "node": "n14",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n15",
+          "port": "lines"
+        }
+      },
+      {
+        "id": "e32",
+        "from": {
+          "node": "n11",
+          "port": "events"
+        },
+        "to": {
+          "node": "n15",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e33",
+        "from": {
+          "node": "n12",
+          "port": "events"
+        },
+        "to": {
+          "node": "n15",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e35",
+        "from": {
+          "node": "n15",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n16",
+          "port": "lines"
+        }
+      },
+      {
+        "id": "e36",
+        "from": {
+          "node": "n11",
+          "port": "events"
+        },
+        "to": {
+          "node": "n17",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e37",
+        "from": {
+          "node": "n12",
+          "port": "events"
+        },
+        "to": {
+          "node": "n17",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e39",
+        "from": {
+          "node": "n17",
+          "port": "scene"
+        },
+        "to": {
+          "node": "n18",
+          "port": "scene"
+        }
+      },
+      {
+        "id": "e40",
+        "from": {
+          "node": "n17",
+          "port": "fired"
+        },
+        "to": {
+          "node": "n18",
+          "port": "fired"
+        }
+      },
+      {
+        "id": "e43",
+        "from": {
+          "node": "n42",
+          "port": "events"
+        },
+        "to": {
+          "node": "n11",
+          "port": "control"
+        }
+      },
+      {
+        "id": "e45",
+        "from": {
+          "node": "n11",
+          "port": "game"
+        },
+        "to": {
+          "node": "n44",
+          "port": "game"
+        }
+      },
+      {
+        "id": "e46",
+        "from": {
+          "node": "n12",
+          "port": "director"
+        },
+        "to": {
+          "node": "n44",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e47",
+        "from": {
+          "node": "n44",
+          "port": "events"
+        },
+        "to": {
+          "node": "n14",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e48",
+        "from": {
+          "node": "n44",
+          "port": "events"
+        },
+        "to": {
+          "node": "n15",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e49",
+        "from": {
+          "node": "n44",
+          "port": "events"
+        },
+        "to": {
+          "node": "n17",
+          "port": "events3"
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "title": "Demo & input",
+        "color": "#f2b84b",
+        "x": 20,
+        "y": 30,
+        "w": 1648,
+        "h": 388
+      },
+      {
+        "id": "g2",
+        "title": "Analysis",
+        "color": "#3fb59a",
+        "x": 20,
+        "y": 474,
+        "w": 1318,
+        "h": 388
+      },
+      {
+        "id": "g3",
+        "title": "Game & experience",
+        "color": "#9a78e0",
+        "x": 20,
+        "y": 918,
+        "w": 988,
+        "h": 388
+      },
+      {
+        "id": "g4",
+        "title": "Output: sound & narration",
+        "color": "#62c27a",
+        "x": 20,
+        "y": 1362,
+        "w": 1648,
+        "h": 388
+      }
+    ]
+  },
+  "setup": {
+    "version": 1,
+    "completed": true,
+    "cameras": [
+      {
+        "id": "A",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera A",
+        "online": true,
+        "channel": "luma",
+        "rig": "A",
+        "corners": "142,84;338,84;352,285;128,285",
+        "trust": 1,
+        "fov": 42
+      },
+      {
+        "id": "B",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera B",
+        "online": true,
+        "channel": "luma",
+        "rig": "B",
+        "corners": "259,309;106,192;226,80;369,164",
+        "trust": 1,
+        "fov": 44
+      }
+    ],
+    "scene": "auto",
+    "rain": -1,
+    "snow": -1,
+    "hour": -1,
+    "narrator": {
+      "voices": 2,
+      "nameA": "Jean",
+      "nameB": "Margot",
+      "speak": true,
+      "volume": 0.9
+    },
+    "opponent": {
+      "mode": "human",
+      "elo": 1000
+    },
+    "projectors": {
+      "count": 0,
+      "dmx": false,
+      "dmxUrl": "ws://127.0.0.1:8787"
+    },
+    "tracking": {
+      "pose": false
+    },
+    "demo": {
+      "autoplay": false,
+      "scenario": "scholars-mate"
+    }
+  }
+}
