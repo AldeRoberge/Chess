@@ -14,6 +14,7 @@ vi.mock("./plugins/narration", async (orig) => ({ ...(await orig<typeof import("
 
 import { boot } from "./app";
 import { addBackup, listBackups } from "./setup/backups";
+import { patchPrefs } from "./setup/prefs";
 
 class FakeAC { static made: FakeAC[] = []; currentTime = 0; state = "running"; sampleRate = 100; destination = {}; constructor() { FakeAC.made.push(this); } resume() { return Promise.resolve(); } createBuffer(_c: number, n: number) { const d = new Float32Array(n); return { getChannelData: () => d }; }
   createBufferSource() { return mk(); } createBiquadFilter() { return mk(); } createOscillator() { return mk(); } createGain() { return mk(); } }
@@ -28,9 +29,19 @@ beforeEach(() => {
   (Element.prototype as any).setPointerCapture = vi.fn();
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+/** A first-time user who is mid-setup (a saved draft): they get the guided wizard instead of the instant bot game. */
+const midSetup = () => patchPrefs({ draft: { cfg: defaultSetup(), step: 0 } });
 const finishSetup = () => { const s = defaultSetup(); s.completed = true; saveSetup(s); };
 
 describe("first launch", () => {
+  it("drops a brand-new user straight into a game against the bot", () => {
+    localStorage.clear();
+    const app = boot(root);
+    expect(app.wizard()).toBeNull(); expect(document.querySelector(".halo")).toBeFalsy();
+    expect(loadSetup()?.completed).toBe(true); expect(loadSetup()?.opponent.mode).toBe("engine");
+    expect([...app.graph.nodes.values()].some((n) => n.type === "game.engine")).toBe(true);
+  });
+  beforeEach(midSetup);
   it("shows the Halo setup wizard on top of a working demo patch", () => {
     const app = boot(root);
     expect(document.querySelector(".halo")).toBeTruthy(); expect(app.wizard()).toBeTruthy(); expect(app.graph.nodes.size).toBeGreaterThan(10);
@@ -150,7 +161,7 @@ describe("running", () => {
     finishSetup(); const app = boot(root); const q: ((t: number) => void)[] = []; vi.stubGlobal("requestAnimationFrame", (cb: any) => { q.push(cb); return q.length; });
     app.start(); q.shift()!(1000); q.shift()!(1100); expect(q).toHaveLength(1); expect(bus.game).toBeTruthy();
   });
-  it("animates the wizard while it is open", () => { const app = boot(root); const spy = vi.spyOn(app.wizard()!, "frame"); app.step(1000); expect(spy).toHaveBeenCalledWith(1000); });
+  it("animates the wizard while it is open", () => { midSetup(); const app = boot(root); const spy = vi.spyOn(app.wizard()!, "frame"); app.step(1000); expect(spy).toHaveBeenCalledWith(1000); });
 });
 
 describe("top-bar buttons", () => {
@@ -181,6 +192,7 @@ describe("navigation", () => {
     expect(location.hash).toMatch(/^#\/(setup|world)/);
   });
   it("keeps first-time users in setup whatever the URL says", () => {
+    midSetup();
     history.replaceState(null, "", "#/log"); const app = boot(root);
     expect(app.route().page).toBe("setup"); expect(location.hash).toBe("#/setup/briefing");
   });
