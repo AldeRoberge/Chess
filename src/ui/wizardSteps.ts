@@ -1,6 +1,7 @@
 import { CueEngine } from "../scene/cues";
 import { SCENES, type SceneId, type SceneState } from "../scene/types";
-import { MAX_CAMERAS, hasErrors, nextCameraId, validateSetup, virtualCamera, webcamSetup, type Rig, type SetupConfig } from "../setup/config";
+import { MAX_CAMERAS, hasErrors, nextCameraId, setAutoField, validateSetup, virtualCamera, webcamSetup, type AutoField, type BoardReading, type Rig, type SetupConfig } from "../setup/config";
+import { CHANNEL_NAME, type Channel } from "../setup/autodetect";
 import type { CameraDevice } from "../setup/devices";
 import type { Check } from "../setup/system";
 import { fmtCorners, parseCorners } from "../plugins/shared";
@@ -27,6 +28,8 @@ export interface StepCtx {
   finish(): void;
   go(step: number): void;
   syncScenePreview(): void;
+  /** Fills a camera field from its board picture (or, for the field of view, from the corners) and says what it did. */
+  detect(field: AutoField): void;
 }
 
 export interface Step { id: string; title: string; blurb: string; items(c: StepCtx): Item[] }

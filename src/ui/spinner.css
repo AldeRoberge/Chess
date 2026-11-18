@@ -1,0 +1,20 @@
+.chess-spin{--spin-size:20px;--spin-dur:1.6s;display:inline-flex;width:var(--spin-size);height:var(--spin-size);flex:none;vertical-align:-.25em;color:var(--signal)}
+.chess-spin svg{width:100%;height:100%;overflow:visible}
+.cs-row{display:inline-flex;align-items:center;gap:8px}
+.cs-knight{--spin-dur:3.6s}.cs-board{--spin-dur:1.2s}.cs-rook{--spin-dur:1.4s}.cs-pawn{--spin-dur:2.8s}.cs-orbit{--spin-dur:2.4s}.cs-clock{--spin-dur:1.2s}
+.chess-spin svg *{animation-duration:var(--spin-dur);animation-iteration-count:infinite}
+.cs-hop{animation-name:cs-hop;animation-timing-function:cubic-bezier(.55,0,.3,1)}
+@keyframes cs-hop{0%,100%{transform:translate(0,0)}12.5%{transform:translate(7px,14px)}25%{transform:translate(14px,0)}37.5%{transform:translate(0,7px)}50%{transform:translate(14px,14px)}62.5%{transform:translate(7px,0)}75%{transform:translate(0,14px)}87.5%{transform:translate(14px,7px)}}
+.cs-sq{animation-name:cs-pulse;animation-delay:calc(var(--d) * -1);animation-timing-function:ease-in-out}
+@keyframes cs-pulse{0%,100%{opacity:.14}50%{opacity:1}}
+.cs-orb,.cs-o1,.cs-o2{transform-origin:12px 12px;animation-timing-function:linear}
+.cs-orb{animation-name:cs-turn}.cs-o1{animation-name:cs-turn}.cs-o2{animation-name:cs-turn;animation-direction:reverse;animation-duration:calc(var(--spin-dur) * .7)}
+@keyframes cs-turn{to{transform:rotate(360deg)}}
+.cs-up{transform-box:fill-box;transform-origin:center;animation-name:cs-turn;animation-direction:reverse;animation-timing-function:linear}
+.cs-march{transform-box:fill-box;transform-origin:center;animation-name:cs-march;animation-timing-function:ease-in-out}
+@keyframes cs-march{0%,18%{transform:translateY(0);opacity:1}32%,46%{transform:translateY(-6.8px)}60%{transform:translateY(-13.6px);opacity:1}62%{transform:translateY(-13.6px);opacity:0}93%{transform:translateY(0);opacity:0}100%{transform:translateY(0);opacity:1}}
+.cs-crown{transform-box:fill-box;transform-origin:center;opacity:0;animation-name:cs-crown;animation-timing-function:ease-out}
+@keyframes cs-crown{0%,60%{opacity:0;transform:scale(.6)}68%{opacity:1;transform:scale(1.18)}74%,90%{opacity:1;transform:scale(1)}98%,100%{opacity:0;transform:scale(1)}}
+.cs-hand{transform-origin:12px 13.5px;animation-name:cs-turn;animation-timing-function:steps(12)}
+@media (prefers-reduced-motion:reduce){.chess-spin svg *{animation:none!important}.chess-spin{animation:cs-fade 1.6s ease-in-out infinite}.cs-crown{opacity:0}}
+@keyframes cs-fade{50%{opacity:.45}}
