@@ -316,6 +316,7 @@ export class SetupWizard {
     }
     Array.from(this.stepsEl.children).forEach((li, i) => {
       li.classList.toggle("cur", i === this.step);
+      if (i === this.step) (li as HTMLElement).scrollIntoView?.({ block: "nearest", inline: "nearest" }); // keeps the current step in view in the phone strip
       li.classList.toggle("sel", i === this.step && this.zone === "steps");
     });
     this.progress.replaceChildren(...STEPS.map((_, i) => el("i", i < this.step ? "done" : i === this.step ? "cur" : "")), el("span", "", `Step ${this.step + 1} of ${STEPS.length}`));
