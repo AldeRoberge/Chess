@@ -3,6 +3,7 @@ import type { SetupConfig } from "../setup/config";
 import basic from "./basic.workflow.json";
 import chesscom from "./chesscom.workflow.json";
 import complete from "./complete.workflow.json";
+import pieceless from "./pieceless.workflow.json";
 
 /**
  * A workflow file: a patch (node graph) plus, optionally, the setup it was built from.
@@ -15,4 +16,5 @@ export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
   { id: "basic", ...(basic as unknown as WorkflowFile) },
   { id: "complete", ...(complete as unknown as WorkflowFile) },
   { id: "chesscom", ...(chesscom as unknown as WorkflowFile) },
+  { id: "pieceless", ...(pieceless as unknown as WorkflowFile) },
 ];

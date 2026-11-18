@@ -90,7 +90,7 @@ interface TouchState { down: Map<string, boolean> }
 const touch: NodeSpec<TouchState> = {
   type: "tracking.touch", title: "Touch Detector", category: "Tracking",
   desc: "Decides when a fingertip is touching the table: low enough (or pinching) to count as down, with a gap between touching and letting go so a shaky reading does not flicker.",
-  inputs: [{ id: "pointers", type: "pointer" }],
+  inputs: [{ id: "pointers", type: "pointer" }, { id: "pointers2", type: "pointer", label: "pointers (2nd source)" }],
   outputs: [{ id: "pointers", type: "pointer" }],
   params: [
     { id: "touchMm", kind: "number", label: "Touch below (mm)", min: 2, max: 200, step: 1, value: 15 },
@@ -100,11 +100,11 @@ const touch: NodeSpec<TouchState> = {
     { id: "pinchReleaseMm", kind: "number", label: "Pinch opens past (mm)", min: 8, max: 120, step: 1, value: 40 },
   ],
   init: () => ({ down: new Map() }),
-  process({ pointers }, { params, state, setFidelity }) {
+  process({ pointers, pointers2 }, { params, state, setFidelity }) {
     const out: PointerSample[] = [], seen = new Set<string>();
     const lo = Number(params.touchMm) / 1000, hi = Math.max(lo, Number(params.releaseMm) / 1000);
     const plo = Number(params.pinchMm) / 1000, phi = Math.max(plo, Number(params.pinchReleaseMm) / 1000);
-    for (const p of (pointers as PointerSample[] | undefined) ?? []) {
+    for (const p of [...((pointers as PointerSample[] | undefined) ?? []), ...((pointers2 as PointerSample[] | undefined) ?? [])]) {
       seen.add(p.id);
       const was = state.down.get(p.id) ?? false;
       let down: boolean;

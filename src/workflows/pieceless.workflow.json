@@ -1,0 +1,532 @@
+{
+  "app": "chess-experience",
+  "kind": "workflow",
+  "name": "Piece-less chess",
+  "description": "No pieces at all: the projector paints them onto the table and you move them with your fingers. Touch a piece, drag it to a square it can go to and lift your finger. In the demo the mouse is your finger (click and drag on the table view). Turn on Hands to use real fingertips.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "sim.person",
+        "x": 44,
+        "y": 94,
+        "params": {
+          "seated": true
+        },
+        "w": 360
+      },
+      {
+        "id": "n2",
+        "type": "tracking.hands",
+        "x": 454,
+        "y": 94,
+        "params": {
+          "enabled": false,
+          "cam1": "-1.6,2.2,1.6;0,0.75,0;60",
+          "cam2": "1.6,2.2,1.6;0,0.75,0;60",
+          "cam3": "0,2.3,-1.8;0,0.75,0;60",
+          "fps": 12
+        },
+        "w": 360
+      },
+      {
+        "id": "n3",
+        "type": "tracking.touch",
+        "x": 864,
+        "y": 94,
+        "params": {
+          "touchMm": 15,
+          "releaseMm": 30,
+          "usePinch": true,
+          "pinchMm": 25,
+          "pinchReleaseMm": 40
+        },
+        "w": 360
+      },
+      {
+        "id": "w1",
+        "type": "world.virtual",
+        "x": 44,
+        "y": 434,
+        "params": {},
+        "w": 360
+      },
+      {
+        "id": "n4",
+        "type": "source.synthetic",
+        "x": 454,
+        "y": 434,
+        "params": {
+          "online": true,
+          "cam": "A",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        },
+        "w": 360
+      },
+      {
+        "id": "n5",
+        "type": "source.synthetic",
+        "x": 864,
+        "y": 434,
+        "params": {
+          "online": true,
+          "cam": "B",
+          "noise": 8,
+          "gain": 1,
+          "gradient": 0.15,
+          "shadows": true,
+          "fps": 8
+        },
+        "w": 360
+      },
+      {
+        "id": "n6",
+        "type": "experience.director",
+        "x": 44,
+        "y": 878,
+        "params": {
+          "dwellMs": 1500,
+          "introMs": 3000,
+          "outroMs": 8000,
+          "preset": "engine",
+          "presetElo": "1000"
+        },
+        "w": 360
+      },
+      {
+        "id": "n7",
+        "type": "game.virtual",
+        "x": 454,
+        "y": 878,
+        "params": {
+          "engineDelayMs": 700,
+          "resync": false
+        },
+        "w": 360
+      },
+      {
+        "id": "n8",
+        "type": "game.dragDrop",
+        "x": 864,
+        "y": 878,
+        "params": {
+          "grabRadius": 0.6,
+          "graceMs": 250,
+          "promotion": "q"
+        },
+        "w": 360
+      },
+      {
+        "id": "n9",
+        "type": "game.engine",
+        "x": 1274,
+        "y": 878,
+        "params": {
+          "color": "b",
+          "virtualHand": false
+        },
+        "w": 360
+      },
+      {
+        "id": "n10",
+        "type": "projection.pieces",
+        "x": 44,
+        "y": 1322,
+        "params": {
+          "scale": 0.85,
+          "legalDots": true,
+          "shadow": true,
+          "rotate": false
+        },
+        "w": 360
+      },
+      {
+        "id": "n11",
+        "type": "narration.narrator",
+        "x": 454,
+        "y": 1322,
+        "params": {
+          "voices": "2",
+          "nameA": "Jean",
+          "nameB": "Margot"
+        },
+        "w": 360
+      },
+      {
+        "id": "n12",
+        "type": "narration.speech",
+        "x": 864,
+        "y": 1322,
+        "params": {
+          "enabled": true,
+          "volume": 0.9,
+          "provider": "browser",
+          "browserA": "",
+          "browserB": "",
+          "apiKey": "",
+          "voiceIdA": "pNInz6obpgDQGcFmaJgB",
+          "voiceIdB": "21m00Tcm4TlvDq8ikWAM",
+          "model": "eleven_multilingual_v2"
+        },
+        "w": 360
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "from": {
+          "node": "n1",
+          "port": "pointers"
+        },
+        "to": {
+          "node": "n3",
+          "port": "pointers"
+        }
+      },
+      {
+        "id": "e2",
+        "from": {
+          "node": "n2",
+          "port": "pointers"
+        },
+        "to": {
+          "node": "n3",
+          "port": "pointers2"
+        }
+      },
+      {
+        "id": "e3",
+        "from": {
+          "node": "n4",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n2",
+          "port": "f1"
+        }
+      },
+      {
+        "id": "e4",
+        "from": {
+          "node": "n5",
+          "port": "frame"
+        },
+        "to": {
+          "node": "n2",
+          "port": "f2"
+        }
+      },
+      {
+        "id": "e5",
+        "from": {
+          "node": "w1",
+          "port": "world"
+        },
+        "to": {
+          "node": "n4",
+          "port": "world"
+        }
+      },
+      {
+        "id": "e6",
+        "from": {
+          "node": "w1",
+          "port": "world"
+        },
+        "to": {
+          "node": "n5",
+          "port": "world"
+        }
+      },
+      {
+        "id": "e7",
+        "from": {
+          "node": "n1",
+          "port": "seats"
+        },
+        "to": {
+          "node": "n6",
+          "port": "seats"
+        }
+      },
+      {
+        "id": "e8",
+        "from": {
+          "node": "n3",
+          "port": "pointers"
+        },
+        "to": {
+          "node": "n6",
+          "port": "pointers"
+        }
+      },
+      {
+        "id": "e9",
+        "from": {
+          "node": "n3",
+          "port": "pointers"
+        },
+        "to": {
+          "node": "n8",
+          "port": "pointers"
+        }
+      },
+      {
+        "id": "e10",
+        "from": {
+          "node": "n6",
+          "port": "director"
+        },
+        "to": {
+          "node": "n7",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e11",
+        "from": {
+          "node": "n6",
+          "port": "director"
+        },
+        "to": {
+          "node": "n8",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e12",
+        "from": {
+          "node": "n6",
+          "port": "director"
+        },
+        "to": {
+          "node": "n9",
+          "port": "director"
+        }
+      },
+      {
+        "id": "e13",
+        "from": {
+          "node": "n7",
+          "port": "game"
+        },
+        "to": {
+          "node": "n8",
+          "port": "game"
+        }
+      },
+      {
+        "id": "e14",
+        "from": {
+          "node": "n7",
+          "port": "game"
+        },
+        "to": {
+          "node": "n9",
+          "port": "game"
+        }
+      },
+      {
+        "id": "e15",
+        "from": {
+          "node": "n7",
+          "port": "game"
+        },
+        "to": {
+          "node": "n10",
+          "port": "game"
+        }
+      },
+      {
+        "id": "e16",
+        "from": {
+          "node": "n8",
+          "port": "drag"
+        },
+        "to": {
+          "node": "n10",
+          "port": "drag"
+        }
+      },
+      {
+        "id": "e17",
+        "from": {
+          "node": "n8",
+          "port": "events"
+        },
+        "to": {
+          "node": "n7",
+          "port": "drops"
+        }
+      },
+      {
+        "id": "e18",
+        "from": {
+          "node": "n9",
+          "port": "events"
+        },
+        "to": {
+          "node": "n7",
+          "port": "engine"
+        }
+      },
+      {
+        "id": "e19",
+        "from": {
+          "node": "n7",
+          "port": "events"
+        },
+        "to": {
+          "node": "n6",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e20",
+        "from": {
+          "node": "n7",
+          "port": "events"
+        },
+        "to": {
+          "node": "n11",
+          "port": "events"
+        }
+      },
+      {
+        "id": "e21",
+        "from": {
+          "node": "n6",
+          "port": "events"
+        },
+        "to": {
+          "node": "n11",
+          "port": "events2"
+        }
+      },
+      {
+        "id": "e22",
+        "from": {
+          "node": "n9",
+          "port": "events"
+        },
+        "to": {
+          "node": "n11",
+          "port": "events3"
+        }
+      },
+      {
+        "id": "e23",
+        "from": {
+          "node": "n11",
+          "port": "lines"
+        },
+        "to": {
+          "node": "n12",
+          "port": "lines"
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "title": "Demo & input: fingers",
+        "color": "#f2b84b",
+        "x": 20,
+        "y": 30,
+        "w": 1638,
+        "h": 728
+      },
+      {
+        "id": "g2",
+        "title": "Game & experience",
+        "color": "#9a78e0",
+        "x": 20,
+        "y": 814,
+        "w": 2048,
+        "h": 388
+      },
+      {
+        "id": "g3",
+        "title": "Output: projected pieces & narration",
+        "color": "#62c27a",
+        "x": 20,
+        "y": 1258,
+        "w": 1228,
+        "h": 388
+      }
+    ]
+  },
+  "setup": {
+    "version": 1,
+    "completed": true,
+    "cameras": [
+      {
+        "id": "A",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera A",
+        "online": true,
+        "channel": "luma",
+        "rig": "A",
+        "corners": "142,84;338,84;352,285;128,285",
+        "trust": 1,
+        "fov": 42
+      },
+      {
+        "id": "B",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera B",
+        "online": true,
+        "channel": "luma",
+        "rig": "B",
+        "corners": "259,309;106,192;226,80;369,164",
+        "trust": 1,
+        "fov": 44
+      },
+      {
+        "id": "C",
+        "kind": "virtual",
+        "deviceId": "",
+        "label": "Virtual camera C",
+        "online": true,
+        "channel": "luma",
+        "rig": "C",
+        "corners": "240,103;361,177;240,286;119,177",
+        "trust": 1,
+        "fov": 46
+      }
+    ],
+    "scene": "auto",
+    "rain": -1,
+    "snow": -1,
+    "hour": -1,
+    "narrator": {
+      "voices": 2,
+      "nameA": "Jean",
+      "nameB": "Margot",
+      "speak": true,
+      "volume": 0.9
+    },
+    "opponent": {
+      "mode": "menu",
+      "elo": 1000
+    },
+    "projectors": {
+      "count": 2,
+      "dmx": false,
+      "dmxUrl": "ws://127.0.0.1:8787"
+    },
+    "tracking": {
+      "pose": false
+    },
+    "demo": {
+      "autoplay": true,
+      "scenario": "scholars-mate"
+    }
+  }
+}
