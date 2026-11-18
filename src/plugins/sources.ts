@@ -6,7 +6,7 @@ import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
 import type { GrayFrame } from "../vision/types";
 import { drawFrame, withDetail } from "./shared";
 
-interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string }
+interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number }
 
 const webcam: NodeSpec<WebcamState> = {
   type: "source.webcam", title: "Webcam / IR", category: "Source",
@@ -16,9 +16,21 @@ const webcam: NodeSpec<WebcamState> = {
     { id: "device", kind: "text", label: "Device", value: "" },
     { id: "channel", kind: "select", label: "Channel", options: ["luma", "red", "green", "blue"], value: "luma" },
     { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 12 },
+    // Simulated faults, to test how the pipeline copes with a bad camera. All off by default.
+    { id: "ir", kind: "bool", label: "Fake IR", value: false },
+    { id: "bw", kind: "bool", label: "Black and white", value: false },
+    { id: "over", kind: "bool", label: "Overexposed", value: false },
+    { id: "overAmount", kind: "number", label: "Overexposure %", min: 0, max: 100, step: 5, value: 50 },
+    { id: "under", kind: "bool", label: "Underexposed", value: false },
+    { id: "underAmount", kind: "number", label: "Underexposure %", min: 0, max: 100, step: 5, value: 50 },
+    { id: "drop", kind: "bool", label: "Dropped frames", value: false },
+    { id: "dropPct", kind: "number", label: "Dropped frames %", min: 0, max: 100, step: 5, value: 30 },
+    { id: "freeze", kind: "bool", label: "Freeze frames", value: false },
+    { id: "freezePct", kind: "number", label: "Freeze chance %", min: 0, max: 100, step: 5, value: 10 },
+    { id: "freezeMs", kind: "number", label: "Freeze length (ms)", min: 100, max: 5000, step: 100, value: 1500 },
   ],
   previewSize: [160, 120],
-  init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "" }),
+  init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "", frozenUntil: 0 }),
   process(_i, { params, state, now, setFidelity }) {
     const stop = () => { state.stream?.getTracks().forEach((t) => t.stop()); state.stream = null; state.video = null; state.frame = null; };
     if (!params.online) { if (state.stream) stop(); setFidelity(null); return { frame: null }; }
@@ -39,17 +51,26 @@ const webcam: NodeSpec<WebcamState> = {
     }
     if (state.video && now - state.last >= 1000 / Number(params.fps)) {
       state.last = now;
-      const ctx = state.canvas!.getContext("2d", { willReadFrequently: true })!;
-      ctx.drawImage(state.video, 0, 0, 480, 360);
-      const px = ctx.getImageData(0, 0, 480, 360).data;
-      const g = new Uint8ClampedArray(480 * 360);
-      const ch = String(params.channel);
-      const n = g.length; // channel chosen once, not per pixel
-      if (ch === "red") for (let i = 0; i < n; i++) g[i] = px[i * 4];
-      else if (ch === "green") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 1];
-      else if (ch === "blue") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 2];
-      else for (let i = 0; i < n; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
-      state.frame = { width: 480, height: 360, data: g, t: now };
+      if (now < state.frozenUntil) { /* frozen: the camera keeps the last picture */ }
+      else if (params.freeze && Math.random() * 100 < Number(params.freezePct)) { state.frozenUntil = now + Number(params.freezeMs); }
+      else if (params.drop && Math.random() * 100 < Number(params.dropPct)) { /* dropped: this frame never arrives, the last one stays */ }
+      else {
+        const ctx = state.canvas!.getContext("2d", { willReadFrequently: true })!;
+        ctx.drawImage(state.video, 0, 0, 480, 360);
+        const px = ctx.getImageData(0, 0, 480, 360).data;
+        const g = new Uint8ClampedArray(480 * 360);
+        // Fake IR reads the red plane (how IR often lands in a colour camera) and beats the channel menu; black and white forces brightness.
+        const ch = params.ir ? "red" : params.bw ? "luma" : String(params.channel);
+        const n = g.length; // channel chosen once, not per pixel
+        if (ch === "red") for (let i = 0; i < n; i++) g[i] = px[i * 4];
+        else if (ch === "green") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 1];
+        else if (ch === "blue") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 2];
+        else for (let i = 0; i < n; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
+        // Exposure: a gain on the picture; the Uint8ClampedArray store clips highlights (over) or shadows crush to black (under).
+        const gain = params.over ? 1 + Number(params.overAmount) / 100 * 3 : params.under ? 1 - Number(params.underAmount) / 100 * 0.9 : 1;
+        if (gain !== 1) for (let i = 0; i < n; i++) g[i] = g[i] * gain;
+        state.frame = { width: 480, height: 360, data: g, t: now };
+      }
     }
     setFidelity(state.frame ? 1 : 0);
     return { frame: state.frame };

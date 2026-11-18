@@ -85,6 +85,30 @@ describe("source.webcam", () => {
     setup(); const n = node("source.webcam", { channel, fps: 30 }); n.run({}, 0); await tick();
     expect(n.run({}, 1000)!.frame.data[5]).toBe(v);
   });
+  // the fake camera always shows rgb(10, 200, 30): red 10, green 200, luma 124 (rounded)
+  it("simulates a bad camera: fake IR, black and white, over/under exposure", async () => {
+    setup();
+    const grab = async (params: Record<string, unknown>) => { const n = node("source.webcam", { fps: 30, ...params }); n.run({}, 0); await tick(); return n.run({}, 1000)!.frame.data[0]; };
+    expect(await grab({ ir: true, channel: "green" })).toBe(10); // IR reads the red plane, whatever the channel says
+    expect(await grab({ bw: true, channel: "green" })).toBe(124); // black and white is brightness, whatever the channel says
+    expect(await grab({ channel: "red", over: true, overAmount: 100 })).toBe(40); // gain 4
+    expect(await grab({ channel: "green", under: true, underAmount: 100 })).toBe(20); // gain 0.1
+    expect(await grab({ channel: "green", under: true, underAmount: 100, over: false })).toBe(20);
+    expect(await grab({ channel: "green", over: true, overAmount: 100, under: false })).toBe(255); // clipped to white
+  });
+  it("drops frames and freezes the picture, both at random rates set by their sliders", async () => {
+    setup(); const n = node("source.webcam", { fps: 30, drop: true, dropPct: 100 });
+    const rnd = vi.spyOn(Math, "random").mockReturnValue(0); spies.push({ mockRestore: () => rnd.mockRestore() });
+    n.run({}, 0); await tick();
+    expect(n.run({}, 1000)!.frame).toBeNull(); // every frame dropped: nothing ever arrives
+    n.params.dropPct = 50; rnd.mockReturnValue(0.99); // 99 is above the 50% drop rate: the next frame gets through
+    const a = n.run({}, 1100)!.frame; expect(a).toBeTruthy();
+    n.params.drop = false; n.params.freeze = true; n.params.freezePct = 100; n.params.freezeMs = 1000; rnd.mockReturnValue(0);
+    expect(n.run({}, 1200)!.frame).toBe(a); // freeze starts: the same picture
+    expect(n.run({}, 1900)!.frame).toBe(a); // still frozen, 700 ms later
+    rnd.mockReturnValue(0.99); n.params.freeze = false;
+    expect(n.run({}, 2300)!.frame).not.toBe(a); // freeze over: a new picture
+  });
   it("selects a device by exact id or label substring, otherwise the default", async () => {
     const devices = [{ kind: "videoinput", deviceId: "id-1", label: "Logitech C920" }, { kind: "audioinput", deviceId: "m", label: "Mic" }];
     for (const [want, exact] of [["id-1", "id-1"], ["c920", "id-1"], ["nothing", undefined], ["", undefined]] as const) {
