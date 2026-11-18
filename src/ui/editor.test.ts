@@ -36,7 +36,7 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("NodeEditor rendering", () => {
-  it("exposes a colour for every port type", () => { expect(Object.keys(PORT_COLOR).sort()).toEqual(["any", "board", "clock", "event", "frame", "game", "obs", "pointer", "pose", "scene", "seat", "text"]); });
+  it("exposes a colour for every port type", () => { expect(Object.keys(PORT_COLOR).sort()).toEqual(["action", "any", "board", "clock", "event", "frame", "game", "obs", "player", "pointer", "pose", "scene", "seat", "text", "world"]); });
   it("draws one card per node with category colour, title, pins (typed, labelled), preview canvas and parameter widgets", () => {
     const { ed, a, b } = setup();
     expect(ed.root.querySelectorAll(".ne-node")).toHaveLength(3);

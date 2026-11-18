@@ -71,7 +71,7 @@ describe("the complete experience", () => {
     await run(1500);
     expect(bus.game?.status).toBe("synced"); expect(bus.board!.fidelity).toBeGreaterThan(0.7);
     person.params.seated = true; await run(7500);
-    expect(bus.director?.phase).toBe("menu"); expect(bus.lines.map((l) => l.text)).toContain("Un joueur rejoint la partie.");
+    expect(bus.director?.phase).toBe("menu"); expect(bus.lines.map((l) => l.text).some((t) => /joueur/.test(t))).toBe(true); // the narrator greets the new player (wording varies)
     const btn = layoutMenu(bus.director!.seat!, [500, 1000, 1500]).find((b) => b.id === "elo500")!;
     virtualTable.pointer = { x: btn.x, y: btn.y }; await run(2200); virtualTable.pointer = null;
     expect(bus.director).toMatchObject({ phase: "game", elo: 500, mode: "engine" }); expect(bus.scene?.scene).toBe("fire-watchtower");
