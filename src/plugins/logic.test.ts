@@ -106,7 +106,7 @@ describe("experience nodes", () => {
     const n = node("sim.person", { seated: true });
     virtualTable.pointer = { x: 1, y: 2 }; virtualTable.play("e4", 0);
     const out = n.run({}, 600)!;
-    expect(virtualTable.seated).toBe(true); expect(out.seats).toHaveLength(1); expect(out.pointers).toEqual([{ id: "mouse", x: 1, y: 2 }]); expect(virtualTable.carried).toBe(52);
+    expect(virtualTable.seated).toBe(true); expect(out.seats).toHaveLength(1); expect(out.pointers).toEqual([{ id: "mouse", x: 1, y: 2, down: false }]); expect(virtualTable.carried).toBe(52);
     n.params.seated = false; virtualTable.pointer = null; const off = n.run({}, 700)!; expect(off.seats).toEqual([]); expect(off.pointers).toEqual([]);
   });
   it("scenario player plays a script through its two AI players, announces start and end, resets the table, and stops itself", () => {
