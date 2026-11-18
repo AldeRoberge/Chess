@@ -26,7 +26,7 @@ describe("projector output page", () => {
   it("renders what the control window sends: scene state and overlay inputs", () => {
     const { o, ch, frame } = boot(); const scene = initialSceneState("winter-forest"), overlay = { game: null, director: null, hint: { from: "e2", to: "e4" } };
     ch.onmessage!({ data: { type: "state", scene, overlay } }); frame(5);
-    expect(o.renders[0][0]).toBe(scene); expect(o.renders[0][1]).toBe(overlay);
+    expect(o.renders[0][0]).toBe(scene); expect(o.renders[0][1]).toMatchObject(overlay); expect(o.renders[0][1]).toHaveProperty("fx"); // the window adds its own effects engine
   });
   it("shows calibration patterns instead of the scene: white, black, scaled dots, and back to normal on 'end'", () => {
     const { o, ch, frame, cal } = boot(); const c = cal.getContext("2d")!, fill = vi.spyOn(c, "fillRect"), arc = vi.spyOn(c, "arc");

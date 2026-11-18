@@ -191,7 +191,7 @@ export class TablePanel {
     c.restore();
     drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);
     const g = bus.game, d = bus.director;
-    this.info.textContent = `${d?.phase ?? "idle"}${d?.mode ? ` · ${d.mode === "engine" ? `Stockfish ${d.elo}` : "2 joueurs"}` : ""} · tracker: ${g?.status ?? "—"} · ${g?.history.slice(-6).join(" ") ?? ""}`;
+    this.info.textContent = `${d?.phase ?? "idle"}${d?.mode ? ` · ${d.mode === "engine" ? `Stockfish ${d.elo}` : "2 joueurs"}` : ""} · tracker: ${g?.status ?? "—"}${g?.history.length ? ` · ${g.history.slice(-6).join(" ")}` : ""}`;
   }
 }
 
@@ -315,7 +315,7 @@ export class LogPanel {
     return null;
   };
   frame() {
-    this.chips.innerHTML = bus.cameras.map((c) => `<span class="chip ok" data-cam="${c.id}">cam ${c.id} · q ${Math.round(c.quality * 100)}% · trust ${Math.round(c.reliability * 100)}%</span>`).join("") || `<span class="chip">no camera online</span>`;
+    this.chips.innerHTML = bus.cameras.map((c) => `<span class="chip ok" data-cam="${c.id}">cam ${c.id} · quality ${Math.round(c.quality * 100)}% · trust ${Math.round(c.reliability * 100)}%</span>`).join("") || `<span class="chip">no camera online</span>`;
     const sig = bus.lines.length + bus.events.length;
     if (sig === this.n) return; this.n = sig;
     this.lines.innerHTML = bus.lines.slice(-12).reverse().map((l) => `<div class="ln ${l.speaker}" data-t="${l.t}" data-who="${l.speaker}"><b>${l.name}</b> ${l.text}</div>`).join("");
