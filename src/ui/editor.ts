@@ -565,7 +565,7 @@ export class NodeEditor {
         const key = `${st.ms.toFixed(1)}|${st.fidelity == null ? "" : Math.round(st.fidelity * 100)}|${st.error ?? ""}`;
         if (key !== v.statKey) { // touch the DOM only when a number actually changed
           v.statKey = key;
-          v.ms.textContent = st.ms.toFixed(1) + "ms";
+          v.ms.textContent = (st.ms.toFixed(1) === "0.0" ? "0" : st.ms.toFixed(1)) + "ms";
           const t = Math.min(1, Math.max(0, Math.log10(1 + st.ms) / Math.log10(1 + 40))); // 0ms green → ~40ms red
           v.ms.style.setProperty("--lat", `hsl(${Math.round(120 - 120 * t)} 80% 50%)`);
           v.ms.style.setProperty("--lat-a", String(st.ms < 0.5 ? 0.3 : 0.45 + 0.55 * t));

@@ -36,6 +36,8 @@ export class PerfPanel {
   private tlHits: { x: number; w: number; i: number }[] = [];
   private sort: SortKey = "avg";
   private desc = true;
+  /** User-resized column widths in px (empty = automatic layout). Drag a header edge; double-click to reset. */
+  private colW: number[] = [];
   private open = new Set<string>();
   private lastDraw = 0;
   private lastTable = 0;
@@ -96,7 +98,26 @@ export class PerfPanel {
     this.flame.onmouseleave = () => { this.tip.hidden = true; };
     this.flame.onclick = (e) => { const h = this.pick(e); if (h) { this.zoom = this.zoom === h.box ? null : h.box; this.draw(true); } };
     this.flame.ondblclick = () => { this.zoom = null; this.draw(true); };
+    this.table.addEventListener("pointerdown", (e) => {
+      const h = (e.target as HTMLElement).closest<HTMLElement>(".rz");
+      if (!h) return;
+      e.preventDefault(); e.stopPropagation();
+      const ths = [...this.table.querySelectorAll<HTMLElement>("thead th")], i = ths.indexOf(h.parentElement as HTMLElement);
+      if (i < 0) return;
+      if (this.colW.length !== ths.length) this.colW = ths.map((c) => Math.round(c.getBoundingClientRect().width));
+      const x0 = e.clientX, w0 = this.colW[i];
+      h.setPointerCapture(e.pointerId);
+      const move = (ev: PointerEvent) => {
+        this.colW[i] = Math.max(36, Math.round(w0 + ev.clientX - x0));
+        this.drawTable(true);
+        this.table.querySelectorAll<HTMLElement>(".rz")[i]?.classList.add("on");
+      };
+      const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); this.table.querySelectorAll(".rz.on").forEach((r) => r.classList.remove("on")); };
+      window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    });
+    this.table.addEventListener("dblclick", (e) => { if ((e.target as HTMLElement).closest(".rz")) { this.colW = []; this.drawTable(true); } });
     this.table.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".rz")) return;
       const t = e.target as HTMLElement, th = t.closest<HTMLElement>("th[data-s]"), row = t.closest<HTMLElement>("tr[data-id]");
       if (th) { const k = th.dataset.s as SortKey; if (this.sort === k) this.desc = !this.desc; else { this.sort = k; this.desc = k !== "name"; } this.drawTable(true); }
       else if (row) {
@@ -262,7 +283,13 @@ export class PerfPanel {
         + `${this.deltaCell(r.id, s?.avg)}<td class="sh"><span class="bar"><i style="width:${(share * 100).toFixed(1)}%;background:hsl(${Math.round(130 - 130 * rel)} 70% 55%)"></i></span>${(share * 100).toFixed(0)}%</td><td class="sp">${this.spark(r.id)}</td></tr>`);
       if (open) body.push(this.lineRows(r.id));
     }
-    this.table.innerHTML = `<table><thead><tr>${th("name", "Node")}${th("avg", "avg ms")}${th("p95", "p95")}${th("max", "max")}${th("last", "last")}${this.base ? "<th>Δ base</th>" : ""}<th>share</th><th>last 120 ticks</th></tr></thead><tbody>${body.join("") || `<tr><td colspan="8" class="empty">No nodes</td></tr>`}</tbody></table>`;
+    const rz = '<span class="rz" aria-hidden="true"></span>';
+    const ncols = this.base ? 8 : 7;
+    if (this.colW.length !== ncols) this.colW = [];
+    const fixed = this.colW.length === ncols;
+    const cols = fixed ? `<colgroup>${this.colW.map((w) => `<col style="width:${w}px">`).join("")}</colgroup>` : "";
+    const tstyle = fixed ? ` class="fixed" style="width:${this.colW.reduce((a, w) => a + w, 0)}px"` : "";
+    this.table.innerHTML = `<table${tstyle}>${cols}<thead><tr>${th("name", "Node").replace("</th>", rz + "</th>")}${th("avg", "avg ms").replace("</th>", rz + "</th>")}${th("p95", "p95").replace("</th>", rz + "</th>")}${th("max", "max").replace("</th>", rz + "</th>")}${th("last", "last").replace("</th>", rz + "</th>")}${this.base ? `<th>Δ base${rz}</th>` : ""}<th>share${rz}</th><th>last 120 ticks${rz}</th></tr></thead><tbody>${body.join("") || `<tr><td colspan="8" class="empty">No nodes</td></tr>`}</tbody></table>`;
   }
 
   private deltaCell(id: string, avg: number | undefined) {
