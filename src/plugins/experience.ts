@@ -40,7 +40,7 @@ const simPerson: NodeSpec = {
     virtualTable.seated = !!params.seated;
     virtualTable.tick(now);
     const seats: Seat[] = params.seated ? [{ id: "sim", x: 4, y: 10.2, angle: 0 }] : [];
-    const pointers: PointerSample[] = virtualTable.pointer ? [{ id: "mouse", ...virtualTable.pointer }] : [];
+    const pointers: PointerSample[] = virtualTable.pointer ? [{ id: "mouse", ...virtualTable.pointer, down: virtualTable.pointerDown }] : [];
     return { seats, pointers };
   },
 };

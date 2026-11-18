@@ -108,6 +108,13 @@ const NODE_ICON: Record<string, string> = {
 const CAT_ICON: Record<string, string> = { Source: "camera", Vision: "eye", Game: "knight", Narration: "chat", Scene: "lamp", Output: "sound", Tracking: "people", Experience: "spark", Effects: "spark" };
 export const nodeIcon = (type: string, category: string, size = 16): string => icon(NODE_ICON[type] ?? CAT_ICON[category] ?? "spark", size);
 
+/** Icon per port type, shown inside each node input/output pin. */
+const PORT_ICON: Record<string, string> = {
+  frame: "frame", obs: "eye", board: "board", game: "knight", pointer: "hand", pose: "people", seat: "opponent", event: "bolt",
+  text: "text", scene: "scene", clock: "clock", world: "cube", player: "pawn", action: "play", fx: "spark", any: "fuse",
+};
+export const portIcon = (type: string, size = 10): string => icon(PORT_ICON[type] ?? "fuse", size);
+
 /** Raw inner SVG (24x24 stroke paths) of a known icon, for composing larger drawings such as spinners. */
 export const glyph = (name: string): string => P[name];
 

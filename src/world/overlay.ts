@@ -2,6 +2,7 @@ import type { TrackResult } from "../chess/tracker";
 import type { DirectorOut } from "../experience/director";
 import { sqIndex } from "../vision/types";
 import { drawClockOverlay, type ClockOverlay } from "./clockOverlay";
+import { drawPieceOverlay, type PieceOverlay } from "./pieceOverlay";
 
 export interface OverlayInput {
   game: TrackResult | null;
@@ -10,6 +11,8 @@ export interface OverlayInput {
   /** Both default to shown; the on-screen preview can hide them. */
   lastMove?: boolean; hints?: boolean;
   clock?: ClockOverlay | null;
+  /** Pieces projected onto the table (the piece-less game); null when the pieces are physical. */
+  pieces?: PieceOverlay | null;
   /** Board effects to paint in light on top (the output page keeps its own engine). */
   fx?: { draw(ctx: CanvasRenderingContext2D, px: number, now: number): void } | null;
 }
@@ -58,6 +61,7 @@ export function drawTableOverlay(ctx: CanvasRenderingContext2D, px: number, marg
       ctx.restore();
     }
   }
+  if (o.pieces) drawPieceOverlay(ctx, px, o.pieces, t, o.director?.seat?.angle ?? 0);
   if (o.clock) drawClockOverlay(ctx, px, o.clock, t);
   ctx.restore();
 }

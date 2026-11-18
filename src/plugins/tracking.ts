@@ -11,9 +11,9 @@ const COCO_FROM_BLAZE = [0, 2, 5, 7, 8, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 
 const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
 const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm";
 
-interface PoseState { lm: any; loading: boolean; canvas: HTMLCanvasElement | null; last: number; rr: number; joints: (Pt | null)[][]; poses: PoseData[]; seats: Seat[]; pointers: PointerSample[]; err: string; failedAt: number }
+interface PoseState { lm: any; loading: boolean; canvas: HTMLCanvasElement | null; img: ImageData | null; last: number; rr: number; joints: (Pt | null)[][]; poses: PoseData[]; seats: Seat[]; pointers: PointerSample[]; err: string; failedAt: number }
 
-function parseCam(s: string): [[number, number, number], [number, number, number], number] | null {
+export function parseCam(s: string): [[number, number, number], [number, number, number], number] | null {
   const p = s.split(";").map((x) => x.split(",").map(Number));
   return p.length === 3 && p[0].length === 3 && p[1].length === 3 && p[2].length === 1 && p.flat().every(Number.isFinite) ? [p[0] as [number, number, number], p[1] as [number, number, number], p[2][0]] : null;
 }
@@ -30,7 +30,7 @@ const pose: NodeSpec<PoseState> = {
     { id: "seat", kind: "text", label: "Seat zone", value: "0,0.8,0" },
     { id: "fps", kind: "number", label: "Pose FPS", min: 1, max: 15, step: 1, value: 6 },
   ],
-  init: () => ({ lm: null, loading: false, canvas: null, last: 0, rr: 0, joints: [[], [], []], poses: [], seats: [], pointers: [], err: "", failedAt: -1e9 }),
+  init: () => ({ lm: null, loading: false, canvas: null, img: null, last: 0, rr: 0, joints: [[], [], []], poses: [], seats: [], pointers: [], err: "", failedAt: -1e9 }),
   process(inputs, { params, state, now, setFidelity, span }) {
     if (!params.enabled) { setFidelity(null); return { poses: [], seats: [], pointers: [] }; }
     if (!state.lm && !state.loading && now - state.failedAt > 30000) { // a failed load retries every 30 s, not every frame
@@ -50,11 +50,17 @@ const pose: NodeSpec<PoseState> = {
       if (!f) state.joints[k] = [];
       else {
         const c = (state.canvas ??= document.createElement("canvas"));
-        c.width = f.width; c.height = f.height;
+        // BlazePose resizes to 256 px internally, so feed it a 256-wide nearest-neighbour downsample (landmarks are normalised, so scale-independent)
+        const tw = Math.min(f.width, 256), th = Math.max(1, Math.round(f.height * tw / f.width));
+        if (c.width !== tw || c.height !== th) { c.width = tw; c.height = th; state.img = null; }
         const ctx = c.getContext("2d")!;
         span("upload frame", () => {
-          const img = ctx.createImageData(f.width, f.height);
-          for (let i = 0; i < f.data.length; i++) img.data.fill(f.data[i], i * 4, i * 4 + 3), (img.data[i * 4 + 3] = 255);
+          const img = (state.img ??= ctx.createImageData(tw, th));
+          const px = new Uint32Array(img.data.buffer);
+          for (let y = 0; y < th; y++) {
+            const row = Math.min(f.height - 1, Math.floor(y * f.height / th)) * f.width;
+            for (let x = 0; x < tw; x++) { const g = f.data[row + Math.floor(x * f.width / tw)]; px[y * tw + x] = 0xff000000 | (g << 16) | (g << 8) | g; }
+          }
           ctx.putImageData(img, 0, 0);
         });
         const r = span("pose detect (MediaPipe)", () => state.lm.detect(c));
@@ -83,7 +89,7 @@ const pose: NodeSpec<PoseState> = {
     const hip = hl && hr ? [(hl[0] + hr[0]) / 2, (hl[2] + hr[2]) / 2] : null;
     state.seats = hip && Math.hypot(hip[0] - sx, hip[1] - sz) < 0.5 ? [{ id: "seat1", ...worldToBoard(sx, sz), angle: face }] : [];
     state.pointers = [];
-    for (const wi of [9, 10]) { const w = joints[wi]; if (w && w[1] < TABLE_Y + 0.2 && Math.abs(w[0]) < SQUARE * 6 && Math.abs(w[2]) < SQUARE * 6) state.pointers.push({ id: `w${wi}`, ...worldToBoard(w[0], w[2]) }); }
+    for (const wi of [9, 10]) { const w = joints[wi]; if (w && w[1] < TABLE_Y + 0.2 && Math.abs(w[0]) < SQUARE * 6 && Math.abs(w[2]) < SQUARE * 6) state.pointers.push({ id: `w${wi}`, ...worldToBoard(w[0], w[2]), z: w[1] - TABLE_Y }); }
     bus.poses = state.poses;
     return { poses: state.poses, seats: state.seats, pointers: state.pointers };
   },

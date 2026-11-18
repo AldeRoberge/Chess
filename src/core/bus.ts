@@ -5,6 +5,7 @@ import type { SceneState } from "../scene/types";
 import type { BoardBelief } from "../vision/types";
 import type { ClockEstimate } from "../clock/types";
 import type { ExperienceEvent } from "./events";
+import type { PieceOverlay as PieceView } from "../world/pieceOverlay";
 import type { FxCall } from "../fx/types";
 
 export interface ClockView { mode: "digits" | "circle" | "square"; showCert: boolean; clock: ClockEstimate }
@@ -23,6 +24,8 @@ export const bus = {
   clock: null as ClockEstimate | null,
   /** What the projector should show of the clock; set by the Clock Overlay node. */
   clockView: null as ClockView | null,
+  /** What the projector should show as pieces; set by the Pieces Projection node (null = physical pieces). */
+  pieceView: null as PieceView | null,
   cameras: [] as { id: string; online: boolean; quality: number; reliability: number }[],
   /** Board effects started since the last post to the projector windows (drained by the app loop). */
   fxSpawns: [] as FxCall[],

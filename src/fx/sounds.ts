@@ -25,28 +25,36 @@ export class FxAudio {
   /** Ids of the sounds played so far (kept short), mostly for tests and the node's status. */
   played: string[] = [];
 
+  private armed = false;
   get ready() { return !!this.ctx; }
 
-  start() {
-    if (this.ctx) { void this.ctx.resume(); return; }
+  /**
+   * Call from a user gesture. The audio context itself is built on the first sound, so a patch that never plays one opens none
+   * (browsers allow it once the page has had a gesture).
+   */
+  start() { this.armed = true; if (this.ctx) void this.ctx.resume(); }
+
+  private build() {
     if (typeof AudioContext === "undefined") return;
-    const ctx = (this.ctx = new AudioContext());
-    const comp = ctx.createDynamicsCompressor(); comp.connect(ctx.destination);
-    this.out = ctx.createGain(); this.out.connect(comp);
-    // a little echo "space" every sound is sent into
-    const delay = ctx.createDelay(1), fb = ctx.createGain(), lp = ctx.createBiquadFilter(), wet = ctx.createGain();
-    delay.delayTime.value = 0.21; fb.gain.value = 0.38; lp.type = "lowpass"; lp.frequency.value = 2400; wet.gain.value = 0.5;
-    this.send = ctx.createGain(); this.send.gain.value = 0.35;
-    this.send.connect(delay); delay.connect(lp); lp.connect(fb); fb.connect(delay); lp.connect(wet); wet.connect(this.out);
-    const len = ctx.sampleRate;
-    this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = this.noise.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    try {
+      const ctx = new AudioContext();
+      const comp = ctx.createDynamicsCompressor(); comp.connect(ctx.destination);
+      const out = ctx.createGain(); out.connect(comp);
+      // a little echo "space" every sound is sent into
+      const delay = ctx.createDelay(1), fb = ctx.createGain(), lp = ctx.createBiquadFilter(), wet = ctx.createGain();
+      delay.delayTime.value = 0.21; fb.gain.value = 0.38; lp.type = "lowpass"; lp.frequency.value = 2400; wet.gain.value = 0.5;
+      const send = ctx.createGain(); send.gain.value = 0.35;
+      send.connect(delay); delay.connect(lp); lp.connect(fb); fb.connect(delay); lp.connect(wet); wet.connect(out);
+      const len = ctx.sampleRate, noise = ctx.createBuffer(1, len, ctx.sampleRate), d = noise.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this.out = out; this.send = send; this.noise = noise; this.ctx = ctx;
+    } catch { this.ctx = null; this.armed = false; /* no Web Audio here: stay silent */ }
   }
 
   /** Play a recipe. `pitch` is in semitones; `delay` in seconds. Silent (but recorded) when audio has not started. */
   play(id: string, o: { volume?: number; pitch?: number; strength?: number; delay?: number } = {}) {
     this.played.push(id); if (this.played.length > 20) this.played.shift();
+    if (!this.ctx && this.armed) this.build();
     const ctx = this.ctx;
     if (!ctx || !SOUND_IDS.includes(id)) return;
     const level = mixer.gain("sfx");

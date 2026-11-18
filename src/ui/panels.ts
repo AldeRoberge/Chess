@@ -50,7 +50,9 @@ export class TablePanel {
       const c = Math.floor(q.x), r = Math.floor(q.y); this.over = c >= 0 && c < 8 && r >= 0 && r < 8 ? r * 8 + c : null; this.overMargin = this.over === null ? q : null;
       if (virtualTable.hoverHand && !virtualTable.busy) { virtualTable.hand = { ...virtualTable.pointer }; virtualTable.carried = null; virtualTable.setHoverHand(); }
     };
-    this.cv.onmouseleave = () => { virtualTable.pointer = null; this.over = null; this.overMargin = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
+    this.cv.onmousedown = () => { virtualTable.pointerDown = true; };
+    this.cv.onmouseup = () => { virtualTable.pointerDown = false; };
+    this.cv.onmouseleave = () => { virtualTable.pointer = null; virtualTable.pointerDown = false; this.over = null; this.overMargin = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
     this.cv.onclick = (e) => {
       const p = pos(e); const c = Math.floor(p.x), r = Math.floor(p.y);
       if (c < 0 || c > 7 || r < 0 || r > 7) return;
@@ -144,7 +146,7 @@ export class TablePanel {
     }
     c.font = `${px * 0.82}px "Segoe UI Symbol", serif`; c.textAlign = "center"; c.textBaseline = "middle";
     b.forEach((row, r) => row.forEach((p, col) => {
-      if (!p || virtualTable.carried === r * 8 + col) return;
+      if (!p || virtualTable.carried === r * 8 + col || bus.pieceView) return; // projected pieces come with the overlay
       const img = pieceImage(p.color + p.type);
       if (img) { c.drawImage(img, col * px, r * px, px, px); return; }
       const g = GLYPH["b" + p.type]; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.strokeStyle = p.color === "w" ? "#3b3a37" : "#0d0d0d"; c.lineWidth = p.color === "w" ? 2.2 : 1.2; c.strokeText(g, (col + 0.5) * px, (r + 0.55) * px); c.fillText(g, (col + 0.5) * px, (r + 0.55) * px);
@@ -152,7 +154,7 @@ export class TablePanel {
     this.drawArms(c, px);
     if (this.over !== null) { c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.strokeRect((this.over % 8) * px + 1, Math.floor(this.over / 8) * px + 1, px - 2, px - 2); }
     c.restore();
-    drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);
+    drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);
     const g = bus.game, d = bus.director;
     this.info.textContent = `${d?.phase ?? "idle"}${d?.mode ? ` · ${d.mode === "engine" ? `Stockfish ${d.elo}` : "2 joueurs"}` : ""} · tracker: ${g?.status ?? "—"} · ${g?.history.slice(-6).join(" ") ?? ""}`;
   }

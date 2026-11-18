@@ -108,8 +108,9 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne-body{padding:8px 0 10px}
 .ne-pins{display:flex;justify-content:space-between;gap:12px}.ne-col{display:flex;flex-direction:column;gap:6px}.ne-col.right{align-items:flex-end}
 .ne-pin{display:flex;align-items:center;gap:7px;color:var(--text-dim);font-size:var(--t-xs)}
-.ne-dot{width:11px;height:11px;border-radius:50%;border:2px solid var(--ink-0);box-shadow:0 0 0 1px var(--line-hi);cursor:crosshair;flex:none}
-.ne-pin.in .ne-dot{margin-left:-6px}.ne-pin.out .ne-dot{margin-right:-6px}.ne-dot:hover{transform:scale(1.3)}
+.ne-dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--ink-0);box-shadow:0 0 0 1px var(--line-hi);cursor:crosshair;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--ink-0)}
+.ne-dot .ic{pointer-events:none;stroke-width:2.2}
+.ne-pin.in .ne-dot{margin-left:-10px}.ne-pin.out .ne-dot{margin-right:-10px}.ne-dot:hover{transform:scale(1.3)}
 .ne-preview{display:block;box-sizing:border-box;width:calc(100% - 20px);margin:8px 10px 2px;border-radius:3px;background:var(--ink-0);border:1px solid var(--line)}
 .ne-params{padding:6px 10px 0;display:flex;flex-direction:column;gap:5px}
 .ne-param{display:grid;grid-template-columns:minmax(70px,1fr) 1.3fr auto;gap:8px;align-items:center;color:var(--text);font-size:var(--t-sm);padding:2px 0 2px 6px;border-left:2px solid transparent;border-radius:2px}

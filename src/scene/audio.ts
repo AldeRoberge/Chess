@@ -27,12 +27,13 @@ export class AudioEngine {
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
+    // soft, even noise (a little low-passed white) instead of a harsh hiss; kept well below full scale
     let last = 0;
-    for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = i % 2 ? w * 0.5 : last * 8; }
+    for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = last * 0.6 + w * 0.4; d[i] = last * 0.5; }
     this.bed("rain", "highpass", 1800, 0.6);
     this.bed("wind", "bandpass", 420, 0.9);
     this.bed("fire", "lowpass", 900, 0.5);
-    this.startMusic();
+    // the drone pad (startMusic) is off: a constant hum was too annoying
     this.applyMix(mixer.get());
     this.unsubscribe ??= mixer.subscribe((s) => this.applyMix(s));
   }
@@ -74,9 +75,9 @@ export class AudioEngine {
   follow(s: SceneState) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.beds.rain.gain.setTargetAtTime(this.enabled ? s.rain * 0.25 : 0, t, 0.4); // rain SFX runs continuously whenever rain > 0
-    this.beds.wind.gain.setTargetAtTime(this.enabled ? s.wind * s.ambience.wind * 0.35 : 0, t, 0.8);
-    this.beds.fire.gain.setTargetAtTime(this.enabled ? s.fire * 0.12 : 0, t, 0.5);
+    this.beds.rain.gain.setTargetAtTime(this.enabled ? s.rain * 0.06 : 0, t, 0.4); // quiet background bed whenever rain > 0
+    this.beds.wind.gain.setTargetAtTime(this.enabled ? s.wind * s.ambience.wind * 0.1 : 0, t, 0.8);
+    this.beds.fire.gain.setTargetAtTime(this.enabled ? s.fire * 0.05 : 0, t, 0.5);
     if (this.enabled && s.fire > 0.1 && Math.random() < 0.15) this.click(0.05 + Math.random() * 0.1);
     if (this.enabled && s.ambience.drip > 0 && Math.random() < 0.01 * s.ambience.drip) this.drip();
   }

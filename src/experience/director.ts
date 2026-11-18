@@ -1,7 +1,12 @@
 import type { ExperienceEvent } from "../core/events";
 
 export type Phase = "idle" | "intro" | "menu" | "game" | "outro";
-export interface PointerSample { id: string; x: number; y: number } // table coordinates, board = 0..8
+/**
+ * A hand (or fingertip) on the table, in table coordinates (board = 0..8).
+ * `z` is its height above the table (m) and `pinch` the thumb-to-index distance (m), when the source can tell;
+ * `down` says it is touching (set by the source, e.g. a mouse button, or by the Touch Detector from `z` / `pinch`).
+ */
+export interface PointerSample { id: string; x: number; y: number; z?: number; pinch?: number; down?: boolean }
 export interface Seat { id: string; x: number; y: number; angle: number } // angle: direction the player faces (deg), 0 = looking toward -y
 export interface MenuButton { id: string; label: string; x: number; y: number; r: number; mode: "engine" | "human"; elo?: number }
 export interface DirectorOut { phase: Phase; menu: MenuButton[]; progress: Record<string, number>; mode: "engine" | "human" | null; elo: number; events: ExperienceEvent[]; seat: Seat | null }

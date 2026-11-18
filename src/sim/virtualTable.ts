@@ -40,6 +40,10 @@ export class VirtualTable {
   hand: { x: number; y: number } | null = null; // board coords 0..8
   seated = false;
   pointer: { x: number; y: number } | null = null;
+  /** a mouse button is held: the stand-in for a fingertip touching the table */
+  pointerDown = false;
+  /** false while the pieces are only projected: the cameras and the 3D view then see a bare board */
+  piecesVisible = true;
   /** whose arms reach over the board: +1 = white (at +z), -1 = black */
   side: 1 | -1 = 1;
   /** the arm doing the reaching; the other one waits at the table edge */
@@ -70,7 +74,7 @@ export class VirtualTable {
   /** Changes whenever anything a camera could see changes (lets renderers cache the clean image). */
   get sceneKey() {
     const v = this.visual;
-    return `${this.game.fen()}|${this.carried}|${this.hand?.x},${this.hand?.y}|${v ? `${Math.round(v.p[0] * 1000)},${Math.round(v.p[1] * 1000)},${Math.round(v.p[2] * 1000)},${Math.round(v.grasp * 10)},${this.side}${this.activeHand}` : ""}|${this.fxFrame()}`;
+    return `${this.piecesVisible ? "" : "bare|"}${this.game.fen()}|${this.carried}|${this.hand?.x},${this.hand?.y}|${v ? `${Math.round(v.p[0] * 1000)},${Math.round(v.p[1] * 1000)},${Math.round(v.p[2] * 1000)},${Math.round(v.grasp * 10)},${this.side}${this.activeHand}` : ""}|${this.fxFrame()}`;
   }
 
   /** While a handshake, fist or tumble is on screen, a coarse clock: renderers re-cast a few times a second, and not at all when idle. */
@@ -212,7 +216,7 @@ export class VirtualTable {
         pieces.push({ type: p.type, color: p.color, x, y, z });
       }
     }));
-    return { pieces, blobs: [], capsules: this.arms().flatMap((a) => a.capsules) };
+    return { pieces: this.piecesVisible ? pieces : [], blobs: [], capsules: this.arms().flatMap((a) => a.capsules) };
   }
 
   /** Physically play a move (SAN or UCI): hand goes to `from`, lifts, travels, drops. Returns false when illegal. */

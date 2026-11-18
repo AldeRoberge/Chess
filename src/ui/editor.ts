@@ -1,5 +1,5 @@
 import type { Graph } from "../core/graph";
-import { nodeIcon, paramIcon } from "./icons";
+import { nodeIcon, paramIcon, portIcon } from "./icons";
 import { onPieceStyle, pieceImage } from "./pieceSets";
 import { pixelRatio, viewSettings } from "./viewSettings";
 import { registerContextMenu, type CtxItem } from "./contextMenu";
@@ -113,11 +113,11 @@ export class NodeEditor {
     const ins = h("div", "ne-col"), outs = h("div", "ne-col right");
     const pins = new Map<string, HTMLElement>();
     for (const p of spec.inputs) {
-      const row = h("div", "ne-pin in"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "in";
+      const row = h("div", "ne-pin in"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "in"; dot.innerHTML = portIcon(p.type);
       row.append(dot, h("span", "ne-pl", p.label ?? p.id)); ins.append(row); pins.set("in:" + p.id, dot);
     }
     for (const p of spec.outputs) {
-      const row = h("div", "ne-pin out"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "out";
+      const row = h("div", "ne-pin out"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "out"; dot.innerHTML = portIcon(p.type);
       row.append(h("span", "ne-pl", p.label ?? p.id), dot); outs.append(row); pins.set("out:" + p.id, dot);
     }
     pinsRow.append(ins, outs); body.append(pinsRow);

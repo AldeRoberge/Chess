@@ -128,7 +128,7 @@ describe("AudioEngine", () => {
     const a = new AudioEngine(); a.start();
     const beds = FakeAC.made[0].gains.slice(4, 7); // gains[0] master, [1..3] ambience/sfx/music buses, then the three beds
     a.follow(state({ rain: 0.8, wind: 0.5, fire: 0.5 }));
-    expect(beds[0].gain.value).toBeCloseTo(0.2); expect(beds[2].gain.value).toBeCloseTo(0.06); expect(beds[1].gain.value).toBeGreaterThan(0);
+    expect(beds[0].gain.value).toBeCloseTo(0.048); expect(beds[2].gain.value).toBeCloseTo(0.025); expect(beds[1].gain.value).toBeGreaterThan(0);
     a.enabled = false; a.follow(state({ rain: 0.8 })); expect(beds.every((b: any) => b.gain.value === 0)).toBe(true);
   });
   it("sprinkles fire crackle and cave drips by chance, only when enabled and the scene has them", () => {
