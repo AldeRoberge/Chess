@@ -82,7 +82,7 @@ describe("running", () => {
     finishSetup(); const app = boot(root); frames(app, 1000, 30);
     // Healthy chips sit under ⋯, the rest on the bar: the readings are there either way.
     const readings = () => root.querySelector("#hud")!.textContent + root.querySelector("#hudmenu")!.textContent;
-    expect(bus.game).toBeTruthy(); expect(readings()).toMatch(/board \d+%.*move \d+%.*2 cam.*idle.*ms\/tick/);
+    expect(bus.game).toBeTruthy(); for (const re of [/board \d+%/, /move \d+%/, /2 cam/, /idle/, /ms\/tick/]) expect(readings()).toMatch(re);
     bus.lines = [{ speaker: "B", name: "Margot", text: "Quel coup !", t: 0, priority: 1 }]; frames(app, 5000, 6, 70); expect(root.querySelector("#sub")!.textContent).toBe("Margot: Quel coup !"); expect(root.querySelector("#sub")!.className).toBe("AB");
     bus.lines = []; frames(app, 9000, 6); expect(root.querySelector("#sub")!.textContent).toBe(""); expect(root.querySelector("#sub")!.className).toBe("");
   });
