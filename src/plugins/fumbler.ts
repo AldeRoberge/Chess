@@ -12,6 +12,8 @@ interface FumbleState {
   seed: number; step: Step; at: number; fen: string;
   /** the position already answered: the tracker takes a moment to see the move, and nobody plays it twice */
   acted: string;
+  /** after being told off, the next attempt is careful */
+  careful: boolean;
   /** the move the online bot asked for, and where the piece really went */
   ask: { from: string; to: string; san: string } | null; wrong: string;
   mistakes: number;
@@ -47,7 +49,7 @@ const fumbler: NodeSpec<FumbleState> = {
     { id: "thinkMs", kind: "number", label: "Reaction time (ms)", min: 200, max: 6000, step: 100, value: 1500 },
     { id: "seed", kind: "number", label: "Random seed", min: 1, max: 99999, step: 1, value: 7 },
   ],
-  init: (): FumbleState => ({ seed: 7, step: "idle", at: 0, fen: "", acted: "", ask: null, wrong: "", mistakes: 0 }),
+  init: (): FumbleState => ({ seed: 7, step: "idle", at: 0, fen: "", acted: "", careful: false, ask: null, wrong: "", mistakes: 0 }),
   process({ game, director }, { params, state, now, setFidelity }) {
     const g = game as TrackResult | undefined, d = director as DirectorOut | undefined, events: ExperienceEvent[] = [];
     const t = virtualTable;
@@ -67,11 +69,11 @@ const fumbler: NodeSpec<FumbleState> = {
         const c = t.game, m = c.moves({ verbose: true }).find((x) => x.from === h.from && x.to === h.to);
         if (!m) return { events };
         state.ask = { from: h.from, to: h.to, san: m.san };
-        const bad = rnd(state) < Number(params.errorRate) ? wrongSquare(c, h.from, h.to, rnd(state)) : null;
+        const bad = !state.careful && rnd(state) < Number(params.errorRate) ? wrongSquare(c, h.from, h.to, rnd(state)) : null;
         if (bad && t.relocate(sqIndex(h.from), sqIndex(bad), now)) {
           state.step = "mistake"; state.wrong = bad; state.at = now + 1900; state.mistakes++;
           events.push({ type: "fumble", t: now, data: { ...state.ask, wrong: bad } });
-        } else { t.play(m.san, now); state.acted = g.fen; state.ask = null; }
+        } else { t.play(m.san, now); state.acted = g.fen; state.ask = null; state.careful = false; }
       } else if (bot) { // the human's own move: any legal one, captures first
         const moves = t.game.moves({ verbose: true });
         if (moves.length) { const caps = moves.filter((x) => x.captured), pool = caps.length && rnd(state) < 0.5 ? caps : moves; t.play(pool[Math.floor(rnd(state) * pool.length) % pool.length].san, now); state.acted = g.fen; }
@@ -86,7 +88,7 @@ const fumbler: NodeSpec<FumbleState> = {
       if (now >= state.at && state.ask) { // put it back where it was, then play the bot's move for real
         const a = state.ask;
         if (t.relocate(sqIndex(state.wrong), sqIndex(a.from), now)) {
-          state.step = "idle"; state.fen = ""; state.acted = ""; state.at = now + 1900; state.wrong = "";
+          state.step = "idle"; state.fen = ""; state.acted = ""; state.careful = true; state.at = now + 1900; state.wrong = "";
           bus.reconcile = null;
           // the correct move follows once the piece is home: the idle step picks the hint up again
           state.ask = null;

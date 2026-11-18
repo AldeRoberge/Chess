@@ -46,6 +46,14 @@ export class WorldView {
   private octx = this.overlayCanvas.getContext("2d")!;
   private overlayTex: THREE.CanvasTexture;
   private scr = new SceneRenderer();
+  /** The table overlay as the table projector really throws it: drawn into the projector's own image, then projected back onto the table through its lens. */
+  private ov!: THREE.Mesh;
+  private projRT: THREE.WebGLRenderTarget | null = null;
+  private projScene = new THREE.Scene();
+  private projCam: THREE.PerspectiveCamera | null = null;
+  private flatMat!: THREE.Material;
+  private projMat: THREE.ShaderMaterial | null = null;
+  private projDirty = false;
   private pieceKey = "";
   private lastDraw = 0;
   private lastOverlay = 0;
@@ -99,6 +107,32 @@ export class WorldView {
       body.position.set(...p.pos); this.frusta.add(body);
     });
     this.buildBeams();
+    if (this.ov) this.setTableProjection();
+  }
+
+  /**
+   * Routes the table overlay through the table projector's real pose (the same pose the output window uses): a second scene holds the flat
+   * overlay, is rendered from the projector, and that image is thrown back onto the table. Keystone, cut-off at the lens edge and a mis-aimed
+   * projector therefore show up here exactly as they will on the real table. Without a projector the overlay is just laid flat.
+   */
+  private setTableProjection() {
+    const p = this.cfg.projectors.find((q) => q.id === "table") ?? this.cfg.projectors[0];
+    this.projScene.clear();
+    if (!p) { this.projCam = null; this.ov.material = this.flatMat; return; }
+    this.projCam = projectorCamera(p);
+    const size = SQUARE * 14, flat = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: this.overlayTex, transparent: true, depthWrite: false }));
+    flat.rotation.x = -Math.PI / 2; flat.position.y = TABLE_Y + 0.003; this.projScene.add(flat);
+    this.projRT ??= new THREE.WebGLRenderTarget(1024, 1024 / Math.max(0.5, p.aspect));
+    this.projRT.setSize(1024, Math.round(1024 / Math.max(0.5, p.aspect)));
+    const vp = new THREE.Matrix4().multiplyMatrices(this.projCam.projectionMatrix, this.projCam.matrixWorldInverse);
+    this.projMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, uniforms: { map: { value: this.projRT.texture }, vp: { value: vp } },
+      vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform sampler2D map; uniform mat4 vp; varying vec3 vW;
+        void main(){ vec4 c = vp * vec4(vW,1.0); if (c.w <= 0.0) discard; vec2 n = c.xy / c.w; if (abs(n.x) > 1.0 || abs(n.y) > 1.0) discard;
+          gl_FragColor = texture2D(map, n * 0.5 + 0.5); #include <colorspace_fragment> }`,
+    });
+    this.ov.material = this.projMat; this.projDirty = true;
   }
 
   /**
@@ -139,8 +173,9 @@ export class WorldView {
     paint(boardTheme()); onBoardTheme(paint);
     const board = new THREE.Mesh(new THREE.PlaneGeometry(SQUARE * 8, SQUARE * 8), new THREE.MeshStandardMaterial({ map: bt }));
     board.receiveShadow = true; board.rotation.x = -Math.PI / 2; board.position.y = TABLE_Y + 0.001; this.scene.add(board);
-    const ov = new THREE.Mesh(new THREE.PlaneGeometry(SQUARE * 14, SQUARE * 14), new THREE.MeshBasicMaterial({ map: this.overlayTex, transparent: true, depthWrite: false }));
-    ov.rotation.x = -Math.PI / 2; ov.position.y = TABLE_Y + 0.003; this.scene.add(ov);
+    this.flatMat = new THREE.MeshBasicMaterial({ map: this.overlayTex, transparent: true, depthWrite: false });
+    const ov = new THREE.Mesh(new THREE.PlaneGeometry(SQUARE * 14, SQUARE * 14), this.flatMat);
+    ov.rotation.x = -Math.PI / 2; ov.position.y = TABLE_Y + 0.003; this.scene.add(ov); this.ov = ov;
     // projected effects add light like a real projector: bright on the dark wood and squares, never darker than what is there
     this.fxPlane = new THREE.Mesh(new THREE.PlaneGeometry(SQUARE * 14, SQUARE * 14), new THREE.MeshBasicMaterial({ map: this.fxTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.fxPlane.rotation.x = -Math.PI / 2; this.fxPlane.position.y = TABLE_Y + 0.004; this.scene.add(this.fxPlane);
@@ -232,7 +267,7 @@ export class WorldView {
     const dt = this.lastDraw ? Math.min(0.1, (now - this.lastDraw) / 1000) : 0.016;
     if (bus.scene && this.showProjection) { this.scr.draw(this.cctx, this.content.width, this.content.height, bus.scene, now, dt); this.contentTex.needsUpdate = true; }
     this.lastDraw = now;
-    if (now - this.lastOverlay > 66) { this.lastOverlay = now; drawTableOverlay(this.octx, 48, 3, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile }, now / 1000); this.overlayTex.needsUpdate = true; }
+    if (now - this.lastOverlay > 66) { this.lastOverlay = now; drawTableOverlay(this.octx, 48, 3, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile }, now / 1000); this.overlayTex.needsUpdate = true; this.projDirty = true; }
     this.frusta.visible = this.showFrusta;
     // the table projection: only when a projector is installed to throw it
     const lit = this.cfg.projectors.length > 0 && this.showProjection;
@@ -248,6 +283,12 @@ export class WorldView {
       for (const m of this.beamMats) (m as THREE.MeshBasicMaterial).opacity = 0.05 + 0.2 * pulse;
     }
     this.syncPieces(); this.syncArms(); this.syncPeople();
+    if (this.projCam && this.projRT && this.projDirty) { // the projector's own picture, redrawn whenever the overlay changed
+      this.projDirty = false;
+      this.renderer.setRenderTarget(this.projRT); this.renderer.setClearColor(0x000000, 0); this.renderer.clear();
+      this.renderer.render(this.projScene, this.projCam);
+      this.renderer.setRenderTarget(null); this.renderer.setClearColor(0x05070c, 1);
+    }
     this.controls.update();
     this.renderer.render(this.scene, this.cam);
   }
