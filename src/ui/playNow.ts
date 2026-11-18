@@ -1,4 +1,6 @@
 import { buildBotPlay, type BotPlayOptions, type Presence, type Start } from "../setup/botPlay";
+import { bus } from "../core/bus";
+import { virtualTable } from "../sim/virtualTable";
 import { loadSetup } from "../setup/config";
 import { modal, type WorkflowApi } from "./workflows";
 
@@ -22,6 +24,7 @@ export function openPlayNow(api: WorkflowApi, onPlay: () => void = () => {}) {
   const play = el("button", "primary", "Play now"); play.type = "button";
   play.onclick = () => {
     const r = buildBotPlay(api.registry, o, loadSetup());
+    virtualTable.reset(); bus.engineHint = null; // the table outlives the workflow: cameras must learn the start position, not the last game
     api.apply(r.graph, r.setup, "Before playing the bot");
     m.close(); onPlay();
   };

@@ -26,3 +26,10 @@ describe("buildBotPlay", () => {
     expect(find(r.graph as any, "tracking.pose").length).toBe(1);
   });
 });
+
+describe("quick play narration", () => {
+  it("skips the repetitive seat / opponent / intro lines", () => {
+    const r = buildBotPlay(reg, { start: "me-white", presence: "simulated", elo: 1200 });
+    expect(find(r.graph as any, "narration.narrator")[0].params.setupChatter).toBe(false);
+  });
+});

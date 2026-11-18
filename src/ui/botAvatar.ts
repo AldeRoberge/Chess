@@ -7,11 +7,11 @@ export function drawBotAvatar(c: CanvasRenderingContext2D, px: number, color: "w
   const dir = color === "b" ? -1 : 1, base = color === "b" ? 0 : 8; // the table edge nearest the bot
   const X = (u: number) => u * px, Y = (v: number) => (base + dir * v) * px; // v = distance out from that edge
   const lean = look ? Math.max(-0.35, Math.min(0.35, (look.x - 4) * 0.07)) : 0;
-  const hx = 4 + lean + Math.sin(t * 1.3) * 0.04, hv = 2.25;
+  const hx = 4 + lean + Math.sin(t * 1.3) * 0.04, hv = 1.7;
   c.save();
   // shoulders
   c.fillStyle = "#34425c"; c.strokeStyle = "#1c2536"; c.lineWidth = 2;
-  c.beginPath(); c.ellipse(X(4), Y(2.75), X(2.1), X(0.6), 0, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.beginPath(); c.ellipse(X(4), Y(2.3), X(2.1), X(0.6), 0, 0, Math.PI * 2); c.fill(); c.stroke();
   // head
   c.fillStyle = "#cfd8ea";
   c.beginPath(); c.rect(X(hx - 0.55), Y(hv) - X(0.45), X(1.1), X(0.9)); c.fill(); c.stroke();
@@ -22,7 +22,7 @@ export function drawBotAvatar(c: CanvasRenderingContext2D, px: number, color: "w
     if (!blink) { c.fillStyle = busy ? "#ffb347" : "#4dffb8"; c.beginPath(); c.arc(X(hx + ex + lean * 0.3), Y(hv), X(0.07), 0, 7); c.fill(); }
   }
   c.fillStyle = "rgba(255,255,255,.85)"; c.font = `700 ${px * 0.2}px system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillText("BOT", X(4), Y(2.95));
+  c.fillText("BOT", X(4), Y(2.5));
   c.restore();
 }
 

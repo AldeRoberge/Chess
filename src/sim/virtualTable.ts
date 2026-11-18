@@ -239,6 +239,28 @@ export class VirtualTable {
     return true;
   }
 
+  /**
+   * Physically carry whatever stands on `from` to `to`, legal or not (a clumsy human). The piece is simply put down on the new square,
+   * so the cameras see the wrong arrangement and the tracker has to cope. Returns false when `from` is empty or `to` is taken.
+   */
+  relocate(from: number, to: number, now: number): boolean {
+    const name = (i: number) => "abcdefgh"[i % 8] + (8 - Math.floor(i / 8));
+    const p = this.game.get(name(from) as any);
+    if (!p || this.game.get(name(to) as any) || from === to) return false;
+    const c = (i: number) => ({ x: (i % 8) + 0.5, y: Math.floor(i / 8) + 0.5 });
+    const side: 1 | -1 = p.color === "w" ? 1 : -1;
+    this.queue.push({ at: now, fn: () => {
+      if (side !== this.side) this.visual = null;
+      this.side = side; this.hand = c(from);
+      this.activeHand = (boardToWorld(c(from).x, 0)[0] * side >= 0 ? "R" : "L");
+    } });
+    this.queue.push({ at: now + 500, fn: () => { this.carried = from; } });
+    this.queue.push({ at: now + 900, fn: () => { this.hand = c(to); } });
+    this.queue.push({ at: now + 1500, fn: () => { this.carried = null; this.game.remove(name(from) as any); this.game.put(p, name(to) as any); } });
+    this.queue.push({ at: now + 1900, fn: () => { this.hand = null; } });
+    return true;
+  }
+
   tick(now: number) {
     this.clock = now;
     const due = this.queue.filter((q) => q.at <= now);

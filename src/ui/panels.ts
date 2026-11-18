@@ -185,7 +185,7 @@ export class TablePanel {
     if (this.drag && virtualTable.pointer) lifted(this.drag.from, virtualTable.pointer.x, virtualTable.pointer.y, "me");
     if (this.over !== null) { c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.strokeRect((this.over % 8) * px + 1, Math.floor(this.over / 8) * px + 1, px - 2, px - 2); }
     c.restore();
-    drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);
+    drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);
     const g = bus.game, d = bus.director;
     this.info.textContent = `${d?.phase ?? "idle"}${d?.mode ? ` · ${d.mode === "engine" ? `Stockfish ${d.elo}` : "2 joueurs"}` : ""} · tracker: ${g?.status ?? "—"} · ${g?.history.slice(-6).join(" ") ?? ""}`;
   }

@@ -23,6 +23,10 @@ export const bus = {
   engineHint: null as { from: string; to: string } | null,
   /** Which colour the bot plays while a game against it runs (drives where its body sits); null otherwise. */
   botColor: null as "w" | "b" | null,
+  /** The human put a piece where the online bot did not play it: the bot's move and the wrong square, until it is put right. */
+  reconcile: null as { from: string; to: string; wrong: string } | null,
+  /** Draw a light outline around the board (the human-versus-online-bot demo). */
+  outline: false,
   clock: null as ClockEstimate | null,
   /** What the projector should show of the clock; set by the Clock Overlay node. */
   clockView: null as ClockView | null,

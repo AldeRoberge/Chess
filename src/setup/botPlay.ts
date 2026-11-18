@@ -1,4 +1,5 @@
 import { Graph } from "../core/graph";
+import { organize } from "../core/groups";
 import type { GraphJSON, Registry } from "../core/types";
 import { buildGraphFromConfig, defaultSetup, virtualCamera, webcamSetup, type SetupConfig } from "./config";
 
@@ -28,6 +29,9 @@ export function buildBotPlay(registry: Registry, o: BotPlayOptions, base: SetupC
   for (const n of g.nodes.values()) {
     if (n.type === "game.engine") { n.params.color = bot; n.params.virtualHand = !webcams; }
     if (n.type === "sim.person") n.params.seated = true;
+    if (n.type === "narration.narrator") n.params.setupChatter = false; // you press Play often: skip the seat / opponent / intro lines
   }
-  return { graph: g.toJSON(), setup, bot };
+  const graph = g.toJSON();
+  organize(graph); // role bands with titled sections, same as the Organize button: the raw build coordinates overlap
+  return { graph, setup, bot };
 }

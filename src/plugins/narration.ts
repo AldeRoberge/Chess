@@ -65,6 +65,7 @@ const narrator: NodeSpec<NarState> = {
     { id: "nameA", kind: "text", label: "Voice A", value: "Jean" },
     { id: "nameB", kind: "text", label: "Voice B", value: "Margot" },
     langParam,
+    { id: "setupChatter", kind: "bool", label: "Narrate the set-up (seat, opponent, intro)", value: true },
   ],
   previewSize: [200, 70],
   init: () => ({ n: new Narrator(), lines: [] }),
@@ -72,7 +73,9 @@ const narrator: NodeSpec<NarState> = {
     state.n.cfg.voices = params.voices === "1" ? 1 : 2;
     state.n.cfg.lang = langOf(params.language);
     state.n.cfg.names = [String(params.nameA), String(params.nameB)];
-    const evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
+    let evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
+    // quick-play games start over and over: "a player sits down, against the machine, the lights dim" gets old fast
+    if (params.setupChatter === false) evs = evs.filter((e) => !(e.type === "seat" || e.type === "leave" || e.type === "mode" || (e.type === "phase" && e.data?.phase === "intro")));
     const lines = evs.length ? span("narrate events", () => state.n.handle(evs)) : [];
     if (lines.length) { state.lines.push(...lines); state.lines = state.lines.slice(-30); pushLog(bus.lines, lines); }
     return { lines };

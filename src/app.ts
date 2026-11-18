@@ -420,7 +420,7 @@ export function boot(root: HTMLElement): Boot {
     if (now - lastPost > 33 && bus.scene) {
       lastPost = now;
       const g = bus.game;
-      profiler.span("scene.post", () => world.post({ type: "state", scene: bus.scene, overlay: { game: g ? { last: g.last, lifted: g.lifted, diff: g.diff, status: g.status } : null, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView }, fx: bus.fxSpawns.splice(0) }));
+      profiler.span("scene.post", () => world.post({ type: "state", scene: bus.scene, overlay: { game: g ? { last: g.last, lifted: g.lifted, diff: g.diff, status: g.status } : null, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile }, fx: bus.fxSpawns.splice(0) }));
     }
     if (now - lastHud > 250) {
       profiler.begin("hud");

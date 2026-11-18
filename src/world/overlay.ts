@@ -12,6 +12,8 @@ export interface OverlayInput {
   /** Both default to shown; the on-screen preview can hide them. */
   lastMove?: boolean; hints?: boolean;
   clock?: ClockOverlay | null;
+  /** An outline round the board, and the square the human got wrong while moving the online bot's piece. */
+  outline?: boolean; reconcile?: { from: string; to: string; wrong: string } | null;
   /** Pieces projected onto the table (the piece-less game); null when the pieces are physical. */
   pieces?: PieceOverlay | null;
   /** Board effects to paint in light on top (the output page keeps its own engine). */
@@ -38,6 +40,17 @@ export function drawTableOverlay(ctx: CanvasRenderingContext2D, px: number, marg
     fill(o.hint.from, `rgba(60,255,160,${0.25 + 0.3 * pulse})`); fill(o.hint.to, `rgba(60,255,160,${0.35 + 0.3 * pulse})`);
     const a = sq(o.hint.from), b = sq(o.hint.to);
     drawChevrons(ctx, { x: a.x + px / 2, y: a.y + px / 2 }, { x: b.x + px / 2, y: b.y + px / 2 }, px, t);
+  }
+
+  if (o.reconcile) { // the piece went down in the wrong place: mark where it is and where it should have gone
+    const pulse = 0.5 + 0.5 * Math.sin(t * 8), w = sq(o.reconcile.wrong);
+    fill(o.reconcile.wrong, `rgba(255,70,90,${0.3 + 0.3 * pulse})`); fill(o.reconcile.to, `rgba(60,255,160,${0.2 + 0.3 * pulse})`);
+    ctx.strokeStyle = "rgba(255,70,90,.95)"; ctx.lineWidth = px * 0.07; ctx.strokeRect(w.x + 3, w.y + 3, px - 6, px - 6);
+  }
+  if (o.outline) { // frame round the board: calm while all is well, amber when asked to move the bot's piece, red while reconciling
+    const col = o.reconcile ? "255,70,90" : o.hint ? "255,190,60" : "90,200,255", glow = 0.55 + 0.25 * Math.sin(t * (o.reconcile ? 8 : 3));
+    ctx.save(); ctx.strokeStyle = `rgba(${col},${glow})`; ctx.lineWidth = px * 0.12; ctx.shadowColor = `rgba(${col},.9)`; ctx.shadowBlur = px * 0.3;
+    ctx.strokeRect(-px * 0.08, -px * 0.08, px * 8.16, px * 8.16); ctx.restore();
   }
 
   o.fx?.draw(ctx, px, t * 1000);

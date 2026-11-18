@@ -260,7 +260,7 @@ describe("workflows", () => {
   it("the Workflows button loads a demo into the live patch, and Ctrl+Z brings the old one back", () => {
     finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
     (document.getElementById("workflows") as HTMLButtonElement).click();
-    expect(document.querySelectorAll(".wf-row")).toHaveLength(4);
+    expect(document.querySelectorAll(".wf-row")).toHaveLength(5);
     (document.querySelector(".wf-row button") as HTMLButtonElement).click();
     expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);

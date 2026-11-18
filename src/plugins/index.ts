@@ -10,8 +10,9 @@ import { clockPlugin } from "./clock";
 import { worldPlugin } from "./world";
 import { fxPlugin } from "./fx";
 import { projectedPlugin } from "./projected";
+import { fumblerPlugin } from "./fumbler";
 
 /** Add a plugin = add one line here (or call registry.use() at runtime from your own module). */
 export function createRegistry() {
-  return new Registry().use(sourcesPlugin).use(visionPlugin).use(gamePlugin).use(experiencePlugin).use(narrationPlugin).use(scenePlugin).use(trackingPlugin).use(clockPlugin).use(worldPlugin).use(fxPlugin).use(projectedPlugin);
+  return new Registry().use(sourcesPlugin).use(visionPlugin).use(gamePlugin).use(experiencePlugin).use(narrationPlugin).use(scenePlugin).use(trackingPlugin).use(clockPlugin).use(worldPlugin).use(fxPlugin).use(projectedPlugin).use(fumblerPlugin);
 }
