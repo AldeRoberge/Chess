@@ -86,6 +86,38 @@ export class PositionTracker {
     };
   }
 
+  /** Plays one move on the tracked game and appends the events it causes (move, capture, castle, promotion, check, mate). */
+  private commit(m: Move | { from: string; to: string; promotion?: string }, t: number, fid: number, events: ExperienceEvent[]) {
+    const done = this.game.move(m);
+    const info: MoveInfo = {
+      san: done.san, from: done.from, to: done.to, piece: done.piece, color: done.color,
+      captured: done.captured, flags: done.flags, promotion: done.promotion,
+      check: this.game.inCheck(), mate: this.game.isCheckmate(), ply: this.game.history().length, fidelity: fid,
+    };
+    this.lastMove = info;
+    events.push({ type: "move", t, data: info });
+    if (info.captured) events.push({ type: "capture", t, data: info });
+    if (info.flags.includes("k") || info.flags.includes("q")) events.push({ type: "castle", t, data: info });
+    if (info.promotion) events.push({ type: "promotion", t, data: info });
+    if (info.check && !info.mate) events.push({ type: "check", t, data: info });
+    if (info.mate) events.push({ type: "mate", t, data: info });
+  }
+
+  /**
+   * Applies a move that is already known (a finger drag, the engine) instead of reading it from the cameras.
+   * Returns null, and leaves the game untouched, when the move is not legal.
+   */
+  play(from: string, to: string, promotion: string | undefined, t: number): TrackResult | null {
+    const events: ExperienceEvent[] = [];
+    try { this.commit({ from, to, promotion }, t, 1, events); } catch { return null; }
+    if (this.game.isDraw()) events.push({ type: "draw", t });
+    this.moveFid = 1; this.cand = ""; this.candN = 0;
+    return this.base("moved", [], events, 1);
+  }
+
+  /** The current position as a result with no change in it (what a node publishes between moves). */
+  snapshot(): TrackResult { return this.base("synced", [], [], 1); }
+
   observe(b: BoardBelief): TrackResult {
     const events: ExperienceEvent[] = [];
     if (!b.settled) return this.base("pending", [], events, b.fidelity);
@@ -148,21 +180,7 @@ export class PositionTracker {
       this.cand = key;
       if (this.candN >= this.cfg.confirm) {
         const fid = Math.exp(-best.cost);
-        for (const m of best.moves) {
-          const done = this.game.move(m);
-          const info: MoveInfo = {
-            san: done.san, from: done.from, to: done.to, piece: done.piece, color: done.color,
-            captured: done.captured, flags: done.flags, promotion: done.promotion,
-            check: this.game.inCheck(), mate: this.game.isCheckmate(), ply: this.game.history().length, fidelity: fid,
-          };
-          this.lastMove = info;
-          events.push({ type: "move", t: b.t, data: info });
-          if (info.captured) events.push({ type: "capture", t: b.t, data: info });
-          if (info.flags.includes("k") || info.flags.includes("q")) events.push({ type: "castle", t: b.t, data: info });
-          if (info.promotion) events.push({ type: "promotion", t: b.t, data: info });
-          if (info.check && !info.mate) events.push({ type: "check", t: b.t, data: info });
-          if (info.mate) events.push({ type: "mate", t: b.t, data: info });
-        }
+        for (const m of best.moves) this.commit(m, b.t, fid, events);
         if (this.game.isDraw()) events.push({ type: "draw", t: b.t });
         this.moveFid = fid;
         this.cand = ""; this.candN = 0;
