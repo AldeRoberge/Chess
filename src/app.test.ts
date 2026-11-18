@@ -119,6 +119,22 @@ describe("running", () => {
     pause.click(); expect(bus.scenarioPaused).toBe(false);
     pause.click(); node.params.play = false; app.step(1700); expect(pause.disabled).toBe(true); expect(bus.scenarioPaused).toBe(false);
   });
+  it("clicking the table while two AI players play pauses and asks; Take control swaps the AI player for a Desktop Controller", () => {
+    finishSetup(); const app = quiet(boot(root));
+    const cv = root.querySelector<HTMLCanvasElement>(".table-cv")!;
+    cv.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); expect(document.querySelector(".notice")).toBeNull(); // nothing is playing: a normal click
+    const sc = app.graph.addNode("sim.scenario", 0, 0, { scenario: "scholars-mate", play: true }), wd = app.graph.addNode("world.virtual"), pw = app.graph.addNode("sim.player", 0, 0, { color: "w" }), pb = app.graph.addNode("sim.player", 0, 0, { color: "b" });
+    app.graph.connect({ node: pw.id, port: "player" }, { node: wd.id, port: "white" }); app.graph.connect({ node: pb.id, port: "player" }, { node: wd.id, port: "black" }); app.editor.rebuild(); app.step(1400);
+    cv.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(bus.scenarioPaused).toBe(true); expect(document.querySelector(".notice")!.textContent).toContain("take control");
+    document.querySelector<HTMLButtonElement>(".notice .ghost")!.click(); expect(bus.scenarioPaused).toBe(false); // dismissed: the game carries on
+    cv.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    const take = [...document.querySelectorAll<HTMLButtonElement>(".notice button")].find((b) => b.textContent!.startsWith("Take control"))!; take.click();
+    const ctl = [...app.graph.nodes.values()].find((n) => n.type === "sim.desktop")!;
+    expect(ctl.params.color).toBe("w"); expect([...app.graph.nodes.values()].filter((n) => n.type === "sim.player").map((n) => n.params.color)).toEqual(["b"]);
+    expect(app.graph.edges.some((e) => e.from.node === ctl.id && e.to.port === "white")).toBe(true);
+    expect(sc.params.play).toBe(false); expect(bus.scenarioPaused).toBe(false);
+  });
   it("renders the active tab's panel only (table, 3D, log) and broadcasts the scene to projector windows", () => {
     finishSetup(); const app = quiet(boot(root)); const tabs = [...root.querySelectorAll<HTMLElement>("#tabs button")];
     app.step(1000); expect(root.querySelector("#dock .table")).toBeTruthy(); tabs[1].click(); expect(root.querySelector("#dock .world")).toBeTruthy(); app.step(1100); tabs[2].click(); expect(root.querySelector("#dock .log")).toBeTruthy(); app.step(1200);

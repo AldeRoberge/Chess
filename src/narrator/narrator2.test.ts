@@ -128,6 +128,6 @@ describe("variety", () => {
     const re = say(n, "capture", { color: "b", piece: "q", captured: "p", to: "d5" }, 110000);
     expect(re[1].text).toMatch(/retaken|recapture|eye for an eye|change is given back/);
     const lead = say(n, "capture", { color: "w", piece: "n", captured: "n", to: "f6" }, 200000);
-    expect(lead[1].text).toMatch(/points|+7/);
+    expect(lead[1].text).toMatch(/points|\+7/);
   });
 });

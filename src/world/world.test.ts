@@ -12,7 +12,7 @@ vi.mock("three", async (orig) => {
   const actual = await orig<typeof import("three")>();
   class FakeRenderer { shadowMap = { enabled: false, type: 0, autoUpdate: true, needsUpdate: false }; ratio = 1; renders = 0; cleared: any[] = []; size: number[] = []; disposed = false; constructor(public opts: any) { gl.made.push(this); }
     setPixelRatio(r: number) { this.ratio = r; } getPixelRatio() { return this.ratio; } setSize(w: number, h: number) { this.size = [w, h]; this.opts.canvas.width = w * this.ratio; this.opts.canvas.height = h * this.ratio; }
-    setClearColor(...a: any[]) { this.cleared = a; } render() { this.renders++; } dispose() { this.disposed = true; } }
+    setClearColor(...a: any[]) { this.cleared = a; } rt: any = null; setRenderTarget(t: any) { this.rt = t; } clear() {} render() { if (!this.rt) this.renders++; } dispose() { this.disposed = true; } }
   return { ...actual, WebGLRenderer: FakeRenderer };
 });
 
