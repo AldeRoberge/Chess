@@ -18,7 +18,7 @@ export class StockfishEngine implements Engine {
   private ready: Promise<void>;
   private rand: () => number;
 
-  constructor(url = "/stockfish/stockfish-19-lite-single.js", rand = Math.random) {
+  constructor(url = `${import.meta.env.BASE_URL}stockfish/stockfish-19-lite-single.js`, rand = Math.random) {
     this.rand = rand;
     this.w = new Worker(url);
     this.w.onmessage = (e) => this.pending?.(String(e.data));
@@ -95,7 +95,7 @@ export class GreedyEngine implements Engine {
 
 export async function createEngine(): Promise<Engine> {
   try {
-    const head = await fetch("/stockfish/stockfish-19-lite-single.wasm", { method: "HEAD" });
+    const head = await fetch(`${import.meta.env.BASE_URL}stockfish/stockfish-19-lite-single.wasm`, { method: "HEAD" });
     if (head.ok && !String(head.headers.get("content-type")).includes("html")) return new StockfishEngine();
   } catch { /* fall through */ }
   return new GreedyEngine();

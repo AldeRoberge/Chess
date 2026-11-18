@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "chess-experience",
+  "compatibility_date": "2026-10-18",
+  "workers_dev": false,
+  // Only /chess on alderoberge.com. The rest of the domain stays on Firebase Hosting.
+  "routes": [
+    { "pattern": "alderoberge.com/chess", "zone_name": "alderoberge.com" },
+    { "pattern": "alderoberge.com/chess/*", "zone_name": "alderoberge.com" }
+  ],
+  // Static build (npm run build) lands in dist/chess/, so URLs keep the /chess/ prefix.
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  }
+}

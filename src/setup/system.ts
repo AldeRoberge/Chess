@@ -101,7 +101,7 @@ export async function detectEnv(): Promise<Env> {
   try { gl = canvas.getContext("webgl2") || canvas.getContext("webgl"); } catch { gl = null; }
   const webgl = !!gl;
   let stockfish = false; let wasm: Response | null = null;
-  try { wasm = await fetch("/stockfish/stockfish-19-lite-single.wasm", { method: "HEAD" }); stockfish = wasm.ok && !String(wasm.headers.get("content-type")).includes("html"); } catch { stockfish = false; }
+  try { wasm = await fetch(`${import.meta.env.BASE_URL}stockfish/stockfish-19-lite-single.wasm`, { method: "HEAD" }); stockfish = wasm.ok && !String(wasm.headers.get("content-type")).includes("html"); } catch { stockfish = false; }
   const mediaDevices = !!navigator.mediaDevices?.getUserMedia;
   const audio = typeof AudioContext !== "undefined", speech = typeof speechSynthesis !== "undefined";
   const worker = typeof Worker !== "undefined", gamepad = typeof navigator.getGamepads === "function";

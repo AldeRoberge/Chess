@@ -148,7 +148,7 @@ export function boot(root: HTMLElement): Boot {
   };
   const moreBtn = document.getElementById("more")!, moreMenu = app.querySelector<HTMLElement>(".rmenu")!;
   const setMenu = (open: boolean) => { moreMenu.hidden = !open; moreBtn.setAttribute("aria-expanded", String(open)); };
-  moreBtn.onclick = (e) => { e.stopPropagation(); setMenu(moreMenu.hidden); };
+  moreBtn.onclick = (e) => { e.stopPropagation(); setMenu(moreMenu.hidden === true); };
   moreMenu.addEventListener("click", () => setMenu(false));
   document.addEventListener("click", () => setMenu(false));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
