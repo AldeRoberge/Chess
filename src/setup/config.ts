@@ -22,6 +22,43 @@ export interface CameraSetup {
   corners: string; // a8;h8;h1;a1 in 480x360 camera pixels
   trust: number; // 0..2
   fov: number; // vertical field of view in degrees (used to place the camera in 3D from its board corners)
+  /** Fields filled in by "Auto detect" (cleared again when the value is set by hand). "fov" is the camera's placement. */
+  autoFields?: AutoField[];
+}
+
+export type AutoField = "fov" | "trust" | "channel";
+
+/** Records whether a field was filled by auto detect (true) or set by hand (false). */
+export function setAutoField(cam: CameraSetup, field: AutoField, auto: boolean) {
+  const rest = (cam.autoFields ?? []).filter((f) => f !== field);
+  cam.autoFields = auto ? [...rest, field] : rest;
+}
+
+/** A board separation below this (d', see autodetect.ts) means the squares barely stand out: the camera performs badly. */
+export const BAD_SEPARATION = 0.5;
+
+/** What the board step last measured for a camera: whether a picture arrived, and how well the squares show in it. */
+export interface BoardReading { signal: boolean; separation?: number }
+
+export interface CamHealth {
+  configured: boolean; // a device is chosen (webcams) and the board corners are marked
+  auto: boolean; // the placement (field of view) was auto-detected
+  ready: boolean; // online, configured and not performing badly
+  bad: boolean; // no signal, or the board squares barely stand out
+  tone: "ok" | "warn" | "fail";
+  text: string; // one-line status for the camera's tab
+}
+
+/** A camera's status on the board step's tabs, derived from its setup and the latest reading of its picture. */
+export function camHealth(cam: CameraSetup, reading?: BoardReading): CamHealth {
+  const configured = !!parseCorners(cam.corners) && (cam.kind === "virtual" || !!cam.deviceId);
+  const auto = (cam.autoFields ?? []).includes("fov");
+  const noSignal = cam.kind === "webcam" && reading?.signal === false;
+  const poor = reading?.signal === true && reading.separation !== undefined && reading.separation < BAD_SEPARATION;
+  const bad = noSignal || poor;
+  const ready = cam.online && configured && !bad;
+  const text = noSignal ? "No signal" : poor ? "Performing badly" : !cam.online ? "Offline" : !configured ? "Not configured" : auto ? "Ready · placement auto" : "Ready";
+  return { configured, auto, ready, bad, tone: bad ? "fail" : ready ? "ok" : "warn", text };
 }
 
 export interface SetupConfig {

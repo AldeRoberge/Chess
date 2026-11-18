@@ -1,4 +1,5 @@
 import type { Pt } from "../vision/types";
+import { boardToImage } from "../vision/homography";
 
 /** Channels the board reader can read from: grey (luma) or one colour plane (IR cameras often show up in red). */
 export type Channel = "luma" | "red" | "green" | "blue";
@@ -6,30 +7,23 @@ export const CHANNEL_NAME: Record<Channel, string> = { luma: "Gray (luma)", red:
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** Where two lines (each through two points) cross, in image pixels; null when they are parallel. */
-function vanishing(a1: Pt, b1: Pt, a2: Pt, b2: Pt): Pt | null {
-  // homogeneous lines through two image points: l = p x q, with p = (x, y, 1)
-  const line = (p: Pt, q: Pt) => [p.y - q.y, q.x - p.x, p.x * q.y - p.y * q.x];
-  const l1 = line(a1, b1), l2 = line(a2, b2);
-  const v = [l1[1] * l2[2] - l1[2] * l2[1], l1[2] * l2[0] - l1[0] * l2[2], l1[0] * l2[1] - l1[1] * l2[0]];
-  if (Math.abs(v[2]) < 1e-9) return null;
-  return { x: v[0] / v[2], y: v[1] / v[2] };
-}
-
 /**
  * Vertical field of view (degrees) from the four board corners (a8, h8, h1, a1) in a w x h picture.
- * The board's rows and files are two pairs of perpendicular lines, so their vanishing points v1, v2 satisfy
- * (v1 - c) . (v2 - c) = -f^2 with c the image centre and f the focal length in pixels (square pixels assumed).
- * Returns null when the corners do not show two converging pairs of edges; clamps to the slider's 30..110 range.
+ * The board is a square, so with K = diag(f, f, 1) on pixels centred on the image, the board-to-image homography H
+ * gives two plane axes g1 = (h11, h21, h31) / f and g2 = (h12, h22, h32) / f that must be perpendicular and of equal
+ * length. Either constraint fixes f: orthogonality gives f^2 = -(h11 h12 + h21 h22) / (h31 h32), equal length gives
+ * f^2 = (h11^2 + h21^2 - h12^2 - h22^2) / (h32^2 - h31^2). Each degenerates when the board's edges run parallel in the
+ * picture, so the better-conditioned one is used. Null when the corners fit no lens; clamped to the slider's 30..110.
  */
 export function estimateFov(corners: Pt[], w: number, h: number): number | null {
-  const [a8, h8, h1, a1] = corners;
-  const rows = vanishing(a8, h8, a1, h1), files = vanishing(a8, a1, h8, h1);
-  if (!rows || !files) return null;
-  const cx = w / 2, cy = h / 2;
-  const f2 = -((rows.x - cx) * (files.x - cx) + (rows.y - cy) * (files.y - cy));
-  if (!(f2 > 0)) return null;
-  const fov = (2 * Math.atan(h / 2 / Math.sqrt(f2)) * 180) / Math.PI;
+  let H: number[];
+  try { H = boardToImage(corners.map((p) => ({ x: p.x - w / 2, y: p.y - h / 2 }))); } catch { return null; }
+  const [h11, h12, , h21, h22, , h31, h32] = H;
+  const orth = { f2: -(h11 * h12 + h21 * h22) / (h31 * h32), den: Math.abs(h31 * h32) };
+  const equal = { f2: (h11 * h11 + h21 * h21 - h12 * h12 - h22 * h22) / (h32 * h32 - h31 * h31), den: Math.abs(h32 * h32 - h31 * h31) };
+  const best = orth.den >= equal.den ? orth : equal;
+  if (!(best.den > 1e-12) || !(best.f2 > 0) || !Number.isFinite(best.f2)) return null;
+  const fov = (2 * Math.atan(h / 2 / Math.sqrt(best.f2)) * 180) / Math.PI;
   return clamp(Math.round(fov), 30, 110);
 }
 
@@ -62,16 +56,27 @@ export function squareMeans(img: ImageData, corners: Pt[]): SquareMean[] {
 }
 
 const valueOf = (s: SquareMean, ch: Channel) => (ch === "red" ? s.r : ch === "green" ? s.g : ch === "blue" ? s.b : 0.299 * s.r + 0.587 * s.g + 0.114 * s.b);
-const stats = (xs: number[]) => { const m = xs.reduce((a, b) => a + b, 0) / xs.length; return { m, v: xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length }; };
+const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 /**
- * How clearly the light and dark squares stand apart in one channel: the difference of their means over the
- * pooled spread (d'). About 1 is barely visible, 2 or more reads cleanly. A small noise floor keeps flat images finite.
+ * How clearly the squares show in one channel, as d' (about 0.5 is barely visible, 1.5 or more reads cleanly).
+ * Each square is compared with its (up to four) neighbours, which are the other colour on a board: a clean board gives
+ * the same contrast everywhere, so lighting gradients cancel, and pieces (which cover a minority of squares) only
+ * disturb their own squares. The median contrast is divided by the robust spread (MAD) of the contrasts.
  */
 export function separation(squares: SquareMean[], ch: Channel): number {
-  const light = stats(squares.filter((s) => !s.dark).map((s) => valueOf(s, ch)));
-  const dark = stats(squares.filter((s) => s.dark).map((s) => valueOf(s, ch)));
-  return Math.abs(light.m - dark.m) / Math.sqrt((light.v + dark.v) / 2 + 4);
+  const v = squares.map((s) => valueOf(s, ch)), contrast: number[] = [];
+  squares.forEach((s, i) => {
+    const row = Math.floor(i / 8), col = i % 8, around: number[] = [];
+    if (col > 0) around.push(v[i - 1]);
+    if (col < 7) around.push(v[i + 1]);
+    if (row > 0) around.push(v[i - 8]);
+    if (row < 7) around.push(v[i + 8]);
+    const mean = around.reduce((a, b) => a + b, 0) / around.length;
+    contrast.push((s.dark ? -1 : 1) * (v[i] - mean)); // signed so that a clean board reads positive
+  });
+  const m = median(contrast), mad = median(contrast.map((c) => Math.abs(c - m)));
+  return Math.abs(m) / Math.sqrt((1.4826 * mad) ** 2 + 4);
 }
 
 /** d' of the board in one channel, read from a picture. */
@@ -91,5 +96,5 @@ export function detectChannel(img: ImageData, corners: Pt[]): { channel: Channel
   return { channel, separation: best };
 }
 
-/** Trust (0..2) from the separation: d' of 2 reads as the default trust of 1, a very clear board caps at 2. */
-export const trustFor = (d: number) => clamp(Math.round((d / 2) * 10) / 10, 0, 2);
+/** Trust (0..2) from the separation: d' of 1.5 reads as the default trust of 1, a very clear board caps at 2. */
+export const trustFor = (d: number) => clamp(Math.round((d / 1.5) * 10) / 10, 0, 2);

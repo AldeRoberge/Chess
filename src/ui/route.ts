@@ -1,5 +1,7 @@
 /** Hash routes: `#/table`, `#/world`, `#/log`, `#/perf`, `#/setup/<step-id>`. Hash routing works on any static host and file://. */
 export type Page = "table" | "world" | "log" | "perf";
+/** Name of a popup that can be shown in the URL as `?dialog=<name>` (see dialogUrl.ts). Kept open-ended until the popups are wired. */
+export type Dialog = string;
 export type Route = { page: Page } | { page: "setup"; step: string | null };
 
 export const PAGES: Page[] = ["table", "world", "log", "perf"];

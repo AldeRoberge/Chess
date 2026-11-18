@@ -22,6 +22,12 @@ export interface WizardState {
   scenePreview: SceneState;
   tests: Record<string, TestResult>; // latest "Test key" outcome per service id
   groups: Record<string, boolean>; // open state of collapsible sections, by id (absent = the section's default)
+  /** Latest unprocessed picture of the board camera (no overlay): what auto detect measures. Null without a signal. */
+  frame: ImageData | null;
+  /** Latest board reading per camera id, shown on its tab. */
+  board: Record<string, BoardReading>;
+  /** Result line of the last auto detect. */
+  autoMsg: string;
 }
 
 export interface StepCtx {
@@ -199,15 +205,22 @@ export const STEPS: Step[] = [
       } });
       return out;
     } },
-  { id: "board", title: "Board", blurb: "Drag the four green handles onto the board corners: a8, h8, h1, a1 (black's left rook first, clockwise from white's view).",
+  { id: "board", title: "Board", blurb: "Pick a camera from the tabs, then drag the four green handles onto the board corners: a8, h8, h1, a1 (black's left rook first, clockwise from white's view).",
     items: (c) => {
       if (!c.cfg.cameras.length) return [{ kind: "info", label: "No cameras", value: "Add one in the previous step.", tone: "warn" }];
+      // the camera itself is chosen on the tabs above this list; the rows below are that camera's settings
       const cam = c.cfg.cameras[c.state.boardCam];
+      const picture = !!c.state.frame, noPicture = "Needs a live picture from this camera: check that it is online and has a signal.";
       return [
-        { kind: "choice", label: "Camera", options: c.cfg.cameras.map((x, i) => ({ value: String(i), label: `${x.id} · ${x.label}` })), get: () => String(c.state.boardCam), set: (v) => { c.state.boardCam = Number(v); } },
-        { kind: "choice", label: "Channel", options: ["luma", "red", "green", "blue"].map((v) => ({ value: v, label: v === "luma" ? "Gray (luma)" : v[0].toUpperCase() + v.slice(1) })), get: () => cam.channel, set: (v) => { cam.channel = v as typeof cam.channel; }, hint: "IR cameras often show up in the red channel." },
-        { kind: "slider", label: "Trust", min: 0, max: 2, step: 0.1, get: () => cam.trust, set: (v) => { cam.trust = v; } },
-        { kind: "slider", label: "Field of view", min: 30, max: 110, step: 1, get: () => cam.fov, set: (v) => { cam.fov = v; }, fmt: (v) => `${v}°`, hint: "Vertical angle of the lens. Used to place the camera in the room from its board corners." },
+        { kind: "choice", label: "Channel", icon: "palette", options: (["luma", "red", "green", "blue"] as Channel[]).map((v) => ({ value: v, label: CHANNEL_NAME[v] })), get: () => cam.channel,
+          set: (v) => { cam.channel = v as Channel; setAutoField(cam, "channel", false); }, hint: "IR cameras often show up in the red channel. Auto detect picks the channel where the board stands out most.",
+          auto: { label: "Auto detect", disabled: !picture, hint: noPicture, run: () => c.detect("channel") } },
+        { kind: "slider", label: "Trust", icon: "scale", min: 0, max: 2, step: 0.1, get: () => cam.trust, set: (v) => { cam.trust = v; setAutoField(cam, "trust", false); },
+          hint: "How much this camera counts when the cameras disagree. Auto detect rates how clearly the board squares show.",
+          auto: { label: "Auto detect", disabled: !picture, hint: noPicture, run: () => c.detect("trust") } },
+        { kind: "slider", label: "Field of view", icon: "eye", min: 30, max: 110, step: 1, get: () => cam.fov, set: (v) => { cam.fov = v; setAutoField(cam, "fov", false); }, fmt: (v) => `${v}°`,
+          hint: "Vertical angle of the lens. Used to place the camera in the room from its board corners. Auto detect reads it from the corners.",
+          auto: { label: "Auto detect", run: () => c.detect("fov") } },
         ...cornerItems(c),
       ];
     } },

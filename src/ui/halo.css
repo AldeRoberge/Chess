@@ -167,3 +167,27 @@
 /* nested rows sit under their section */
 .halo-item.halo-d1{padding-left:34px}
 .halo-item.halo-d2{padding-left:58px;padding-top:6px;padding-bottom:6px}
+
+/* board step: one tab per camera, its status flags under the name */
+.cam-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.cam-tab{display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 12px;min-width:200px;padding:8px 12px 8px 14px;border:1px solid var(--line-hi);border-left:3px solid var(--ok);background:color-mix(in srgb,var(--ink-0) 60%,transparent);color:var(--text);font:600 var(--t-sm,.9em)/1.2 var(--font-ui);text-align:left;cursor:pointer}
+.cam-tab.warn{border-left-color:var(--amber)}
+.cam-tab.fail{border-left-color:var(--bad)}
+.cam-tab:hover,.cam-tab:focus-visible{border-color:var(--signal);outline:none}
+.cam-tab.sel{background:linear-gradient(90deg,var(--signal-hi),var(--signal));border-color:var(--signal-hi);color:var(--ink-0)}
+.cam-tab-name{display:flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cam-tab.sel .cam-tab-name .sys-ico{color:var(--ink-0)}
+.cam-flags{display:inline-flex;gap:4px;justify-self:end}
+.cam-tab-status{grid-column:1/-1;font-weight:400;color:var(--text-dim)}
+.cam-tab.sel .cam-tab-status{color:var(--ink-0)}
+.cam-flag{display:inline-grid;place-items:center;width:20px;height:20px;border:1px solid var(--line-hi);border-radius:3px;color:var(--text-dim);opacity:.4}
+.cam-flag.on{opacity:1;color:var(--ok)}
+.cam-flag.bad.on{color:var(--bad)}
+.cam-tab.sel .cam-flag{border-color:color-mix(in srgb,var(--ink-0) 45%,transparent);color:var(--ink-0)}
+.cam-tab.sel .cam-flag.bad.on{color:var(--bad);background:#fff}
+
+/* auto detect: a small button on a value row */
+.halo-auto{display:inline-flex;align-items:center;gap:6px;flex:none;padding:4px 9px;border:1px solid var(--line-hi);border-radius:var(--radius);background:var(--ink-2);color:var(--signal);font:600 var(--t-sm,.85em) var(--font-ui);cursor:pointer;white-space:nowrap}
+.halo-auto:hover:not(:disabled),.halo-auto:focus-visible{border-color:var(--signal);outline:none}
+.halo-auto:disabled{opacity:.5;cursor:not-allowed}
+.halo-item.sel .halo-auto{background:var(--ink-0);border-color:transparent;color:var(--signal-hi)}

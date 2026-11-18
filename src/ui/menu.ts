@@ -1,10 +1,13 @@
+/** A button on a value row that fills the value automatically. */
+export interface AutoAction { label: string; run(): void; disabled?: boolean; hint?: string }
+
 export type Item =
   | { kind: "action"; label: string; run(): void; disabled?: boolean; hint?: string; danger?: boolean; icon?: string }
   /** `verbs` replaces the On/Off value with the action a click performs (e.g. "Disable" while on). */
   | { kind: "toggle"; label: string; get(): boolean; set(v: boolean): void; hint?: string; icon?: string; verbs?: { on: string; off: string }; remove?: { label: string; run(): void } }
-  | { kind: "choice"; label: string; options: { value: string; label: string }[]; get(): string; set(v: string): void; hint?: string; icon?: string }
-  /** `visual` is a picture under the slider row, refreshed by `update` as the value moves. */
-  | { kind: "slider"; label: string; min: number; max: number; step: number; get(): number; set(v: number): void; fmt?: (v: number) => string; hint?: string; icon?: string; visual?: { el: HTMLElement; update(v: number): void } }
+  | { kind: "choice"; label: string; options: { value: string; label: string }[]; get(): string; set(v: string): void; hint?: string; icon?: string; auto?: AutoAction }
+  /** `visual` is a picture under the slider row, refreshed by `update` as the value moves. `auto` adds an auto-detect button to the row. */
+  | { kind: "slider"; label: string; min: number; max: number; step: number; get(): number; set(v: number): void; fmt?: (v: number) => string; hint?: string; icon?: string; auto?: AutoAction; visual?: { el: HTMLElement; update(v: number): void } }
   | { kind: "text"; label: string; get(): string; set(v: string): void; hint?: string; icon?: string; /** Masks the value (API keys). */ secret?: boolean }
   /** A collapsible section: its children are listed right under it while open. `summary` shows on the closed row. */
   | { kind: "group"; label: string; icon?: string; summary?: string; get(): boolean; set(v: boolean): void; children: Item[] }

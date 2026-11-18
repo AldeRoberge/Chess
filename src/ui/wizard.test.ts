@@ -4,7 +4,7 @@ import type { Env } from "../setup/system";
 import { virtualTable } from "../sim/virtualTable";
 import { tick } from "../test/helpers";
 import { fmtCorners } from "../plugins/shared";
-import { RIGS, rigCorners } from "../sim/rigs";
+import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
 import { SetupWizard, type WizardDeps } from "./wizard";
 import { STEPS, sceneStateFor } from "./wizardSteps";
 
@@ -16,7 +16,8 @@ function deps(over: Partial<WizardDeps> = {}) {
 }
 const make = (cfg: SetupConfig = defaultSetup(), over: Partial<WizardDeps> = {}) => { const d = deps(over), w = new SetupWizard(cfg, d); return { w, d: d as any }; };
 const labels = (w: SetupWizard) => [...w.root.querySelectorAll(".halo-item")].map((li) => li.querySelector(".halo-label")!.textContent);
-const values = (w: SetupWizard) => [...w.root.querySelectorAll(".halo-item")].map((li) => li.querySelector(".halo-value")?.textContent ?? "");
+// a row's shown value: a choice shows its selected option, everything else its value text
+const values = (w: SetupWizard) => [...w.root.querySelectorAll(".halo-item")].map((li) => li.querySelector("select")?.selectedOptions[0]?.textContent ?? li.querySelector(".halo-value")?.textContent ?? "");
 const press = (w: SetupWizard, ...keys: string[]) => keys.forEach((k) => w.handle(k as any));
 const go = (w: SetupWizard, step: number) => { w.step = step; w.zone = "pane"; w.focus = 0; (w as any).enterStep(); (w as any).render(); };
 const focused = (w: SetupWizard) => w.root.querySelector(".halo-item.sel .halo-label")?.textContent;
@@ -135,26 +136,98 @@ describe("cameras step", () => {
   });
 });
 
+/** The camera tabs on the board step. */
+const tab = (w: SetupWizard, i: number) => w.root.querySelectorAll<HTMLButtonElement>(".cam-tab")[i];
+/** The list row with this label, on the board step. */
+const row = (w: SetupWizard, label: string) => [...w.root.querySelectorAll<HTMLElement>(".halo-item")].find((li) => li.querySelector(".halo-label")!.textContent === label)!;
+/** The mock canvas keeps no pixels: make its read-back return the picture last put on it (what the board reads before the overlay). */
+const keepPixels = (w: SetupWizard) => {
+  const ctx = w.root.querySelector<HTMLCanvasElement>(".halo-canvas")!.getContext("2d")! as any;
+  let last: ImageData | null = null;
+  const put = ctx.putImageData.bind(ctx);
+  ctx.putImageData = (img: ImageData, x: number, y: number) => { last = img; put(img, x, y); };
+  ctx.getImageData = () => last ?? ctx.createImageData(FRAME_W, FRAME_H);
+};
+
 describe("board step", () => {
   it("shows an informational placeholder when there are no cameras", () => { const cfg = defaultSetup(); cfg.cameras = []; const { w } = make(cfg); go(w, 2); expect(labels(w)).toEqual(["No cameras"]); });
-  it("edits channel, trust and each corner slider; reset restores the rig's corners; choosing another camera switches the sliders", () => {
-    const { w } = make(); go(w, 2);
-    // corners start folded: one row for the section, summarising the count
-    expect(labels(w)).toEqual(["Camera", "Channel", "Trust", "Field of view", "Corners"]);
-    expect(values(w)[4]).toBe("4 corners");
-    select(w, "Channel"); press(w, "right"); expect(w.cfg.cameras[0].channel).toBe("red"); expect(values(w)[1]).toContain("Red");
-    press(w, "left", "left"); expect(w.cfg.cameras[0].channel).toBe("blue"); press(w, "right"); expect(values(w)[1]).toContain("Gray");
+  it("edits channel, trust and each corner slider; reset restores the rig's corners; picking another camera's tab switches the rows", () => {
+    const { w } = make(); w.mount(document.body); go(w, 2);
+    // the camera is picked on the tabs above the list; corners start folded: one row for the section, summarising the count
+    expect(labels(w)).toEqual(["Channel", "Trust", "Field of view", "Corners"]);
+    expect(values(w)[3]).toBe("4 corners");
+    select(w, "Channel"); press(w, "right"); expect(w.cfg.cameras[0].channel).toBe("red"); expect(values(w)[0]).toContain("Red");
+    press(w, "left", "left"); expect(w.cfg.cameras[0].channel).toBe("blue"); press(w, "right"); expect(values(w)[0]).toContain("Gray");
     select(w, "Trust"); press(w, "right"); expect(w.cfg.cameras[0].trust).toBeCloseTo(1.1);
-    select(w, "Field of view"); press(w, "right"); expect(w.cfg.cameras[0].fov).toBe(43); expect(values(w)[3]).toBe(V("43°")); expect(w.root.querySelector(".halo-hint")!.textContent).toContain("place the camera");
+    select(w, "Field of view"); press(w, "right"); expect(w.cfg.cameras[0].fov).toBe(43); expect(values(w)[2]).toBe(V("43°")); expect(w.root.querySelector(".halo-hint")!.textContent).toContain("place the camera");
     // opening the section lists reset, then each corner with its own x and y
     select(w, "Corners"); press(w, "select");
-    expect(labels(w).slice(4, 8)).toEqual(["Corners", "Reset corners", "a8", "Across (x)"]); expect(labels(w)).toHaveLength(5 + 1 + 4 * 3);
+    expect(labels(w).slice(3, 7)).toEqual(["Corners", "Reset corners", "a8", "Across (x)"]); expect(labels(w)).toHaveLength(4 + 1 + 4 * 3);
     const before = w.cfg.cameras[0].corners; select(w, "Across (x)"); press(w, "right"); expect(w.cfg.cameras[0].corners).not.toBe(before);
-    w.focus = 14; w.zone = "pane"; (w as any).renderList(); expect(focused(w)).toBe("Down (y)"); press(w, "left"); // h1, y
+    w.focus = 13; w.zone = "pane"; (w as any).renderList(); expect(focused(w)).toBe("Down (y)"); press(w, "left"); // h1, y
     select(w, "Reset corners"); press(w, "select"); expect(w.cfg.cameras[0].corners).toBe(fmtCorners(rigCorners(RIGS.A)));
-    select(w, "Camera"); press(w, "right"); expect(w.state.boardCam).toBe(1); expect(values(w)[0]).toContain("B");
+    tab(w, 1).click(); expect(w.state.boardCam).toBe(1); expect(tab(w, 1).textContent).toContain("B · Virtual camera B");
     w.cfg.cameras[1].corners = "garbage"; (w as any).renderList(); select(w, "Across (x)"); press(w, "right"); // recovers from unparsable corners
     expect(w.cfg.cameras[1].corners.split(";")).toHaveLength(4);
+  });
+  it("has no Camera arrows: one tab per camera, named, with the selected one marked", () => {
+    const { w } = make(); go(w, 2);
+    expect(labels(w)).not.toContain("Camera");
+    const tabs = () => [...w.root.querySelectorAll<HTMLButtonElement>(".cam-tab")];
+    expect(tabs().map((t) => t.querySelector(".cam-tab-name")!.textContent)).toEqual(["A · Virtual camera A", "B · Virtual camera B"]);
+    expect(w.root.querySelector(".cam-tabs")!.getAttribute("role")).toBe("tablist");
+    expect(tabs()[0].getAttribute("aria-selected")).toBe("true"); expect(tabs()[1].getAttribute("aria-selected")).toBe("false");
+    tabs()[1].click(); expect(w.state.boardCam).toBe(1); expect(tab(w, 1).getAttribute("aria-selected")).toBe("true"); expect(tabs()[0].getAttribute("aria-selected")).toBe("false");
+    tab(w, 1).click(); expect(w.state.boardCam).toBe(1); // already selected: nothing changes
+    expect(w.root.querySelector(".halo-canvas")).toBeTruthy(); // the picture sits under the tabs
+  });
+  it("arrow keys on a focused tab pick the neighbouring camera and wrap round", () => {
+    const { w } = make(); w.mount(document.body); go(w, 2);
+    const key = (el: Element, k: string) => el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+    key(tab(w, 0), "ArrowRight"); expect(w.state.boardCam).toBe(1);
+    key(tab(w, 1), "ArrowRight"); expect(w.state.boardCam).toBe(0);
+    key(tab(w, 0), "ArrowLeft"); expect(w.state.boardCam).toBe(1);
+    key(tab(w, 1), "ArrowDown"); expect(w.state.boardCam).toBe(1); // only left and right move between tabs
+    w.destroy();
+  });
+  it("tab status: configured, ready, auto-detected placement, and performing badly when the squares do not stand out", () => {
+    const { w } = make(); go(w, 2); keepPixels(w); const status = (i: number) => tab(w, i).querySelector(".cam-tab-status")!.textContent;
+    expect(status(0)).toBe("Ready"); expect(tab(w, 0).classList.contains("ok")).toBe(true);
+    expect(tab(w, 0).querySelector('[aria-label="Configured: yes"]')).toBeTruthy(); expect(tab(w, 0).querySelector('[aria-label="Placement auto-detected: no"]')).toBeTruthy();
+    w.cfg.cameras[0].autoFields = ["fov"]; w.cfg.cameras[0].online = false; (w as any).render();
+    expect(status(0)).toBe("Offline"); expect(tab(w, 0).classList.contains("warn")).toBe(true);
+    w.cfg.cameras[0].online = true; w.cfg.cameras[0].autoFields = ["fov"]; (w as any).render(); expect(status(0)).toBe("Ready · placement auto");
+    // corners all on one pixel: every square reads the same, so the board does not stand out at all
+    w.cfg.cameras[1].corners = "5,5;5,5;5,5;5,5"; tab(w, 1).click(); w.frame(1000); (w as any).render();
+    expect(status(1)).toBe("Performing badly"); expect(tab(w, 1).classList.contains("fail")).toBe(true); expect(tab(w, 1).querySelector('[aria-label="Performing badly: yes"]')).toBeTruthy();
+    w.cfg.cameras[1].corners = fmtCorners(rigCorners(RIGS.B)); w.frame(2000); (w as any).render(); expect(status(1)).toBe("Ready");
+  });
+  it("a webcam without a picture shows No signal, and its auto detect for channel and trust is disabled", () => {
+    const cfg = defaultSetup(); cfg.cameras = [webcamSetup("d1", "Cam One", "A")];
+    const { w } = make(cfg); w.mount(document.body); go(w, 2); w.frame(1000); (w as any).render();
+    expect(tab(w, 0).querySelector(".cam-tab-status")!.textContent).toBe("No signal"); expect(tab(w, 0).classList.contains("fail")).toBe(true);
+    expect(row(w, "Channel").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(true);
+    expect(row(w, "Trust").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(true);
+    expect(row(w, "Field of view").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(false); // from the corners: no picture needed
+    row(w, "Trust").querySelector<HTMLButtonElement>(".halo-auto")!.click(); expect(w.cfg.cameras[0].autoFields ?? []).not.toContain("trust"); // disabled: nothing happens
+  });
+  it("auto detect fills the field of view from the board corners and channel and trust from the picture; a hand edit clears its flag", () => {
+    const { w } = make(); w.mount(document.body); go(w, 2); keepPixels(w);
+    // the lens angle is read back from the corners of the rig's board (whole-pixel corners: within a couple of degrees)
+    row(w, "Field of view").querySelector<HTMLButtonElement>(".halo-auto")!.click();
+    expect(Math.abs(w.cfg.cameras[0].fov - RIGS.A.fovY)).toBeLessThanOrEqual(2); expect(w.cfg.cameras[0].autoFields).toEqual(["fov"]);
+    expect(w.state.autoMsg).toContain("Field of view set to"); expect(w.root.querySelector(".halo-hint")!.textContent).toContain("Field of view set to");
+    expect(tab(w, 0).querySelector('[aria-label="Placement auto-detected: yes"]')).toBeTruthy();
+    // channel and trust need the picture: draw it, then the buttons are live
+    w.frame(1000); (w as any).render();
+    row(w, "Channel").querySelector<HTMLButtonElement>(".halo-auto")!.click(); expect(w.cfg.cameras[0].channel).toBe("luma"); expect(w.cfg.cameras[0].autoFields).toContain("channel");
+    row(w, "Trust").querySelector<HTMLButtonElement>(".halo-auto")!.click(); expect(w.cfg.cameras[0].trust).toBeGreaterThanOrEqual(0); expect(w.cfg.cameras[0].trust).toBeLessThanOrEqual(2); expect(w.cfg.cameras[0].autoFields).toContain("trust");
+    expect(w.state.autoMsg).toContain("Trust set to");
+    // setting trust by hand takes it off the auto-detected list
+    select(w, "Trust"); press(w, "right"); expect(w.cfg.cameras[0].autoFields).not.toContain("trust"); expect(w.cfg.cameras[0].autoFields).toContain("fov");
+    // the Enter key on a focused auto button presses it natively, not through the wizard
+    const btn = row(w, "Field of view").querySelector<HTMLButtonElement>(".halo-auto")!, enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    btn.dispatchEvent(enter); expect(enter.defaultPrevented).toBe(false);
   });
 });
 
@@ -183,7 +256,7 @@ describe("board preview and corner dragging", () => {
     const ctx = w.root.querySelector<HTMLCanvasElement>(".halo-canvas")!.getContext("2d")!, text = vi.spyOn(ctx, "fillText"), draw = vi.spyOn(ctx, "drawImage");
     w.frame(0); expect(text).toHaveBeenCalledWith("No signal", expect.any(Number), expect.any(Number));
     await tick(); expect(d.openCamera).toHaveBeenCalledWith("d1"); w.frame(16); expect(draw).toHaveBeenCalled();
-    const stop = vi.fn(); (w as any).stream = { getTracks: () => [{ stop }] }; select(w, "Camera"); press(w, "right"); (w as any).ensureVideo(); expect(stop).toHaveBeenCalled(); expect((w as any).streamFor).toBe("d2");
+    const stop = vi.fn(); (w as any).stream = { getTracks: () => [{ stop }] }; tab(w, 1).click(); expect(stop).toHaveBeenCalled(); expect((w as any).streamFor).toBe("d2");
     go(w, 0); go(w, 2); (w as any).stopStream();
   });
   it("keeps an already-open stream for the same device, discards a stream that arrives for a camera no longer selected, and survives open failures", async () => {

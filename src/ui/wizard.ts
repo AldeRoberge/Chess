@@ -2,12 +2,13 @@ import { SceneRenderer } from "../scene/renderer";
 import { applySensor, renderLuminance } from "../sim/render3d";
 import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
 import { virtualTable } from "../sim/virtualTable";
-import type { SetupConfig } from "../setup/config";
+import { camHealth, setAutoField, type AutoField, type CameraSetup, type SetupConfig } from "../setup/config";
+import { CHANNEL_NAME, boardSeparation, detectChannel, estimateFov, trustFor } from "../setup/autodetect";
 import type { CameraDevice } from "../setup/devices";
 import { evaluateEnv, runCheckAction, type Env } from "../setup/system";
 import { fmtCorners, parseCorners } from "../plugins/shared";
 import { CornerPicker } from "./cornerPicker";
-import { activate, adjust, isFocusable, valueText, type Item } from "./menu";
+import { activate, adjust, isFocusable, valueText, type AutoAction, type Item } from "./menu";
 import { GamepadPoller, keyToAction, type NavAction } from "./nav";
 import type { VoiceSettings } from "../narrator/voice";
 import type { Sfx } from "./sfx";
@@ -66,10 +67,12 @@ export class SetupWizard {
   private scr = new SceneRenderer();
   private lastFrame = 0;
   private onKey = (e: KeyboardEvent) => this.key(e);
+  /** When the board picture was last read (ms, from the frame clock): readings are taken a few times a second, not every frame. */
+  private measuredAt = -Infinity;
 
   constructor(public cfg: SetupConfig, private deps: WizardDeps, startStep = 0) {
     this.step = Math.max(0, Math.min(STEPS.length - 1, Math.floor(startStep) || 0));
-    this.state = { checks: null, detected: [], scanning: false, boardCam: 0, scenePreview: sceneStateFor(cfg), tests: {}, groups: {} };
+    this.state = { checks: null, detected: [], scanning: false, boardCam: 0, scenePreview: sceneStateFor(cfg), tests: {}, groups: {}, frame: null, board: {}, autoMsg: "" };
     this.canvas.width = FRAME_W; this.canvas.height = FRAME_H;
     const brand = el("div", "halo-brand"); brand.innerHTML = `<span class="halo-brand-ic">${icon("knight", 22)}</span>`; brand.append(el("span", "halo-logo", "Chess XP"));
     const head = el("header"); head.append(brand, this.progress);
@@ -129,6 +132,7 @@ export class SetupWizard {
       finish: () => { this.deps.sfx.play("launch"); this.deps.onFinish({ ...this.cfg, completed: true }); },
       go: (n) => { this.step = n; this.focus = 0; this.zone = "pane"; this.enterStep(); this.render(); },
       syncScenePreview: () => { this.state.scenePreview = sceneStateFor(this.cfg); },
+      detect: (f) => this.detect(f),
     };
   }
 
@@ -158,6 +162,10 @@ export class SetupWizard {
   private key(e: KeyboardEvent) {
     if ((e.target as HTMLElement | null)?.tagName === "INPUT") { if (e.key === "Escape" || e.key === "Enter") (e.target as HTMLElement).blur(); return; }
     if (e.key === "Delete" && this.zone === "pane") { const it = this.focusables()[this.focus]?.it; if (it?.kind === "toggle" && it.remove) { e.preventDefault(); this.removeItem(it.remove.run); return; } }
+    // the camera tabs and the auto-detect buttons are real buttons: arrows pick a tab, Enter / Space press the focused button
+    const onTab = (e.target as HTMLElement | null)?.closest?.(".cam-tabs");
+    if (onTab && (e.key === "ArrowLeft" || e.key === "ArrowRight")) { e.preventDefault(); const n = this.cfg.cameras.length; this.selectCamera((this.state.boardCam + (e.key === "ArrowRight" ? 1 : -1) + n) % n); return; }
+    if (((e.target as HTMLElement | null)?.closest?.(".cam-tab, .halo-auto")) && (e.key === "Enter" || e.key === " ")) return;
     const a = keyToAction(e.key);
     if (a) { e.preventDefault(); this.handle(a); }
   }
@@ -209,12 +217,13 @@ export class SetupWizard {
     if (!keepStream) this.stopStream();
     this.picker = null;
     this.state.scenePreview = sceneStateFor(this.cfg);
-    this.extra.replaceChildren();
+    this.extra.replaceChildren(); // render() fills it: the camera tabs and the picture on the board step
+    if (!keepStream) this.state.autoMsg = "";
     const id = STEPS[this.step].id;
     if (id === "briefing" && !this.state.checks) void this.runChecks();
     if (id === "board" && this.cfg.cameras.length) {
       this.state.boardCam = Math.min(this.state.boardCam, this.cfg.cameras.length - 1);
-      this.extra.append(this.canvas);
+      this.measuredAt = -Infinity;
       this.ensureVideo();
     }
     if (id === "scenes") { this.canvas.width = 640; this.canvas.height = 360; this.extra.append(this.canvas); }
@@ -254,11 +263,12 @@ export class SetupWizard {
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0.016; this.lastFrame = now;
     const id = STEPS[this.step].id, ctx = this.canvas.getContext("2d")!;
     if (id === "scenes") this.scr.draw(ctx, this.canvas.width, this.canvas.height, this.state.scenePreview, now, dt);
-    else if (id === "board" && this.cfg.cameras.length) this.drawBoardPreview(ctx);
+    else if (id === "board" && this.cfg.cameras.length) this.drawBoardPreview(ctx, now);
   }
 
-  private drawBoardPreview(ctx: CanvasRenderingContext2D) {
+  private drawBoardPreview(ctx: CanvasRenderingContext2D, now: number) {
     const cam = this.cfg.cameras[this.state.boardCam];
+    const live = cam.kind === "virtual" || (!!this.video && this.video.readyState >= 2);
     if (cam.kind === "virtual") {
       const key = `${cam.rig}|${virtualTable.sceneKey}`;
       if (key !== this.virtualKey) { this.virtualKey = key; this.virtualLum = renderLuminance(virtualTable.scene3d(), { width: FRAME_W, height: FRAME_H, rig: RIGS[cam.rig] }); }
@@ -268,6 +278,8 @@ export class SetupWizard {
       ctx.putImageData(img, 0, 0);
     } else if (this.video) ctx.drawImage(this.video, 0, 0, FRAME_W, FRAME_H);
     else { ctx.fillStyle = "#04101c"; ctx.fillRect(0, 0, FRAME_W, FRAME_H); ctx.fillStyle = "#6fb8ff"; ctx.fillText("No signal", 20, 30); }
+    // read the bare picture before the overlay goes on: auto detect and the tab's status measure it
+    if (now - this.measuredAt >= 400) { this.measuredAt = now; this.measure(cam, ctx, live); }
     const pts = parseCorners(cam.corners);
     if (!pts) return;
     if (!this.picker || this.picker.active < 0) this.picker = new CornerPicker(pts, FRAME_W, FRAME_H);
@@ -290,8 +302,86 @@ export class SetupWizard {
     this.renderNav();
     this.renderList();
     if (this.stepId === "briefing") this.renderSystem();
+    if (this.stepId === "board") this.renderBoard();
     if (this.reported !== this.stepId) { this.reported = this.stepId; this.deps.onStep?.(this.reported); }
     this.deps.onProgress?.(this.cfg, this.step);
+  }
+
+  // ---- board: one tab per camera with its status, the board picture under them, and the readings behind the status
+  /** Reads the board picture's squares (before the overlay) so the camera's tab and auto detect can use them. */
+  private measure(cam: CameraSetup, ctx: CanvasRenderingContext2D, live: boolean) {
+    if (!live) { this.state.frame = null; this.state.board[cam.id] = { signal: false }; return; }
+    const img = ctx.getImageData(0, 0, FRAME_W, FRAME_H), pts = parseCorners(cam.corners);
+    this.state.frame = img;
+    this.state.board[cam.id] = { signal: true, separation: pts ? boardSeparation(img, pts, cam.channel) : undefined };
+  }
+
+  private selectCamera(i: number) {
+    if (i === this.state.boardCam || !this.cfg.cameras[i]) return;
+    this.state.boardCam = i; this.picker = null; this.state.frame = null; this.measuredAt = -Infinity; this.state.autoMsg = "";
+    this.deps.sfx.play("tick"); this.ensureVideo(); this.render();
+  }
+
+  private renderBoard() {
+    const cams = this.cfg.cameras;
+    if (!cams.length) { this.extra.replaceChildren(); return; }
+    const tabs = el("div", "cam-tabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Cameras");
+    cams.forEach((cam, i) => {
+      const sel = i === this.state.boardCam, h = camHealth(cam, this.state.board[cam.id]);
+      const b = el("button", `cam-tab ${h.tone}${sel ? " sel" : ""}`); b.type = "button";
+      b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(sel)); b.tabIndex = sel ? 0 : -1;
+      b.setAttribute("aria-label", `${cam.id} · ${cam.label}: ${h.text}`);
+      const flags = el("span", "cam-flags");
+      flags.append(
+        this.camFlag("setup", "Configured", h.configured, "A device is chosen and the board corners are marked."),
+        this.camFlag("wand", "Placement auto-detected", h.auto, "The field of view was measured from the board corners."),
+        this.camFlag("check", "Ready", h.ready, "Online, configured and performing well."),
+        this.camFlag("warn", "Performing badly", h.bad, "No signal, or the board squares barely stand out in this camera's picture.", true),
+      );
+      const name = el("span", "cam-tab-name"); name.innerHTML = `<span class="sys-ico">${icon(cam.kind === "virtual" ? "world" : "camera", 15)}</span>`; name.append(`${cam.id} · ${cam.label}`);
+      b.append(name, flags, el("span", "cam-tab-status", h.text));
+      b.onclick = () => this.selectCamera(i);
+      tabs.append(b);
+    });
+    this.extra.replaceChildren(tabs, this.canvas);
+  }
+
+  private camFlag(name: string, label: string, on: boolean, body: string, bad = false): HTMLElement {
+    const f = el("span", `cam-flag${on ? " on" : ""}${bad && on ? " bad" : ""}`);
+    f.innerHTML = icon(name, 13);
+    f.setAttribute("aria-label", `${label}: ${on ? "yes" : "no"}`);
+    f.dataset.tip = label; f.dataset.tipBody = body;
+    return f;
+  }
+
+  /** Fills one field of the board camera: channel and trust from its picture, the field of view from the board corners. Says what it did. */
+  private detect(field: AutoField) {
+    const cam = this.cfg.cameras[this.state.boardCam], img = this.state.frame, pts = parseCorners(cam.corners);
+    let msg: string, ok = true;
+    if (field === "fov") {
+      const fov = pts ? estimateFov(pts, FRAME_W, FRAME_H) : null;
+      if (fov === null) { ok = false; msg = "Field of view not detected: the board corners don't show two pairs of converging edges. Drag the corners onto the board first."; }
+      else { cam.fov = fov; setAutoField(cam, "fov", true); msg = `Field of view set to ${fov}° from the board's edges.`; }
+    } else if (!pts) { ok = false; msg = "Mark the board corners first: the picture is measured inside them."; }
+    else if (!img) { ok = false; msg = "No live picture to measure: check that this camera is online and has a signal."; }
+    else if (field === "channel") {
+      const r = detectChannel(img, pts);
+      cam.channel = r.channel; setAutoField(cam, "channel", true);
+      msg = `Channel set to ${CHANNEL_NAME[r.channel]}: the board stands out most there.`;
+    } else {
+      cam.trust = trustFor(boardSeparation(img, pts, cam.channel)); setAutoField(cam, "trust", true);
+      msg = `Trust set to ${cam.trust.toFixed(1)} from how clearly the board squares show in ${CHANNEL_NAME[cam.channel]}.`;
+    }
+    this.state.autoMsg = msg; this.deps.sfx.play(ok ? "ok" : "deny"); this.render();
+  }
+
+  private autoButton(a: AutoAction): HTMLButtonElement {
+    const b = el("button", "halo-auto"); b.type = "button"; b.disabled = !!a.disabled;
+    b.innerHTML = `${icon("wand", 14)}<span>${a.label}</span>`;
+    if (a.disabled && a.hint) { b.dataset.tip = "Unavailable"; b.dataset.tipBody = a.hint; }
+    else { b.dataset.tip = a.label; b.dataset.tipBody = "Fills this value from the camera's picture or its board corners."; }
+    b.onclick = (ev) => { ev.stopPropagation(); if (!a.disabled) a.run(); };
+    return b;
   }
 
   private open = new Set<string>();
@@ -409,6 +499,7 @@ export class SetupWizard {
           s.querySelector(".halo-num")!.textContent = valueText(it);
           li.append(s);
         } else li.append(el("span", "halo-value", valueText(it)));
+        if ((it.kind === "slider" || it.kind === "choice") && it.auto) li.append(this.autoButton(it.auto));
         if (it.kind === "action" && it.disabled) li.classList.add("disabled");
         // a disabled action explains itself on hover (the bottom hint line does the same for keyboard focus)
         if (it.kind === "action" && it.disabled && it.hint) { li.dataset.tip = "Unavailable"; li.dataset.tipBody = it.hint; }
@@ -423,7 +514,7 @@ export class SetupWizard {
       this.list.append(li);
     });
     const cur = this.focusables()[this.focus]?.it;
-    this.hint.textContent = this.zone === "pane" && cur && "hint" in cur && cur.hint ? cur.hint : "";
+    this.hint.textContent = this.state.autoMsg || (this.zone === "pane" && cur && "hint" in cur && cur.hint ? cur.hint : "");
   }
 }
 
