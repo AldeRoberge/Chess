@@ -102,7 +102,7 @@ export const objRows = (o: Record<string, unknown> | null | undefined): DetailRo
 /** Label / value rows filling a rectangle; rows that do not fit are dropped, long values are cut. */
 export function drawRows(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rows: DetailRow[]) {
   ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-  ctx.font = `500 12px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.font = `500 12px "Chakra Petch",system-ui,sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   const lh = 15, fit = Math.max(0, Math.floor((h - 6) / lh)), lab = Math.min(110, w * 0.38);
   rows.slice(0, fit).forEach(([l, v, c], i) => {
     const yy = y + 4 + 11 + i * lh;

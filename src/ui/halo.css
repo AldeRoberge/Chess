@@ -13,7 +13,7 @@
 .halo-brand{display:flex;align-items:center;gap:10px}
 .halo-brand-ic .brand-knight{width:30px;height:30px}.halo-brand-ic{display:inline-grid;place-items:center;color:var(--signal-hi)}
 .halo-logo{font:700 var(--t-xl)/1 var(--font-ui);letter-spacing:.02em;color:var(--signal-hi)}
-.halo-progress{display:flex;align-items:center;gap:7px;font:400 var(--t-sm) var(--font-mono);color:var(--text-dim)}
+.halo-progress{display:flex;align-items:center;gap:7px;font:400 var(--t-sm) var(--font-ui);color:var(--text-dim)}
 .halo-progress i{width:8px;height:8px;border-radius:50%;background:var(--line-hi);opacity:.5;transition:all .25s cubic-bezier(.2,.7,.2,1)}
 .halo-progress i.done{background:var(--signal);opacity:1}
 .halo-progress i.cur{width:22px;border-radius:4px;background:var(--signal-hi);opacity:1;box-shadow:0 0 10px color-mix(in srgb,var(--signal) 53%,transparent)}
@@ -57,12 +57,12 @@
 .halo-item input:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
 .halo-select{background:var(--ink-0);border:1px solid var(--line-hi);color:var(--signal);padding:5px 9px;font:400 var(--t-md) var(--font-ui);min-width:200px;max-width:62%;border-radius:3px;cursor:pointer;margin-left:auto}
 .halo-select:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
-.halo-item input{background:var(--ink-0);border:1px solid var(--line-hi);color:var(--text);padding:5px 9px;font:400 var(--t-md) var(--font-mono);min-width:260px;border-radius:3px}
+.halo-item input{background:var(--ink-0);border:1px solid var(--line-hi);color:var(--text);padding:5px 9px;font:400 var(--t-md) var(--font-ui);min-width:260px;border-radius:3px}
 .halo-extra{margin:6px 0 16px}.halo-extra:empty{margin:0}
 .halo-canvas{display:block;width:100%;max-width:640px;border:1px solid var(--line-hi);background:var(--ink-0);touch-action:none}
 .halo-hint{margin-top:14px;color:var(--amber);font:400 var(--t-md)/1.5 var(--font-ui);min-height:1.5em;max-width:62ch}
 .halo-keys{display:flex;gap:28px;padding:10px 32px 14px;color:var(--text-dim);font-size:var(--t-sm);border-top:1px solid var(--line);background:color-mix(in srgb,var(--ink-0) 80%,transparent)}
-.halo-keys span{display:inline-flex;align-items:center;gap:4px}.halo-keys kbd{min-width:22px;padding:0 6px;text-align:center;border:1px solid var(--line-hi);border-bottom-width:2px;border-radius:5px;background:var(--ink-2);color:var(--text);font:500 11px/18px var(--font-mono)}.halo-keys kbd:first-child{margin-right:0}
+.halo-keys span{display:inline-flex;align-items:center;gap:4px}.halo-keys kbd{min-width:22px;padding:0 6px;text-align:center;border:1px solid var(--line-hi);border-bottom-width:2px;border-radius:5px;background:var(--ink-2);color:var(--text);font:500 11px/18px var(--font-ui)}.halo-keys kbd:first-child{margin-right:0}
 
 /* one orchestrated entrance, then stillness */
 @keyframes halo-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}

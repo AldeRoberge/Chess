@@ -76,7 +76,7 @@ const track: NodeSpec<TrackState> = {
     withDetail(ctx, w, h, [140, 140], (pw, ph) => {
       drawBoard(ctx, pw, ph - 20, s.board, { diff: s.res?.diff, fen: s.res?.fen });
       ctx.fillStyle = "#04101c"; ctx.fillRect(0, ph - 20, pw, 20);
-      ctx.fillStyle = s.res?.status === "illegal" ? "#ff5a6e" : "#b9c6e4"; ctx.font = `500 12px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = s.res?.status === "illegal" ? "#ff5a6e" : "#b9c6e4"; ctx.font = `500 12px "Chakra Petch",system-ui,sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
       ctx.fillText(`${s.res?.status ?? "—"}  ${s.res?.history.slice(-1)[0] ?? ""}  ply ${s.res?.ply ?? 0}`, 4, ph - 5);
     }, () => {
       const r = s.res, hist = r?.history ?? [], pairs: string[] = [];
