@@ -35,6 +35,7 @@ import { notify, openBackupPanel } from "./ui/recovery";
 import { virtualTable } from "./sim/virtualTable";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
+import { buildBotPlay } from "./setup/botPlay";
 import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
@@ -65,8 +66,14 @@ export function boot(root: HTMLElement): Boot {
     recovered = listBackups()[0] ?? null;
     if (recovered) try { graph.load(recovered.graph); } catch { recovered = null; for (const id of [...graph.nodes.keys()]) graph.removeNode(id); }
   }
-  const setup = loadSetup();
-  if (!graph.nodes.size) buildGraphFromConfig(graph, setup ?? defaultSetup());
+  let setup = loadSetup();
+  if (!graph.nodes.size) {
+    if (!setup && !loadPrefs().draft) {
+      // First run: skip the guided setup and sit the player down against Stockfish (simulated, mouse, White). Setup stays reachable from the top bar.
+      const r = buildBotPlay(registry, { start: "me-white", presence: "simulated", elo: 1200 }, null);
+      graph.load(r.graph); saveSetup(r.setup); setup = r.setup;
+    } else buildGraphFromConfig(graph, setup ?? defaultSetup());
+  }
   const save = (json: GraphJSON = graph.toJSON()) => { try { localStorage.setItem(KEY, JSON.stringify(json)); } catch { /* quota */ } };
   const edits = new History<GraphJSON>(graph.toJSON());
   let dirty = false;

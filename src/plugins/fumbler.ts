@@ -19,6 +19,7 @@ interface FumbleState {
   mistakes: number;
 }
 
+const placement = (fen: string) => fen.split(" ")[0];
 const rnd = (s: FumbleState) => { s.seed = (s.seed * 1103515245 + 12345) & 0x7fffffff; return s.seed / 0x80000000; };
 
 /** A square next to `to` that is empty and is not the right one: where a distracted hand puts the piece down. */
@@ -55,6 +56,8 @@ const fumbler: NodeSpec<FumbleState> = {
     const t = virtualTable;
     t.seated = true; bus.outline = true;
     if (state.fen === "" && state.step === "idle") state.seed = Number(params.seed);
+    // before the game starts, the table must hold the start position the tracker expects (a table left over from an earlier game would read as illegal)
+    if (g && d && d.phase !== "game" && g.ply === 0 && !t.busy && placement(t.game.fen()) !== placement(g.fen)) t.reset();
     if (!g || !d || d.phase !== "game" || g.over) { bus.reconcile = null; state.step = "idle"; state.ask = null; setFidelity(null); return { events }; }
     if (t.busy) return { events };
     const think = Number(params.thinkMs), bot = bus.botColor;
