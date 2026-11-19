@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { renderLuminance } from "../sim/render3d";
 import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
 import type { Pt } from "../vision/types";
-import { boardSeparation } from "./autodetect";
 import { LABEL_GLYPH, applyBorderLabels, detectBoardCorners, detectCornersByShape, pngBase64 } from "./corners";
 
 function image(paint: (data: Uint8ClampedArray) => void, w = FRAME_W, h = FRAME_H): ImageData {
@@ -76,8 +75,6 @@ function grayImage(lum: Float32Array): ImageData {
 describe("checkerboard shape", () => {
   it("finds an upright board's corners, including a coloured one", () => {
     const img = boardImage(rect, (dark) => (dark ? [50, 50, 50] : [210, 210, 210]));
-    const q = (x0: number, y0: number, x1: number, y1: number) => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
-    for (const c of [q(80, 40, 400, 320), q(80, 40, 358, 282), q(80, -20, 390, 240), q(80, 40, 400, 280), q(80, 0, 400, 320), q(80, 40, 440, 320)]) console.log(c.map((p) => p.y).join(","), boardSeparation(img, c, "luma").toFixed(2));
     const found = detectCornersByShape(img)!;
     expect(found.separation).toBeGreaterThan(1);
     near(found.corners, rect, 8);
