@@ -108,7 +108,7 @@ const aiNarrator: NodeSpec<AiState> = {
   outputs: [{ id: "lines", type: "text" }],
   params: [
     { id: "provider", kind: "select", label: "Commentary engine", options: ["builtin", "openai"], value: "openai" },
-    { id: "aiKey", kind: "text", label: "OpenAI API key", value: "" },
+    { id: "aiKey", kind: "text", label: "OpenAI API key", value: "", secret: true },
     aiModelParam,
     { id: "voices", kind: "select", label: "Commentators", options: ["1", "2"], value: "2" },
     { id: "nameA", kind: "text", label: "Voice A", value: "Jean" },
@@ -168,7 +168,7 @@ const speak: NodeSpec<SpeakState> = {
     { id: "browserA", kind: "text", label: "Voice A", value: "" },
     { id: "browserB", kind: "text", label: "Voice B", value: "" },
     { id: "sepElevenlabs", kind: "separator", label: ELEVENLABS_PROVIDER.label, value: "" },
-    { id: "apiKey", kind: "text", label: "API key", value: "" },
+    { id: "apiKey", kind: "text", label: "API key", value: "", secret: true },
     voiceParamA,
     voiceParamB,
     { id: "model", kind: "text", label: "Model", value: ELEVENLABS_DEFAULTS.model },

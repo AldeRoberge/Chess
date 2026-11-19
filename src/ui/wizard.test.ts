@@ -3,7 +3,7 @@ import { MAX_CAMERAS, defaultSetup, validateSetup, virtualCamera, webcamSetup, t
 import type { Env } from "../setup/system";
 import { virtualTable } from "../sim/virtualTable";
 import { tick } from "../test/helpers";
-import { fmtCorners } from "../plugins/shared";
+import { fmtCorners, parseCorners } from "../plugins/shared";
 import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
 import { BUILD } from "../setup/buildInfo";
 import { SetupWizard, type WizardDeps } from "./wizard";
@@ -227,6 +227,7 @@ describe("board step", () => {
     expect(tab(w, 0).querySelector(".cam-tab-status")!.textContent).toBe("No signal"); expect(tab(w, 0).classList.contains("fail")).toBe(true);
     expect(row(w, "Channel").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(true);
     expect(row(w, "Trust").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(true);
+    expect(row(w, "Corners").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(true);
     expect(row(w, "Field of view").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(false); // from the corners: no picture needed
     row(w, "Trust").querySelector<HTMLButtonElement>(".halo-auto")!.click(); expect(w.cfg.cameras[0].autoFields ?? []).not.toContain("trust"); // disabled: nothing happens
   });
@@ -247,6 +248,30 @@ describe("board step", () => {
     // the Enter key on a focused auto button presses it natively, not through the wizard
     const btn = row(w, "Field of view").querySelector<HTMLButtonElement>(".halo-auto")!, enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
     btn.dispatchEvent(enter); expect(enter.defaultPrevented).toBe(false);
+  });
+  it("auto detect places the corners from the picture, and editing one by hand clears the flag", async () => {
+    const { w } = make(); w.mount(document.body); go(w, 2);
+    expect(row(w, "Corners").querySelector<HTMLButtonElement>(".halo-auto")!.disabled).toBe(true);
+    const [x0, x1, y0, y1] = [80, 400, 40, 320], data = new Uint8ClampedArray(FRAME_W * FRAME_H * 4);
+    for (let y = 0; y < FRAME_H; y++) for (let x = 0; x < FRAME_W; x++) {
+      const i = (y * FRAME_W + x) * 4;
+      let v = 0;
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) {
+        const file = Math.min(7, Math.floor(((x - x0) / (x1 - x0)) * 8)), rank = 8 - Math.min(7, Math.floor(((y - y0) / (y1 - y0)) * 8));
+        v = (file + rank) % 2 === 1 ? 40 : 210;
+      }
+      data[i] = data[i + 1] = data[i + 2] = v; data[i + 3] = 255;
+    }
+    w.state.frame = { width: FRAME_W, height: FRAME_H, data } as ImageData; (w as any).render();
+    const btn = row(w, "Corners").querySelector<HTMLButtonElement>(".halo-auto")!;
+    expect(btn.disabled).toBe(false); expect(btn.dataset.tipBody).toContain("printed");
+    btn.click(); expect(w.state.autoMsg).toContain("Detecting");
+    await tick();
+    const got = parseCorners(w.cfg.cameras[0].corners)!;
+    [[80, 40], [400, 40], [400, 320], [80, 320]].forEach(([x, y], i) => expect(Math.hypot(got[i].x - x, got[i].y - y)).toBeLessThan(8));
+    expect(w.cfg.cameras[0].autoFields).toContain("corners"); expect(values(w)[3]).toBe("auto-detected");
+    select(w, "Corners"); press(w, "select"); select(w, "Across (x)"); press(w, "right");
+    expect(w.cfg.cameras[0].autoFields ?? []).not.toContain("corners");
   });
 });
 

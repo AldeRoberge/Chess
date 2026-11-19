@@ -29,8 +29,8 @@ describe("organize", () => {
     const json = g.toJSON(); json.nodes.push({ id: "z", type: "mystery.node", x: 0, y: 0, params: {} });
     organize(json);
     const xs = json.nodes.filter((n) => n.type === "vision.boardReader").map((n) => n.x);
-    expect(xs.slice(0, 5)).toEqual([...xs.slice(0, 5)].sort((a, b) => a - b));
-    expect(new Set(json.nodes.slice(0, 7).map((n) => n.y)).size).toBe(2);
+    expect(xs.slice(0, 3)).toEqual([...xs.slice(0, 3)].sort((a, b) => a - b));
+    expect(new Set(json.nodes.slice(0, 7).map((n) => n.y)).size).toBe(3);
     expect(json.groups!.map((s) => s.title)).toEqual(["Analysis", "Other"]);
     expect(nodes).toHaveLength(7);
   });

@@ -97,11 +97,11 @@ export class NodeEditor {
     const ico = h("span", "ne-ico"); ico.innerHTML = nodeIcon(n.type, spec.category, 18);
     head.append(ico, h("span", "ne-title", spec.title));
     const fid = h("span", "ne-fid", ""), ms = h("span", "ne-ms", "");
-    const byp = h("button", "ne-btn", "⏻"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
+    const byp = h("button", "ne-btn", "⏻"); byp.type = "button"; byp.setAttribute("aria-label", "Bypass"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
     byp.onclick = (e) => { e.stopPropagation(); n.bypass = !n.bypass; el.classList.toggle("bypass", !!n.bypass); this.onChange(); };
-    const del = h("button", "ne-btn", "✕"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "#ff7070";
+    const del = h("button", "ne-btn", "✕"); del.type = "button"; del.setAttribute("aria-label", "Delete node"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "#ff7070";
     del.onclick = (e) => { e.stopPropagation(); this.removeNode(n.id); };
-    const exp = h("button", "ne-btn", "⤢"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
+    const exp = h("button", "ne-btn", "⤢"); exp.type = "button"; exp.setAttribute("aria-label", "Expand"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
     exp.onclick = (e) => { e.stopPropagation(); if (n.w || n.h) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); };
     const acts = h("span", "ne-acts"); acts.append(byp, del, exp);
     head.append(fid, acts);
@@ -224,12 +224,13 @@ export class NodeEditor {
 
   private paramRow(n: NodeInstance, p: ParamDef, sync: Map<string, (v: any) => void>) {
     if (p.kind === "separator") { const sep = h("div", "ne-param-sep", p.label); sep.setAttribute("role", "separator"); sep.dataset.node = n.id; sep.dataset.param = p.id; return sep; }
-    const row = h("label", "ne-param"); row.dataset.node = n.id; row.dataset.param = p.id; const pn = h("span", "ne-pn"); pn.innerHTML = `<span class="ne-pi">${paramIcon(p.id, p.kind)}</span>`; pn.append(p.label); row.append(pn);
+    // A div, not a label: a checkbox inside a label is toggled when it is inserted, which cleared "Seated" on every new patch.
+    const row = h("div", "ne-param"); row.dataset.node = n.id; row.dataset.param = p.id; const pn = h("span", "ne-pn"); pn.innerHTML = `<span class="ne-pi">${paramIcon(p.id, p.kind)}</span>`; pn.append(p.label); row.append(pn);
     const ic0 = pn.querySelector<HTMLElement>(".ne-pi")!;
     const mark = () => { const ch = n.params[p.id] !== p.value; row.classList.toggle("changed", ch); if (ch) { ic0.dataset.tip = "Reset to default"; ic0.dataset.tipBody = `Back to ${p.value}.`; ic0.dataset.tipHint = "Click the icon"; } else { delete ic0.dataset.tip; delete ic0.dataset.tipBody; delete ic0.dataset.tipHint; } };
     const commit = (v: any) => { n.params[p.id] = v; mark(); this.onChange(); };
     const ic = pn.querySelector<HTMLElement>(".ne-pi")!;
-    ic.onclick = (e) => { if (n.params[p.id] === p.value) return; e.preventDefault(); commit(p.value); sync.get(p.id)?.(p.value); };
+    ic.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (n.params[p.id] === p.value) return; commit(p.value); sync.get(p.id)?.(p.value); };
     queueMicrotask(mark);
     if (p.kind === "number") {
       const r = h("input"); r.type = "range"; r.min = String(p.min); r.max = String(p.max); r.step = String(p.step ?? 0.01); r.value = String(n.params[p.id]);
@@ -240,13 +241,15 @@ export class NodeEditor {
       sync.set(p.id, (v) => { if (document.activeElement !== r) { r.value = String(v); val.textContent = String(v); fill(); } });
       row.append(r, val);
     } else if (p.kind === "bool" && p.action) {
-      const b = h("button", "ne-action", p.label); b.type = "button";
+      const b = h("button", "ne-action", p.label); b.type = "button"; b.setAttribute("aria-label", p.label);
       b.onpointerdown = (e) => e.stopPropagation();
       b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); n.params[p.id] = true; this.onChange(); };
-      row.append(b);
+      pn.setAttribute("aria-hidden", "true"); row.append(b);
     } else if (p.kind === "bool") {
-      const c = h("input"); c.type = "checkbox"; c.checked = !!n.params[p.id]; c.onchange = () => commit(c.checked);
-      sync.set(p.id, (v) => (c.checked = !!v)); row.append(c);
+      const c = h("input"); c.type = "checkbox"; c.setAttribute("aria-label", p.label); c.checked = !!n.params[p.id];
+      let ready = false; c.onchange = () => { if (ready) commit(c.checked); }; // inserting the box can fire change before it shows the saved value
+      sync.set(p.id, (v) => (c.checked = !!v)); row.append(c); ready = true;
+      pn.addEventListener("click", (e) => { if ((e.target as HTMLElement).closest(".ne-pi")) return; c.click(); });
     } else if (p.kind === "select") {
       const s = h("select");
       // Rebuilt from the param's options each time it opens, so a list fetched later (e.g. OpenAI models) shows up; a saved value missing from the list stays visible.
@@ -280,7 +283,7 @@ export class NodeEditor {
         pn.append(b);
       }
     } else {
-      const t = h("input"); t.type = "text"; t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
+      const t = h("input"); t.type = p.secret ? "password" : "text"; if (p.secret) { t.autocomplete = "off"; t.spellcheck = false; } t.setAttribute("aria-label", p.label); t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
       sync.set(p.id, (v) => { if (document.activeElement !== t) t.value = String(v); }); row.append(t);
       if (p.quad) {
         const q = p.quad, b = h("button", "ne-qbtn", "⌖ Edit"); b.type = "button"; b.dataset.tip = "Edit corners"; b.dataset.tipBody = "Drag the corners on the live camera picture instead of typing numbers.";

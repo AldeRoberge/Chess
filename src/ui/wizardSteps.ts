@@ -110,12 +110,17 @@ const cornerItems = (c: StepCtx): Item[] => {
     const sliders = (["x", "y"] as const).map((axis): Item => ({
       kind: "slider", label: axis === "x" ? "Across (x)" : "Down (y)", min: 0, max: axis === "x" ? 480 : 360, step: 2,
       get: () => now()[i][axis],
-      set: (v) => { const q = [...now()]; q[i] = { ...q[i], [axis]: v }; cam.corners = fmtCorners(q); },
+      set: (v) => { const q = [...now()]; q[i] = { ...q[i], [axis]: v }; cam.corners = fmtCorners(q); setAutoField(cam, "corners", false); },
     }));
     return { kind: "group", label: name, icon: CORNER_ICON[i], summary: `${now()[i].x}, ${now()[i].y}`, ...flag(`corner.${name}`, true), children: sliders };
   });
-  return [{ kind: "group", label: "Corners", icon: "board", summary: `${pts.length} corners`, ...flag("corners", false), children: [
-    { kind: "action", icon: "refresh", label: "Reset corners", run: () => { cam.corners = fmtCorners(rigCorners(RIGS[cam.rig])); c.refresh(); } },
+  const picture = !!c.state.frame;
+  return [{ kind: "group", label: "Corners", icon: "board", summary: (cam.autoFields ?? []).includes("corners") ? "auto-detected" : `${pts.length} corners`, ...flag("corners", false), auto: {
+    label: "Auto detect", disabled: !picture, hint: "Needs a live picture from this camera: check that it is online and has a signal.",
+    about: "Finds a8, h8, h1 and a1 from the checkerboard, from printed a–h and 1–8 labels, and from AI when an OpenAI key is set.",
+    run: () => c.detect("corners"),
+  }, children: [
+    { kind: "action", icon: "refresh", label: "Reset corners", run: () => { cam.corners = fmtCorners(rigCorners(RIGS[cam.rig])); setAutoField(cam, "corners", false); c.refresh(); } },
     ...corners,
   ] }];
 };
@@ -218,7 +223,7 @@ const voiceItems = (c: StepCtx): Item[] => {
 };
 
 export const STEPS: Step[] = [
-  { id: "briefing", title: "System check", blurb: "Checking that this device can run the experience. Setup then takes about two minutes: cameras, board, scenes, narration, opponent.",
+  { id: "briefing", title: "System check", blurb: "Checking that this device can run the experience. Settings then take about two minutes: cameras, board, scenes, narration, opponent.",
     items: (c) => [
       ...(c.state.checks ? [{ kind: "action", icon: "refresh", label: "Re-run system check", run: () => c.runChecks() } as Item] : [{ kind: "info", label: "Running system check…" } as Item]),
     ] },
@@ -239,7 +244,7 @@ export const STEPS: Step[] = [
       } });
       return out;
     } },
-  { id: "board", title: "Board", blurb: "Pick a camera from the tabs, then drag the four green handles onto the board corners: a8, h8, h1, a1 (black's left rook first, clockwise from white's view).",
+  { id: "board", title: "Board", blurb: "Pick a camera from the tabs, then drag the four green handles onto a8, h8, h1 and a1, or press Auto detect on Corners. That uses the checkerboard, printed a–h and 1–8 labels, and AI when an OpenAI key is set.",
     items: (c) => {
       if (!c.cfg.cameras.length) return [{ kind: "info", label: "No cameras", value: "Add one in the previous step.", tone: "warn" }];
       // the camera itself is chosen on the tabs above this list; the rows below are that camera's settings
@@ -298,7 +303,7 @@ export const STEPS: Step[] = [
       if (r) out.push({ kind: "info", label: `${r} is active`, value: "It recolours the page and can hide the theme. Turn it off for this site.", tone: "warn" });
       return out;
     } },
-  { id: "launch", title: "Launch", blurb: "Review, then start. You can reopen this setup any time from the top bar.",
+  { id: "launch", title: "Launch", blurb: "Review, then start. You can reopen settings any time from the top bar.",
     items: (c) => {
       const issues = validateSetup(c.cfg, voiceNamesFor(c));
       return [

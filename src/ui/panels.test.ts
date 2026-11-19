@@ -58,7 +58,7 @@ describe("TablePanel", () => {
     click(cv, 4, 6); virtualTable.carried = 52; virtualTable.hand = { x: 4.5, y: 5 }; text.mockClear(); p.frame(16); expect(text).toHaveBeenCalledTimes(48); // 47 on the board + the carried piece, now drawn in the hand
     bus.director = { phase: "game", mode: "engine", elo: 1500, menu: [], progress: {}, events: [], seat: null } as any; bus.game = { status: "synced", history: ["e4", "e5"], last: null, lifted: undefined, diff: [] } as any;
     p.frame(32); expect(p.root.querySelector(".muted")!.textContent).toBe("game · Stockfish 1500 · tracker: synced · e4 e5");
-    bus.director = { ...bus.director, mode: "human" } as any; p.frame(48); expect(p.root.querySelector(".muted")!.textContent).toContain("2 joueurs");
+    bus.director = { ...bus.director, mode: "human" } as any; p.frame(48); expect(p.root.querySelector(".muted")!.textContent).toContain("2 players");
   });
 });
 
@@ -134,7 +134,7 @@ describe("WorldPanel", () => {
     gltf.scene = mesh([0, 0, 0, 1, 1, 1, 2, 0, 5]); await send("tiny.gltf"); await vi.waitFor(() => expect(status()).toContain("No planar surfaces"));
     gltf.scene = new THREE.Group(); await send("empty.glb");
   });
-  it("ignores a file input event with no file", () => { const { p, status } = make(); const input = p.root.querySelector<HTMLInputElement>("input[type=file]")!; Object.defineProperty(input, "files", { value: [], configurable: true }); input.dispatchEvent(new Event("change")); expect(status()).toBe(""); });
+  it("ignores a file input event with no file", () => { const { p, status } = make(); const input = p.root.querySelector<HTMLInputElement>("input[type=file]")!; Object.defineProperty(input, "files", { value: [], configurable: true }); input.dispatchEvent(new Event("change")); expect(status()).toContain("output window"); });
   it("uses a saved mapping when there is one", () => { const m = defaultMapping(); m.projectors = m.projectors.slice(0, 1); localStorage.setItem("cx.mapping.v1", JSON.stringify(m)); const { p } = make(); expect(p.root.querySelectorAll(".rig-row")).toHaveLength(1); });
   it("exposes the scene for completeness", () => { expect(initialSceneState().scene).toBe("cavern"); });
 });

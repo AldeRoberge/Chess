@@ -4,20 +4,22 @@ import { suggestNext } from "./nextSteps";
 
 const steps = ["briefing", "cameras", "board"];
 describe("routes", () => {
-  it("round-trips pages and setup steps", () => {
-    for (const h of ["#/table", "#/world", "#/log", "#/setup/board"]) expect(formatRoute(parseRoute(h, steps))).toBe(h);
+  it("round-trips pages and settings steps", () => {
+    for (const h of ["#/table", "#/world", "#/log", "#/settings/board"]) expect(formatRoute(parseRoute(h, steps))).toBe(h);
   });
-  it("falls back safely", () => {
+  it("falls back safely, and old setup links still open settings", () => {
     expect(parseRoute("", steps)).toEqual({ page: "table" });
     expect(parseRoute("#/nope", steps)).toEqual({ page: "table" });
-    expect(parseRoute("#/setup/zzz", steps)).toEqual({ page: "setup", step: "briefing" });
-    expect(parseRoute("#/SETUP/Cameras", steps)).toEqual({ page: "setup", step: "cameras" });
+    expect(parseRoute("#/settings/zzz", steps)).toEqual({ page: "settings", step: "briefing" });
+    expect(parseRoute("#/SETTINGS/Cameras", steps)).toEqual({ page: "settings", step: "cameras" });
+    expect(parseRoute("#/setup/board", steps)).toEqual({ page: "settings", step: "board" });
+    expect(formatRoute(parseRoute("#/setup/board", steps))).toBe("#/settings/board");
   });
 });
 describe("suggestNext", () => {
   const base = { route: { page: "table" } as const, setupDone: true, soundOn: true, boardFidelity: 1, cameras: 1 };
   it("sends unfinished setups to the wizard first", () => {
-    expect(suggestNext({ ...base, setupDone: false })[0].to).toEqual({ page: "setup", step: "briefing" });
+    expect(suggestNext({ ...base, setupDone: false })[0].to).toEqual({ page: "settings", step: "briefing" });
   });
   it("suggests calibration when the board is poorly read", () => {
     expect(suggestNext({ ...base, boardFidelity: 0.3 })[0].id).toBe("calibrate");

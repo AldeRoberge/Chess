@@ -68,10 +68,10 @@ describe("first launch", () => {
 });
 
 describe("returning launch", () => {
-  it("skips the wizard once setup is complete and opens it from the Setup button", () => {
+  it("skips the wizard once setup is complete and opens it from the Settings button", () => {
     finishSetup(); const app = boot(root);
     expect(app.wizard()).toBeNull(); expect(document.querySelector(".halo")).toBeNull();
-    root.querySelector<HTMLElement>("#setup")!.click(); expect(app.wizard()).toBeTruthy();
+    root.querySelector<HTMLElement>("#settings")!.click(); expect(app.wizard()).toBeTruthy();
   });
   it("restores the saved patch (user edits survive), and falls back to the setup-built one when the save is corrupt", () => {
     finishSetup(); const g = new Graph(createRegistry()); buildGraphFromConfig(g, defaultSetup()); const extra = g.addNode("narration.narrator", 5, 5); localStorage.setItem("cx.graph.v1", JSON.stringify(g.toJSON()));
@@ -172,7 +172,9 @@ describe("top-bar buttons", () => {
   });
   it("reset forgets the saved patch and setup, then reloads", () => {
     finishSetup(); localStorage.setItem("cx.graph.v1", "{}"); boot(root); const reload = vi.fn(); vi.stubGlobal("location", { reload, search: "" });
-    root.querySelector<HTMLElement>("#reset")!.click(); expect(localStorage.getItem("cx.graph.v1")).toBeNull(); expect(loadSetup()).toBeNull(); expect(reload).toHaveBeenCalled();
+    root.querySelector<HTMLElement>("#reset")!.click(); expect(localStorage.getItem("cx.graph.v1")).not.toBeNull(); expect(reload).not.toHaveBeenCalled();
+    [...document.querySelectorAll<HTMLButtonElement>(".notice button")].find((b) => b.textContent === "Reset workflow")!.click();
+    expect(localStorage.getItem("cx.graph.v1")).toBeNull(); expect(loadSetup()).toBeNull(); expect(reload).toHaveBeenCalled();
   });
 });
 
@@ -181,20 +183,20 @@ describe("navigation", () => {
     finishSetup(); const app = boot(root);
     expect(location.hash).toBe("#/table");
     root.querySelectorAll<HTMLElement>("#tabs button")[2].click(); expect(location.hash).toBe("#/log"); expect(app.route()).toEqual({ page: "log" });
-    root.querySelector<HTMLElement>("#setup")!.click(); expect(location.hash).toBe("#/setup/briefing"); expect(app.wizard()).toBeTruthy();
-    app.wizard()!.handle("next"); expect(location.hash).toBe("#/setup/cameras");
+    root.querySelector<HTMLElement>("#settings")!.click(); expect(location.hash).toBe("#/settings/briefing"); expect(app.wizard()).toBeTruthy();
+    app.wizard()!.handle("next"); expect(location.hash).toBe("#/settings/cameras");
     app.go({ page: "world" }); expect(app.wizard()).toBeNull(); expect(location.hash).toBe("#/world");
   });
   it("opens straight at a deep link and runs suggestions", () => {
-    finishSetup(); history.replaceState(null, "", "#/setup/board"); const app = boot(root);
+    finishSetup(); history.replaceState(null, "", "#/settings/board"); const app = boot(root);
     expect(app.wizard()!.stepId).toBe("board");
     app.go({ page: "table" }); root.querySelector<HTMLElement>(".next-card")!.click();
-    expect(location.hash).toMatch(/^#\/(setup|world)/);
+    expect(location.hash).toMatch(/^#\/(settings|world)/);
   });
   it("keeps first-time users in setup whatever the URL says", () => {
     midSetup();
     history.replaceState(null, "", "#/log"); const app = boot(root);
-    expect(app.route().page).toBe("setup"); expect(location.hash).toBe("#/setup/briefing");
+    expect(app.route().page).toBe("settings"); expect(location.hash).toBe("#/settings/briefing");
   });
 });
 

@@ -18,35 +18,51 @@ import { drawBotAvatar, drawGrabHand } from "./botAvatar";
 import type { Tip, TipRow } from "./tooltip";
 import { fenPieces } from "../plugins/shared";
 import { isLightSquare, pct, pieceLabel, tone } from "../plugins/hover";
+import { fmtClock } from "../clock/types";
 
 const o2 = (n: string) => sqIndex(n);
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔", bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚" };
 
 /** The virtual table: play moves with the mouse (a simulated hand carries the piece past the cameras), hover menu buttons to test dwell selection. */
+const PROMO = { q: "Queen", r: "Rook", b: "Bishop", n: "Knight" } as const;
+const START_N: Record<string, number> = { q: 1, r: 2, b: 2, n: 2, p: 8 };
+
 export class TablePanel {
   root = el("div", "panel table");
   private cv = el("canvas"); private info = el("div", "muted");
+  private gamebar = el("div", "gamebar"); private promo = el("div", "promo");
   private px = 44; private margin = 3; private sel: number | null = null;
   /** A piece being dragged with the mouse (square index), and whether it was already selected when grabbed. */
   private drag: { from: number; was: boolean } | null = null; private suppressClick = false;
   /** Square (0 = a8) under the mouse, or null; the margin ring counts as off the board. */
   private over: number | null = null; private overMargin: { x: number; y: number } | null = null;
+  /** Keyboard cursor (0 = a8). Arrows move it; Enter selects or moves. */
+  private cursor = 52;
+  private pending: { from: string; to: string; choices: ("q" | "r" | "b" | "n")[] } | null = null;
+  private seat = el("button", "", "Sit down");
+  private gameKey = "";
 
   constructor() {
     this.cv.width = this.cv.height = (8 + this.margin * 2) * this.px;
-    this.cv.className = "table-cv"; this.cv.dataset.tipLive = "1";
+    this.cv.className = "table-cv"; this.cv.dataset.tipLive = "1"; this.cv.tabIndex = 0;
+    this.cv.setAttribute("role", "application");
+    this.cv.setAttribute("aria-label", "Chessboard. Arrow keys move the cursor. Enter or Space selects and moves. q, r, b or n chooses a promotion.");
     const bar = el("div", "bar");
-    const reset = el("button", "", "Reset table"); reset.dataset.tip = "Reset table"; reset.dataset.tipBody = "Puts every piece back on its starting square."; reset.onclick = () => virtualTable.reset();
-    const seat = el("button", "", "Sit / stand"); seat.dataset.tip = "Sit / stand"; seat.dataset.tipBody = "Seats or removes the virtual player, so the cameras and tracking see a person at the table."; seat.onclick = () => { virtualTable.seated = !virtualTable.seated; this.seatCb(virtualTable.seated); };
+    const reset = el("button", "", "Reset table"); reset.type = "button"; reset.dataset.tip = "Reset table"; reset.dataset.tipBody = "Puts every piece back on its starting square.";
+    reset.onclick = () => { this.pending = null; this.paintPromo(); virtualTable.reset(); };
+    this.seat.type = "button"; this.seat.dataset.tip = "Sit / stand"; this.seat.dataset.tipBody = "Seats or removes the virtual player, so the cameras and tracking see a person at the table.";
+    this.seat.onclick = () => { virtualTable.seated = !virtualTable.seated; this.paintSeat(); this.seatCb(virtualTable.seated); };
+    this.paintSeat();
     const look = el("select", "board-look"); look.title = "Board look";
     for (const t of BOARD_THEMES) { const o = el("option", "", t.name); o.value = t.id; look.append(o); }
     look.value = boardTheme().id; look.onchange = () => setBoardTheme(look.value);
     const hover = el("button", "", "Hover hand"); hover.title = "Hold a simulated hand over the board under your mouse, to test what the cameras do when squares are covered";
     hover.onclick = () => { virtualTable.hoverHand = !virtualTable.hoverHand; hover.classList.toggle("on", virtualTable.hoverHand); if (!virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
-    bar.append(seat, reset, hover, look);
-    this.root.append(bar, this.cv, this.info);
-    this.info.textContent = "Click a piece, then a square. Hover a menu button to test dwell selection.";
+    bar.append(this.seat, reset, hover, look);
+    this.promo.hidden = true;
+    this.root.append(bar, this.gamebar, this.promo, this.cv, this.info);
+    this.info.textContent = "Click a piece, then a square. Hover a menu button to test dwell selection. Arrow keys and Enter play too.";
     const pos = (e: MouseEvent) => { const r = this.cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * (8 + 2 * this.margin) - this.margin, y: ((e.clientY - r.top) / r.height) * (8 + 2 * this.margin) - this.margin }; };
     this.cv.onmousemove = (e) => {
       const q = pos(e); virtualTable.pointer = q;
@@ -58,7 +74,7 @@ export class TablePanel {
       if (this.takeover()) { this.suppressClick = true; return; } // two bots are playing: the click asks to take control instead of moving a piece
       virtualTable.pointerDown = true;
       const p = pos(e), c = Math.floor(p.x), r = Math.floor(p.y), pc = c >= 0 && c < 8 && r >= 0 && r < 8 ? virtualTable.game.board()[r][c] : null;
-      if (pc && !virtualTable.busy && pc.color === virtualTable.game.turn() && bus.botColor !== pc.color) { this.drag = { from: r * 8 + c, was: this.sel === r * 8 + c }; this.sel = r * 8 + c; } // grab: drag it to a square, or release to keep it selected
+      if (pc && !virtualTable.busy && pc.color === virtualTable.game.turn() && this.sideOk(pc.color)) { this.drag = { from: r * 8 + c, was: this.sel === r * 8 + c }; this.sel = r * 8 + c; } // grab: drag it to a square, or release to keep it selected
     };
     this.cv.onmouseup = (e) => {
       virtualTable.pointerDown = false;
@@ -68,23 +84,99 @@ export class TablePanel {
       this.suppressClick = true; // the mouseup handled it; the click that follows must not act again
       if (to === null) { this.sel = null; return; }
       if (to === d.from) { this.sel = d.was ? null : to; return; } // released where it started: a plain click toggles the selection
-      const from = sqName(d.from), tn = sqName(to);
-      const m = virtualTable.game.moves({ verbose: true }).find((x) => x.from === from && x.to === tn && (x.promotion ?? "q") === "q"); // a pawn dropped on the last rank queens
-      if (m) virtualTable.play(m.from + m.to + (m.promotion ?? ""), performance.now());
-      this.sel = null;
+      this.tryMove(d.from, to);
     };
     this.cv.onmouseleave = () => { virtualTable.pointer = null; virtualTable.pointerDown = false; this.drag = null; this.over = null; this.overMargin = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
     this.cv.onclick = (e) => {
       if (this.suppressClick) { this.suppressClick = false; return; }
       const p = pos(e); const c = Math.floor(p.x), r = Math.floor(p.y);
       if (c < 0 || c > 7 || r < 0 || r > 7) return;
-      const i = r * 8 + c;
-      if (this.sel === null) { if (virtualTable.game.board()[r][c]) this.sel = i; return; }
-      const from = sqName(this.sel), to = sqName(i);
-      const m = virtualTable.game.moves({ verbose: true }).find((x) => x.from === from && x.to === to);
-      if (m) virtualTable.play(m.from + m.to + (m.promotion ?? ""), performance.now());
-      this.sel = null;
+      this.act(r * 8 + c);
     };
+    this.cv.onkeydown = (e) => {
+      if (this.pending && "qrbn".includes(e.key) && this.pending.choices.includes(e.key as "q")) {
+        e.preventDefault(); this.commit(this.pending.from + this.pending.to + e.key); return;
+      }
+      const step: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      const d = step[e.key];
+      if (d) {
+        e.preventDefault();
+        const c = Math.min(7, Math.max(0, (this.cursor % 8) + d[0])), r = Math.min(7, Math.max(0, Math.floor(this.cursor / 8) + d[1]));
+        this.cursor = r * 8 + c; this.over = this.cursor; return;
+      }
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      if (this.takeover()) return;
+      this.act(this.cursor);
+    };
+  }
+
+  /** A move is allowed once the director (if any) has opened the game, and never for the colour Stockfish is playing. */
+  private sideOk(color: "w" | "b") {
+    const d = bus.director;
+    if (d && d.phase !== "game") return false;
+    return bus.botColor !== color;
+  }
+
+  private act(i: number) {
+    const r = Math.floor(i / 8), c = i % 8, pc = virtualTable.game.board()[r][c];
+    if (this.sel === null) { if (pc && !virtualTable.busy && pc.color === virtualTable.game.turn() && this.sideOk(pc.color)) this.sel = i; return; }
+    if (this.sel === i) { this.sel = null; return; }
+    this.tryMove(this.sel, i);
+  }
+
+  private tryMove(fromSq: number, toSq: number) {
+    const from = sqName(fromSq), to = sqName(toSq);
+    const ms = virtualTable.game.moves({ verbose: true }).filter((x) => x.from === from && x.to === to);
+    if (!ms.length || !this.sideOk(virtualTable.game.turn())) { this.sel = null; this.pending = null; this.paintPromo(); return; }
+    const choices = [...new Set(ms.map((m) => m.promotion).filter((p): p is "q" | "r" | "b" | "n" => !!p))];
+    if (choices.length > 1) { this.pending = { from, to, choices }; this.sel = null; this.paintPromo(); return; }
+    this.commit(from + to + (choices[0] ?? ""));
+  }
+
+  private commit(uci: string) {
+    virtualTable.play(uci, performance.now());
+    this.sel = null; this.pending = null; this.paintPromo();
+  }
+
+  private paintPromo() {
+    this.promo.replaceChildren();
+    const p = this.pending; this.promo.hidden = !p; if (!p) return;
+    this.promo.append(el("span", "", "Promote to"));
+    for (const ch of p.choices) {
+      const b = el("button", "", `${PROMO[ch]} (${ch})`); b.type = "button";
+      b.onclick = () => this.commit(p.from + p.to + ch);
+      this.promo.append(b);
+    }
+  }
+
+  private paintSeat() {
+    const on = virtualTable.seated;
+    this.seat.textContent = on ? "Stand" : "Sit down";
+    this.seat.classList.toggle("on", on);
+    this.seat.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  /** Turn, the last few moves, what each side has taken, and the clocks when a clock is publishing. */
+  private paintGame() {
+    const g = virtualTable.game, hist = g.history();
+    const pairs: string[] = [];
+    for (let i = 0; i < hist.length; i += 2) pairs.push(`${i / 2 + 1}. ${hist[i]}${hist[i + 1] ? " " + hist[i + 1] : ""}`);
+    const missing = (color: "w" | "b") => {
+      const have: Record<string, number> = { q: 0, r: 0, b: 0, n: 0, p: 0 };
+      for (const row of g.board()) for (const p of row) if (p && p.color === color && p.type !== "k") have[p.type]++;
+      const glyph = color === "w" ? { q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" } : { q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+      let s = "";
+      for (const t of ["q", "r", "b", "n", "p"] as const) for (let i = 0; i < START_N[t] - (have[t] ?? 0); i++) s += glyph[t];
+      return s;
+    };
+    const turn = g.isCheckmate() ? (g.turn() === "w" ? "Black wins" : "White wins") : g.isDraw() ? "Draw" : `${g.turn() === "w" ? "White" : "Black"} to move`;
+    const clk = bus.clock ? `${fmtClock(bus.clock.white.ms)} · ${fmtClock(bus.clock.black.ms)}` : "";
+    const taken = [missing("b") && `White ${missing("b")}`, missing("w") && `Black ${missing("w")}`].filter(Boolean).join("   ");
+    const key = `${turn}|${clk}|${pairs.join(" ")}|${taken}`;
+    if (key === this.gameKey) return;
+    this.gameKey = key;
+    this.gamebar.replaceChildren(el("span", "turn", clk ? `${turn} · ${clk}` : turn), el("span", "moves", pairs.slice(-6).join("  ")), el("span", "caps", taken));
   }
   seatCb: (seated: boolean) => void = () => {};
   /** Called on every press on the table; return true when it was used up (e.g. to offer taking over from the AI players), so no piece is grabbed. */
@@ -144,6 +236,7 @@ export class TablePanel {
     const vs = viewSettings(), disp = vs.display;
     if (!dueFrame(now, this.lastFrame, vs.render.fps)) return;
     this.lastFrame = now;
+    this.paintSeat(); this.paintGame();
     const c = this.cv.getContext("2d")!, px = this.px, m = this.margin, th = boardTheme();
     const k = pixelRatio(vs.render.scale), side = Math.round((8 + m * 2) * px * k); // backing resolution only: CSS keeps the canvas at 100% width
     if (this.cv.width !== side) this.cv.width = this.cv.height = side;
@@ -153,18 +246,22 @@ export class TablePanel {
     const b = virtualTable.game.board();
     for (let i = 0; i < 64; i++) { c.fillStyle = ((i % 8) + Math.floor(i / 8)) % 2 ? th.dark : th.light; c.fillRect((i % 8) * px, Math.floor(i / 8) * px, px, px); }
     if (this.sel !== null) { c.fillStyle = th.hi; c.fillRect((this.sel % 8) * px, Math.floor(this.sel / 8) * px, px, px); }
-    c.font = `bold ${px * 0.2}px Arial, sans-serif`; c.textBaseline = "top"; c.textAlign = "left";
+    if (this.cursor !== null) { c.strokeStyle = "rgba(255,228,92,.95)"; c.lineWidth = 2; c.strokeRect((this.cursor % 8) * px + 2, Math.floor(this.cursor / 8) * px + 2, px - 4, px - 4); }
+    c.restore();
+    const ov = { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints };
+    drawTableOverlay(c, px, m, ov, now / 1000, false, "under"); // square tints sit under the pieces
+    c.save(); c.translate(m * px, m * px);
+    c.font = `700 ${px * 0.28}px Arial, sans-serif`; c.textBaseline = "top"; c.textAlign = "left"; c.lineWidth = Math.max(2, px * 0.06); c.strokeStyle = "rgba(0,0,0,.75)"; c.fillStyle = "#f7f4ee";
     for (let k = 0; k < (disp.coords ? 8 : 0); k++) {
-      const light = (k + 7) % 2 === 0; c.fillStyle = light ? th.dark : th.light;
-      c.textAlign = "left"; c.fillText(String(8 - k), 0.06 * px, k * px + 0.06 * px);
-      c.textAlign = "right"; c.textBaseline = "bottom"; c.fillText("abcdefgh"[k], (k + 1) * px - 0.06 * px, 8 * px - 0.04 * px); c.textBaseline = "top";
+      c.textAlign = "left"; c.strokeText(String(8 - k), 0.08 * px, k * px + 0.06 * px); c.fillText(String(8 - k), 0.08 * px, k * px + 0.06 * px);
+      c.textAlign = "right"; c.textBaseline = "bottom"; c.strokeText("abcdefgh"[k], (k + 1) * px - 0.08 * px, 8 * px - 0.04 * px); c.fillText("abcdefgh"[k], (k + 1) * px - 0.08 * px, 8 * px - 0.04 * px); c.textBaseline = "top";
     }
     if (this.sel !== null && disp.legalMoves) {
       const from = sqName(this.sel);
       for (const mv of virtualTable.game.moves({ verbose: true }).filter((x) => x.from === from)) {
         const i = (8 - Number(mv.to[1])) * 8 + (mv.to.charCodeAt(0) - 97), cx = ((i % 8) + 0.5) * px, cy = (Math.floor(i / 8) + 0.5) * px;
-        c.fillStyle = "rgba(0,0,0,.14)"; c.beginPath();
-        if (mv.captured || mv.flags.includes("e")) { c.arc(cx, cy, px * 0.46, 0, 7); c.arc(cx, cy, px * 0.36, 0, 7, true); } else c.arc(cx, cy, px * 0.16, 0, 7);
+        c.fillStyle = "rgba(12,16,24,.62)"; c.beginPath();
+        if (mv.captured || mv.flags.includes("e")) { c.arc(cx, cy, px * 0.46, 0, 7); c.arc(cx, cy, px * 0.34, 0, 7, true); } else c.arc(cx, cy, px * 0.22, 0, 7);
         c.fill();
       }
     }
@@ -175,7 +272,7 @@ export class TablePanel {
       if (img) { c.drawImage(img, col * px, r * px, px, px); return; }
       const g = GLYPH["b" + p.type]; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.strokeStyle = p.color === "w" ? "#3b3a37" : "#0d0d0d"; c.lineWidth = p.color === "w" ? 2.2 : 1.2; c.strokeText(g, (col + 0.5) * px, (r + 0.55) * px); c.fillText(g, (col + 0.5) * px, (r + 0.55) * px);
     }));
-    if (bus.botColor) drawBotAvatar(c, px, bus.botColor, virtualTable.busy || !!bus.engineHint, virtualTable.hand, now / 1000);
+    if (bus.botColor) drawBotAvatar(c, px, bus.botColor, virtualTable.busy || !!bus.engineHint, virtualTable.hand, now / 1000, bus.director?.elo);
     this.drawArms(c, px);
     const lifted = (sq: number | null, x: number, y: number, hand: "me" | "bot") => { // a piece in a hand, raised and shadowed
       const p = sq === null ? null : b[Math.floor(sq / 8)][sq % 8]; if (!p) return;
@@ -189,9 +286,9 @@ export class TablePanel {
     if (this.drag && virtualTable.pointer) lifted(this.drag.from, virtualTable.pointer.x, virtualTable.pointer.y, "me");
     if (this.over !== null) { c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.strokeRect((this.over % 8) * px + 1, Math.floor(this.over / 8) * px + 1, px - 2, px - 2); }
     c.restore();
-    drawTableOverlay(c, px, m, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints }, now / 1000, false);
+    drawTableOverlay(c, px, m, ov, now / 1000, false, "over");
     const g = bus.game, d = bus.director;
-    this.info.textContent = `${d?.phase ?? "idle"}${d?.mode ? ` · ${d.mode === "engine" ? `Stockfish ${d.elo}` : "2 joueurs"}` : ""} · tracker: ${g?.status ?? "—"}${g?.history.length ? ` · ${g.history.slice(-6).join(" ")}` : ""}`;
+    this.info.textContent = `${d?.phase ?? "idle"}${d?.mode ? ` · ${d.mode === "engine" ? `Stockfish ${d.elo}` : "2 players"}` : ""} · tracker: ${g?.status ?? "—"}${g?.history.length ? ` · ${g.history.slice(-6).join(" ")}` : ""}`;
   }
 }
 
@@ -222,6 +319,7 @@ export class WorldPanel {
       { kind: "action", label: "Default room", run: () => { this.cfg = defaultMapping(); this.apply(); } },
     ], { world: true }));
     this.renderRig(rig);
+    this.status.textContent = "Auto-calibrate needs the projector output window open, and a Webcam node set to Online.";
     this.ch.onmessage = (e: MessageEvent<InMsg>) => { if (e.data.type === "size") this.projSize.set(e.data.index, { w: e.data.w, h: e.data.h }); };
   }
 

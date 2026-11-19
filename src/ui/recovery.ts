@@ -48,7 +48,7 @@ export function openBackupPanel(api: PanelApi) {
   file.onchange = () => { const f = file.files?.[0]; if (f) { api.importFile(f); close(); } };
   bar.append(btn("Back up now", () => { api.backupNow(); draw(); }), btn("Import file…", () => file.click()), btn("Export file", api.exportFile), file);
   const list = el("div", "bk-list");
-  const note = el("p", "bk-note", "Your workflow is autosaved on every edit. Backups are extra restore points, taken every 5 minutes while you work, on exit, and before anything destructive. Restoring one also restores its setup, and first backs up what you have now.");
+  const note = el("p", "bk-note", "Your workflow is autosaved on every edit. Backups are extra restore points, taken every 5 minutes while you work, on exit, and before anything destructive. Restoring one also restores its settings, and first backs up what you have now.");
 
   const draw = () => {
     const items = api.list();
