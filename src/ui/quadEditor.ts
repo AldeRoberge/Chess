@@ -38,14 +38,13 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const back = document.createElement("div"); back.className = "qe-back";
   const box = document.createElement("div"); box.className = "qe";
   const head = document.createElement("div"); head.className = "qe-head"; head.textContent = o.title;
-  const hint = document.createElement("div"); hint.className = "qe-hint"; hint.textContent = "Drag the four handles onto the corners. Arrow keys nudge the selected one (Shift = 10 px).";
   const cv = document.createElement("canvas"); cv.className = "qe-cv"; cv.tabIndex = 0;
   const W = 720, H = Math.round((W * fh) / fw); cv.width = W; cv.height = H; cv.style.aspectRatio = `${fw} / ${fh}`;
   const bar = document.createElement("div"); bar.className = "qe-bar";
   const btn = (t: string, cls = "") => { const b = document.createElement("button"); b.className = "qe-btn " + cls; b.textContent = t; return b; };
   const reset = btn("Reset"), cancel = btn("Cancel"), ok = btn("Done", "primary");
   bar.append(reset, cancel, ok);
-  box.append(head, hint, cv, bar); back.append(box); document.body.append(back);
+  box.append(head, cv, bar); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;
