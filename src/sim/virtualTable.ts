@@ -110,7 +110,7 @@ export class VirtualTable {
     if (!t) return [];
     const idle: Hand = this.activeHand === "R" ? "L" : "R";
     return [
-      armPose({ side: this.side, hand: this.activeHand, tip: t.p, grasp: t.grasp, active: true }),
+      armPose({ side: this.side, hand: this.activeHand, tip: t.p, grasp: t.grasp, active: true, grip: this.carried !== null ? "pinch" : "fist" }),
       armPose({ side: this.side, hand: idle, tip: restTarget(this.side, idle), grasp: 0, active: false }),
     ];
   }
