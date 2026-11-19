@@ -99,13 +99,13 @@ describe("TablePanel", () => {
     look.value = "hc"; look.dispatchEvent(new Event("change")); expect(boardTheme().id).toBe("hc");
     pieces.value = "fantasy"; pieces.dispatchEvent(new Event("change")); expect(pieceSet().id).toBe("fantasy");
     virtualTable.game.load("4k3/4Q3/4K3/8/8/8/8/8 b - - 0 1"); p.frame(0);
-    expect(p.root.querySelector(".over-banner")!.hidden).toBe(false);
+    expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(false);
     expect(p.root.querySelector(".over-banner")!.textContent).toBe("White wins");
     virtualTable.game.load("4K3/4q3/4k3/8/8/8/8/8 w - - 0 1"); p.frame(8);
     expect(p.root.querySelector(".over-banner")!.textContent).toBe("Black wins");
     virtualTable.game.load("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"); p.frame(16);
     expect(p.root.querySelector(".over-banner")!.textContent).toBe("Draw");
-    p.root.querySelectorAll("button")[1].click(); expect(p.root.querySelector(".over-banner")!.hidden).toBe(true);
+    p.root.querySelectorAll("button")[1].click(); expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
     setBoardTheme("green"); setPieceSet("chessnut");
   });
 });

@@ -97,7 +97,7 @@ describe("phone page", () => {
     expect(posts).toEqual([{ type: "move", from: "e7", to: "e8", promotion: "n" }]);
   });
   it("copies PGN and FEN from the game info tab", async () => {
-    const write = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    const write = vi.fn(async (_text: string) => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
     start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ moves: ["e4", "e5"] }) }))); await flush();
     q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click();
     [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
