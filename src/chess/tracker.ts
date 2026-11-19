@@ -2,7 +2,12 @@ import { Chess, type Move } from "chess.js";
 import type { ExperienceEvent } from "../core/events";
 import { sqName, type BoardBelief } from "../vision/types";
 
-export type TrackStatus = "pending" | "synced" | "lifted" | "illegal" | "moved";
+/** "unclear": the cameras disagree with the game in more places than any move could explain, so the reading is at fault, not the player. */
+export type TrackStatus = "pending" | "synced" | "lifted" | "illegal" | "moved" | "unclear";
+/** A move changes at most four squares (castling). More confident disagreements than this are a misread board. */
+const MAX_MOVE_SQUARES = 6;
+/** Settled readings in a row that must disagree before a position is called illegal: one noisy frame is not a mistake. */
+const ILLEGAL_AFTER = 3;
 
 export interface MoveInfo {
   san: string;
@@ -46,6 +51,7 @@ export const defaultTrackerConfig = (): TrackerConfig => ({ maxCost: 0.8, margin
 
 const gridOf = (game: Chess): string[] =>
   game.board().flat().map((p) => (p ? p.color : ""));
+const START_GRID = gridOf(new Chess()).join(",");
 
 /**
  * Turns noisy settled occupancy into a *legal* game. Piece identity is never read from pixels:
@@ -59,6 +65,8 @@ export class PositionTracker {
   private candN = 0;
   private lastMove: MoveInfo | null = null;
   private moveFid = 1;
+  private badN = 0;
+  private keepBad = false;
 
   constructor(cfg: Partial<TrackerConfig> = {}) {
     this.cfg = { ...defaultTrackerConfig(), ...cfg };
@@ -70,6 +78,14 @@ export class PositionTracker {
     this.candN = 0;
     this.lastMove = null;
     this.moveFid = 1;
+    this.badN = 0;
+  }
+
+  /** Picks up a stored game: replays its moves from the start so the history is kept. False (and a fresh game) if one is illegal. */
+  resume(moves: readonly string[]): boolean {
+    this.reset();
+    for (const m of moves) { try { this.game.move(m); } catch { this.reset(); return false; } }
+    return true;
   }
 
   private cost(grid: string[], obsGrid: string[], conf: Float32Array) {
@@ -83,6 +99,8 @@ export class PositionTracker {
   private memo: { game: Chess; ver: number; fen: string; turn: "w" | "b"; over: boolean; history: string[] } | null = null;
 
   private base(status: TrackStatus, diff: number[], events: ExperienceEvent[], fid: number, lifted?: string): TrackResult {
+    if (!this.keepBad) this.badN = 0;
+    this.keepBad = false;
     // chess.js rebuilds the SAN history by undoing and replaying every move, and this runs on every tick:
     // keep the summary until the game actually changes.
     let m = this.memo;
@@ -184,7 +202,10 @@ export class PositionTracker {
     // A castle that is only half-seen (the king has stepped, the rook's square is still unread) must wait.
     // A single move the picture matches exactly — a knight hop, a king step — is the move itself.
     // cost 0 means the squares agree; they are only soft, not contradictory. A half-castle still disagrees and waits.
-    const exactStep = best?.moves.length === 1 && best.cost === 0;
+    // Squares the move does not touch, where the cameras only half-see an extra piece, do not count against it: a tall
+    // knight on f3 leans into e3 in a low camera's picture, and without this the first move was never accepted.
+    const contradicts = (grid: string[]) => { for (let i = 0; i < 64; i++) if (grid[i] !== obsGrid[i] && (grid[i] !== exp[i] || b.conf[i] >= this.cfg.minConf)) return true; return false; };
+    const exactStep = best?.moves.length === 1 && (best.cost === 0 || !contradicts(best.grid));
     if (ok && best.unsure > 0 && !exactStep) {
       this.cand = ""; this.candN = 0;
       return this.base("pending", diff, events, b.fidelity);
@@ -204,6 +225,15 @@ export class PositionTracker {
       return this.base("pending", diff, events, b.fidelity);
     }
 
+    // The pieces are all back on their starting squares in the middle of a game: the players set up a new one.
+    if (this.game.history().length && obsGrid.join(",") === START_GRID && diff.every((i) => b.conf[i] >= this.cfg.minConf)) {
+      this.candN = this.cand === START_GRID ? this.candN + 1 : 1;
+      this.cand = START_GRID;
+      if (this.candN < this.cfg.confirm) return this.base("pending", diff, events, b.fidelity);
+      this.reset();
+      events.push({ type: "new-game", t: b.t });
+      return this.base("synced", [], events, b.fidelity);
+    }
     this.cand = ""; this.candN = 0;
     // No legal move explained the picture. Extra squares the cameras are unsure about are a lamp or a shadow:
     // they are not a move, and they must not keep a move that already counted from standing.
@@ -217,6 +247,16 @@ export class PositionTracker {
       events.push({ type: "lifted", t: b.t, data: { square: lifted } });
       return this.base("lifted", diff, events, b.fidelity, lifted);
     }
+    // Only squares the cameras are sure of can make a position wrong. Unsure ones leave the game as it stands.
+    const sure = diff.filter((i) => b.conf[i] >= this.cfg.minConf);
+    if (!sure.length) return this.base("synced", diff, events, b.fidelity);
+    // Far more disagreement than a move can make: the picture is misread (light, corners, calibration), the player did nothing wrong.
+    if (sure.length > MAX_MOVE_SQUARES) return this.base("unclear", diff, events, b.fidelity);
+    // A wrong position must hold for a few settled readings before the player is told to fix it.
+    this.badN++;
+    this.keepBad = true;
+    if (this.badN < ILLEGAL_AFTER) return this.base("pending", diff, events, b.fidelity);
+    this.keepBad = true; // stays illegal until the board is put right
     events.push({ type: "illegal", t: b.t, data: { squares: diff.map(sqName) } });
     return this.base("illegal", diff, events, b.fidelity);
   }

@@ -122,13 +122,20 @@ export class Director {
   private dwellMs = new Map<string, number>();
 
   /**
-   * A piece moved on the real board starts the game immediately.
+   * A piece moved on the real board (or a stored game picked up after a restart) starts the game immediately.
    * Waiting for a detected seat and the intro left the first move with nobody to answer it.
    */
   private openOnFirstMove(now: number, events: ExperienceEvent[], gameEvents: ExperienceEvent[]) {
     if (this.phase === "game" || this.phase === "outro") return;
-    if (!gameEvents.some((e) => e.type === "move")) return;
-    if (!this.mode) {
+    // a game picked up after a restart counts the same: it is already under way, against the opponent it had
+    const resumed = gameEvents.find((e) => e.type === "resume");
+    if (!resumed && !gameEvents.some((e) => e.type === "move")) return;
+    const was = resumed?.data?.mode;
+    if (was === "engine" || was === "human") {
+      this.mode = was;
+      if (resumed?.data?.elo) this.elo = Number(resumed.data.elo);
+      events.push({ type: "mode", t: now, data: { mode: this.mode, elo: this.elo } });
+    } else if (!this.mode) {
       this.mode = this.cfg.preset === "human" ? "human" : "engine";
       this.elo = this.cfg.presetElo;
       events.push({ type: "mode", t: now, data: { mode: this.mode, elo: this.elo } });

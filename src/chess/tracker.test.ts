@@ -84,6 +84,35 @@ describe("PositionTracker", () => {
     for (let i = 0; i < 5; i++) { const r = t.observe(half); expect(r.history).toEqual([]); expect(r.status).not.toBe("moved"); }
     t.observe(settled(after)); expect(t.observe(settled(after)).history).toEqual(["O-O"]);
   });
+  it("accepts a first move the cameras read softly even when a tall piece casts a faint ghost on the next square", () => {
+    const g = new Chess(); g.move("Nf3");
+    const t = new PositionTracker();
+    const seen = settled(g); // g1 empty, f3 knight, both read softly; e3 half-sees the knight leaning over it
+    seen.conf[45] = 0.4; seen.conf[62] = 0.4;
+    seen.occ[44] = 0.6; seen.white[44] = 0.3; seen.conf[44] = 0.2;
+    expect(t.observe(seen).status).toBe("pending");
+    const r = t.observe(seen);
+    expect(r.status).toBe("moved"); expect(r.history).toEqual(["Nf3"]);
+  });
+  it("never tells the player to put a piece back over a reading the cameras are unsure of", () => {
+    const t = new PositionTracker();
+    const blurry = settled(new Chess()); // the white pieces fade out of a poor picture
+    for (let i = 48; i < 64; i++) { blurry.occ[i] = 0.4; blurry.conf[i] = 0.2; }
+    for (let i = 0; i < 5; i++) { const r = t.observe(blurry); expect(r.status).toBe("synced"); expect(r.events).toEqual([]); }
+  });
+  it("calls a board misread on many squares unclear, not an illegal move", () => {
+    const t = new PositionTracker();
+    const misread = settled(new Chess());
+    for (let i = 48; i < 64; i++) misread.occ[i] = 0; // every white piece read as gone, confidently
+    for (let i = 0; i < 5; i++) { const r = t.observe(misread); expect(r.status).toBe("unclear"); expect(r.events.map((e) => e.type)).not.toContain("illegal"); }
+    expect(t.observe(settled(new Chess())).status).toBe("synced");
+  });
+  it("forgets a wrong reading once the board reads right again", () => {
+    const t = new PositionTracker(), bad = settled(new Chess());
+    bad.occ[52] = 0; bad.occ[20] = 1; bad.white[20] = 1; bad.conf.fill(0.99);
+    t.observe(bad); t.observe(bad); t.observe(settled(new Chess()));
+    expect(t.observe(bad).status).toBe("pending");
+  });
   it("recovers two plies when frames were dropped", () => {
     const t = new PositionTracker();
     const g = new Chess(); g.move("e4"); g.move("e5");
@@ -101,6 +130,7 @@ describe("PositionTracker", () => {
     const bad = settled(new Chess());
     bad.occ[52] = 0; bad.occ[20] = 1; bad.white[20] = 1; // e2 -> e6: not a legal pawn move
     bad.conf.fill(0.99);
+    expect(t.observe(bad).status).toBe("pending"); expect(t.observe(bad).status).toBe("pending"); // one noisy reading is not a mistake
     expect(t.observe(bad).status).toBe("illegal");
   });
   it("detects captures, castling and checkmate", () => {

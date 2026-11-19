@@ -98,6 +98,7 @@ describe("PositionTracker", () => {
   it("reports illegal placements with the offending squares and keeps the game unchanged", () => {
     const t = new PositionTracker(), v = view(new Chess(), { conf: 0.99 });
     v.occ[sqIndex("e2")] = 0; v.occ[sqIndex("e6")] = 1; v.white[sqIndex("e6")] = 1;
+    t.observe(v); t.observe(v);
     const r = t.observe(v);
     expect(r.status).toBe("illegal"); expect(r.diff.sort()).toEqual([sqIndex("e6"), sqIndex("e2")].sort());
     expect(r.events[0]).toMatchObject({ type: "illegal", data: { squares: expect.arrayContaining(["e2", "e6"]) } });
