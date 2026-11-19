@@ -50,6 +50,12 @@ describe("TablePanel", () => {
     expect(p.root.querySelector(".muted")!.textContent).toContain("Click a piece");
     new TablePanel().seatCb(true); // default callback is a no-op
   });
+  it("splits into a board column (seats + board) and a side column, so the wide simple view can size the board to the height", () => {
+    const p = new TablePanel(), [board, side] = [...p.root.children];
+    expect(board.className).toBe("cc-board"); expect(side.className).toBe("cc-side");
+    expect([...board.children].map((c) => c.tagName)).toEqual(["DIV", "CANVAS", "DIV"]);
+    expect(side.querySelector(".moves")).not.toBeNull(); expect(side.querySelector(".cc-actions")).not.toBeNull();
+  });
   it("plays a move by clicking the piece, then a legal square; clicking elsewhere cancels; empty or off-board clicks are ignored", () => {
     const p = new TablePanel(), cv = p.root.querySelector("canvas")!; rect(cv);
     click(cv, 4, 6); click(cv, 4, 4); expect(virtualTable.busy).toBe(true);
