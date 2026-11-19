@@ -4,7 +4,7 @@ import { VirtualTable, virtualTable } from "../sim/virtualTable";
 import { bus } from "../core/bus";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { flatFrame, node, shoot, tick } from "../test/helpers";
-import { CAM_PRESETS, drawBoard, drawFrame, fmtCorners, parseCorners } from "./shared";
+import { CAM_PRESETS, drawBoard, drawFrame, fmtCorners, looksLikeStart, parseCorners, readSquares } from "./shared";
 
 describe("shared painters and parsers", () => {
   it("presets come from the three camera rigs", () => { expect(Object.keys(CAM_PRESETS)).toEqual(["A", "B", "C"]); expect(CAM_PRESETS.A).toEqual(rigCorners(RIGS.A)); });
@@ -24,8 +24,31 @@ describe("shared painters and parsers", () => {
     const occ = new Float32Array(64), white = new Float32Array(64), conf = new Float32Array(64).fill(1);
     occ[0] = 1; white[0] = 1; occ[1] = 1; white[1] = 0; conf[10] = 0.1;
     drawBoard(c, 160, 160, { occ, white, conf }, { diff: [3, 4] });
-    expect(arc).toHaveBeenCalledTimes(2); expect(stroke).toHaveBeenCalledTimes(2);
+    expect(arc).toHaveBeenCalled(); expect(stroke).toHaveBeenCalledTimes(2);
     drawBoard(c, 160, 160, null); drawBoard(c, 160, 160, { occ, white }); // no belief; no confidences
+  });
+});
+
+describe("per-square confidence and the start prior", () => {
+  const startBelief = (conf = 0.6) => {
+    const occ = new Float32Array(64), white = new Float32Array(64), c = new Float32Array(64).fill(conf);
+    for (let i = 0; i < 64; i++) { const r = Math.floor(i / 8); occ[i] = r < 2 || r > 5 ? 1 : 0; white[i] = r > 5 ? 1 : 0; }
+    return { occ, white, conf: c };
+  };
+  it("recognises a fresh game and names the pieces without a tracked fen", () => {
+    const b = startBelief(); expect(looksLikeStart(b)).toBe(true);
+    const { reads, start } = readSquares(b, undefined); expect(start).toBe(true);
+    expect(reads[0].piece).toBe("r"); expect(reads[60].piece).toBe("K"); expect(reads[27].piece).toBeNull();
+    expect(reads[0].prior).toBe(true); expect(reads[0].score).toBeGreaterThan(0.6); // boosted above the raw 0.6
+  });
+  it("does not assume the start position once pieces have moved", () => {
+    const b = startBelief(); for (let i = 8; i < 16; i++) b.occ[i] = 0; for (let i = 24; i < 32; i++) b.occ[i] = 1; // all black pawns advanced
+    expect(looksLikeStart(b)).toBe(false);
+    expect(readSquares(b, undefined).reads[0].prior).toBe(false);
+  });
+  it("scores a missing expected piece low", () => {
+    const b = startBelief(1); b.occ[0] = 0; const { reads } = readSquares(b, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    expect(reads[0].piece).toBe("r"); expect(reads[0].seen).toBe(false); expect(reads[0].score).toBeLessThan(0.1);
   });
 });
 

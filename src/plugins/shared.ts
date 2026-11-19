@@ -49,38 +49,108 @@ export function fenPieces(fen: string | undefined): (string | null)[] {
   return out.length === 64 ? out : [];
 }
 
-/** Board preview: themed squares, a piece glyph per tracked piece (from `fen`), plain discs for pieces seen but not identified. */
+const START_BOARD = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
+const START_PIECES = fenPieces(START_BOARD);
+/** Red → amber → green for a 0..1 confidence. */
+export const confColor = (c: number, a = 1) => `hsla(${Math.round(Math.max(0, Math.min(1, c)) * 125)},85%,55%,${a})`;
+
+/**
+ * Does the reading look like a game that has just begun (both back ranks and pawn rows full, right colours, middle empty)?
+ * Used when no tracked position exists yet, so the pieces can be assumed to stand where they start.
+ */
+export function looksLikeStart(b: { occ: ArrayLike<number>; white: ArrayLike<number> } | null | undefined): boolean {
+  if (!b) return false;
+  let ok = 0;
+  for (let i = 0; i < 64; i++) {
+    const pc = START_PIECES[i], seen = b.occ[i] > 0.5;
+    if (!pc) ok += seen ? 0 : 1; else if (seen && (b.white[i] > 0.5) === (pc === pc.toUpperCase())) ok++;
+  }
+  return ok >= 56; // at most 8 of 64 squares disagree
+}
+
+/** Per-square read-out used by drawBoard (exported so tests and tooltips can share the numbers). */
+export interface SquareRead { piece: string | null; seen: boolean; score: number; prior: boolean }
+export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, fen?: string): { reads: SquareRead[]; start: boolean } {
+  let pcs = fenPieces(fen);
+  const fenBoard = (fen ?? "").split(" ")[0];
+  // a just-started game: the tracked position is still the start position, or nothing is tracked yet and the cameras see one
+  const start = fenBoard === START_BOARD || (pcs.length === 0 && looksLikeStart(b));
+  if (!pcs.length && start) pcs = START_PIECES;
+  const reads: SquareRead[] = [];
+  for (let i = 0; i < 64; i++) {
+    const piece = pcs[i] ?? null;
+    if (!b) { reads.push({ piece, seen: !!piece, score: 1, prior: false }); continue; }
+    const conf = b.conf?.[i] ?? 1, occ = b.occ[i], seen = occ > 0.5;
+    const white = b.white[i];
+    // how likely is it that the square really holds what we show (this piece, this colour, or nothing)?
+    let agree = piece ? occ : 1 - occ;
+    if (piece && seen) agree = Math.min(agree, piece === piece.toUpperCase() ? white : 1 - white);
+    if (!piece && seen) agree = Math.min(agree, 0.5 + Math.abs(white - 0.5)); // unidentified piece: only occupancy/colour certainty
+    let score = Math.min(conf, Math.max(agree, 0));
+    // the start position is a strong prior: a square that agrees with it needs far less evidence
+    const prior = start && agree > 0.5;
+    if (prior) score = 1 - (1 - score) * 0.3;
+    reads.push({ piece, seen, score: Math.max(0, Math.min(1, score)), prior });
+  }
+  return { reads, start };
+}
+
+/**
+ * Board preview: themed squares; on each, the piece (from `fen`, or the start position when a game has just begun) with a
+ * confidence ring around it and the square's 0..100 confidence in the corner. Pieces seen but not identified show as "?".
+ * Pieces expected but not seen are ghosted with a dashed red ring.
+ */
 export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, opts: { diff?: number[]; lifted?: string; fen?: string } = {}) {
   const th = boardTheme();
   ctx.fillStyle = th.surround; ctx.fillRect(0, 0, w, h);
   const s = Math.min(w, h) / 8;
   const ox = (w - s * 8) / 2;
-  const pcs = fenPieces(opts.fen);
+  const { reads, start } = readSquares(b, opts.fen);
+  const labels = !!b && s >= 20;
   for (let i = 0; i < 64; i++) {
-    const x = ox + (i % 8) * s, y = Math.floor(i / 8) * s;
+    const x = ox + (i % 8) * s, y = Math.floor(i / 8) * s, cx = x + s / 2, cy = y + s / 2;
     ctx.fillStyle = ((i % 8) + Math.floor(i / 8)) % 2 ? th.dark : th.light;
     ctx.fillRect(x, y, s, s);
-    const conf = b?.conf?.[i] ?? 1, seen = !!b && b.occ[i] > 0.5, pc = pcs[i];
-    if (pc && (seen || !b)) {
-      const white = pc === pc.toUpperCase();
-      ctx.globalAlpha = 0.45 + 0.55 * conf;
-      const img = pieceImage((white ? "w" : "b") + pc.toLowerCase());
-      if (img) ctx.drawImage(img, x, y, s, s);
+    const r = reads[i], pc = r.piece;
+    if (b) { ctx.fillStyle = confColor(r.score, 0.1 + 0.18 * (1 - r.score)); ctx.fillRect(x, y, s, s); } // low-confidence squares glow red
+    const shown = !!pc && (r.seen || !b), ghost = !!pc && !shown, disc = !pc && r.seen;
+    if (shown || ghost) {
+      const white = pc === pc!.toUpperCase(), ps = s * 0.78;
+      ctx.globalAlpha = ghost ? 0.22 : 0.55 + 0.45 * r.score;
+      const img = pieceImage((white ? "w" : "b") + pc!.toLowerCase());
+      if (img) ctx.drawImage(img, cx - ps / 2, cy - ps / 2, ps, ps);
       else {
-        ctx.font = `${s * 0.86}px "Segoe UI Symbol", serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = `${s * 0.7}px "Segoe UI Symbol", serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillStyle = white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = white ? "#3b3a37" : "#0d0d0d"; ctx.lineWidth = white ? 1.4 : 0.8;
-        const g = GLYPH[pc.toLowerCase()]; ctx.strokeText(g, x + s / 2, y + s * 0.55); ctx.fillText(g, x + s / 2, y + s * 0.55);
+        const g = GLYPH[pc!.toLowerCase()]; ctx.strokeText(g, cx, cy + s * 0.04); ctx.fillText(g, cx, cy + s * 0.04);
       }
       ctx.globalAlpha = 1;
-    } else if (seen) {
-      ctx.globalAlpha = 0.45 + 0.55 * conf;
-      ctx.fillStyle = b!.white[i] > 0.5 ? "#fdfdfd" : "#262421"; ctx.strokeStyle = b!.white[i] > 0.5 ? "#3b3a37" : "#0d0d0d";
-      ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.3, 0, 7); ctx.fill(); ctx.stroke();
+    } else if (disc) {
+      const white = b!.white[i] > 0.5;
+      ctx.globalAlpha = 0.55 + 0.45 * r.score;
+      ctx.fillStyle = white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = white ? "#3b3a37" : "#0d0d0d";
+      ctx.beginPath(); ctx.arc(cx, cy, s * 0.26, 0, 7); ctx.fill(); ctx.stroke();
+      if (s >= 14) { ctx.fillStyle = white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02); }
       ctx.globalAlpha = 1;
-    } else if (b && conf < 0.5) { ctx.fillStyle = "rgba(255,170,60,.45)"; ctx.fillRect(x + s * 0.35, y + s * 0.35, s * 0.3, s * 0.3); }
+    }
+    // confidence ring: a dim full circle, with a coloured arc sweeping clockwise from the top in proportion to the score
+    if (b && (shown || ghost || disc)) {
+      const rad = s * 0.43; ctx.lineWidth = Math.max(1.5, s * 0.07); ctx.lineCap = "round";
+      ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
+      if (ghost) { ctx.setLineDash([s * 0.12, s * 0.1]); ctx.strokeStyle = "rgba(255,90,110,.9)"; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+      else { ctx.strokeStyle = confColor(r.score); ctx.beginPath(); ctx.arc(cx, cy, rad, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, r.score)); ctx.stroke(); }
+      ctx.lineCap = "butt";
+    }
+    if (labels) { // the number itself, 0..100, in the corner (empty squares dimmer)
+      const empty = !(shown || ghost || disc);
+      ctx.font = `600 ${Math.max(8, s * 0.2)}px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "right"; ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillText(String(Math.round(r.score * 100)), x + s - 2 + 1, y + s - 3 + 1);
+      ctx.globalAlpha = empty ? 0.6 : 1; ctx.fillStyle = confColor(r.score); ctx.fillText(String(Math.round(r.score * 100)), x + s - 2, y + s - 3); ctx.globalAlpha = 1;
+    } else if (b && !(shown || ghost || disc) && r.score < 0.5) { ctx.fillStyle = "rgba(255,170,60,.45)"; ctx.fillRect(x + s * 0.35, y + s * 0.35, s * 0.3, s * 0.3); }
   }
   ctx.strokeStyle = "#ff5a6e"; ctx.lineWidth = 2;
   for (const i of opts.diff ?? []) ctx.strokeRect(ox + (i % 8) * s + 1, Math.floor(i / 8) * s + 1, s - 2, s - 2);
+  if (b && start) { ctx.font = `600 ${Math.max(9, s * 0.24)}px system-ui,sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(ox, 0, Math.min(s * 4.2, w), Math.max(11, s * 0.34)); ctx.fillStyle = "#9be7c4"; ctx.fillText("start position assumed", ox + 3, 1); }
   ctx.lineWidth = 1;
 }
 

@@ -186,28 +186,80 @@ function edgeOnBoard(lum: Float32Array, w: number, h: number, q: Pt[], edge: num
   return runs >= 4;
 }
 
-/** Point inside a clockwise convex quad. */
-function insideQuad(q: Pt[], x: number, y: number): boolean {
-  for (let i = 0; i < 4; i++) {
-    const a = q[i], b = q[(i + 1) % 4];
-    if ((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x) < 0) return false;
+/** Largest connected region of the two square colours, then the four sharp corners of its outline. */
+function maskCorners(lum: Float32Array, w: number, h: number, tone: { light: number; dark: number; tol: number }): Pt[] | null {
+  const sw = Math.ceil(w / 2), sh = Math.ceil(h / 2), grid = new Uint8Array(sw * sh);
+  for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) if (isSquare(lum[y * w + x], tone)) grid[(y >> 1) * sw + (x >> 1)] = 1;
+  const seen = new Uint8Array(sw * sh);
+  let best = 0, box = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  const stack: number[] = [];
+  for (let i = 0; i < grid.length; i++) {
+    if (!grid[i] || seen[i]) continue;
+    seen[i] = 1; stack.push(i);
+    let n = 0, x0 = sw, y0 = sh, x1 = 0, y1 = 0;
+    while (stack.length) {
+      const c = stack.pop()!, cx = c % sw, cy = (c - cx) / sw;
+      n++; x0 = Math.min(x0, cx); y0 = Math.min(y0, cy); x1 = Math.max(x1, cx); y1 = Math.max(y1, cy);
+      for (const d of [-1, 1, -sw, sw]) {
+        const k = c + d;
+        if ((d === -1 && cx === 0) || (d === 1 && cx === sw - 1)) continue;
+        if (k < 0 || k >= grid.length || !grid[k] || seen[k]) continue;
+        seen[k] = 1; stack.push(k);
+      }
+    }
+    if (n > best) { best = n; box = { x0, y0, x1, y1 }; }
   }
-  return true;
+  if (best < 30) return null;
+  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && isSquare(lum[y * w + x], tone);
+  const contour: Pt[] = [];
+  const xa = Math.max(0, box.x0 * 2 - 2), ya = Math.max(0, box.y0 * 2 - 2);
+  const xb = Math.min(w - 1, box.x1 * 2 + 3), yb = Math.min(h - 1, box.y1 * 2 + 3);
+  for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
+    if (!on(x, y)) continue;
+    if (!on(x - 1, y) || !on(x + 1, y) || !on(x, y - 1) || !on(x, y + 1)) contour.push({ x, y });
+  }
+  return contour.length >= 16 ? quadFromContour(contour) : null;
 }
 
-/** Every pixel of the two square colours, within `within` (a bright table or glare elsewhere in the picture has the same tones). A few checker hits are enough to learn the colours; the outline is the board even when perspective hid most of the grid. */
-function maskCorners(lum: Float32Array, w: number, h: number, tone: { light: number; dark: number; tol: number }, within: Pt[]): Pt[] | null {
-  let tl: Pt | null = null, tr: Pt | null = null, br: Pt | null = null, bl: Pt | null = null, n = 0;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (!isSquare(lum[y * w + x], tone) || !insideQuad(within, x, y)) continue;
-    n++;
-    const p = { x, y };
-    if (!tl || p.x + p.y < tl.x + tl.y) tl = p;
-    if (!tr || p.x - p.y > tr.x - tr.y) tr = p;
-    if (!br || p.x + p.y > br.x + br.y) br = p;
-    if (!bl || p.x - p.y < bl.x - bl.y) bl = p;
+function convexHull(pts: Pt[]): Pt[] {
+  const p = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Pt, a: Pt, b: Pt) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const build = (list: Pt[]) => {
+    const h: Pt[] = [];
+    for (const pt of list) {
+      while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], pt) <= 0) h.pop();
+      h.push(pt);
+    }
+    return h;
+  };
+  const lower = build(p), upper = build(p.slice().reverse());
+  lower.pop(); upper.pop();
+  const hull = lower.concat(upper);
+  let area = 0;
+  for (let i = 0; i < hull.length; i++) area += hull[i].x * hull[(i + 1) % hull.length].y - hull[(i + 1) % hull.length].x * hull[i].y;
+  return area < 0 ? hull.reverse() : hull;
+}
+
+/** A rasterised quadrilateral's hull is full of near-straight edge pixels. The four corners are the sharp turns. */
+function quadFromContour(contour: Pt[]): Pt[] | null {
+  const hull = convexHull(contour);
+  const n = hull.length;
+  if (n < 4) return null;
+  if (n === 4) return hull;
+  const span = Math.max(2, Math.round(n * 0.03));
+  const turn = hull.map((p, i) => {
+    const a = hull[(i - span + n) % n], b = hull[(i + span) % n];
+    const ax = p.x - a.x, ay = p.y - a.y, bx = b.x - p.x, by = b.y - p.y;
+    const la = Math.hypot(ax, ay) || 1, lb = Math.hypot(bx, by) || 1;
+    return Math.atan2((ax / la) * (by / lb) - (ay / la) * (bx / lb), (ax / la) * (bx / lb) + (ay / la) * (by / lb));
+  });
+  const picked: number[] = [];
+  for (const i of turn.map((_, i) => i).sort((a, b) => turn[b] - turn[a])) {
+    if (picked.every((j) => Math.min(Math.abs(i - j), n - Math.abs(i - j)) >= n / 8)) picked.push(i);
+    if (picked.length === 4) break;
   }
-  return n >= 40 && tl && tr && br && bl ? [tl, tr, br, bl] : null;
+  if (picked.length < 4) return null;
+  return picked.sort((a, b) => a - b).map((i) => hull[i]);
 }
 
 /**
@@ -230,10 +282,7 @@ function fitQuad(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel
     }
     if (seen) walked = nudgeEdge(walked, e, best);
   }
-  // The outline may only reach a little past the walked quad; the table and glare share the square tones.
-  let reach = walked;
-  for (let e = 0; e < 4; e++) reach = nudgeEdge(reach, e, period * 1.2);
-  const masked = convexQuad(reach, 200) ? maskCorners(lum, img.width, img.height, tone, reach) : null;
+  const masked = maskCorners(lum, img.width, img.height, tone);
   const sw = scoreOf(img, walked, ch), sm = masked ? scoreOf(img, masked, ch) : 0;
   console.log("fit", "walk", sw.toFixed(2), walked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "), "mask", sm.toFixed(2), masked ? masked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | ") : "none", "tone", Math.round(tone.dark), Math.round(tone.light), "tol", tone.tol.toFixed(1));
   return sm > sw ? masked! : walked;

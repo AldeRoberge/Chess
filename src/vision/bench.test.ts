@@ -19,7 +19,7 @@ import type { GrayFrame, Pt } from "./types";
  */
 interface Case { name: string; enh: Partial<EnhanceConfig>; thr?: number; grid?: number; patch?: number; res?: 1 | 2; down?: boolean }
 
-const CASES: Case[] = [
+const ROUND1: Case[] = [
   { name: "baseline", enh: {} },
   { name: "box3", enh: { denoise: "box" } },
   { name: "median3", enh: { denoise: "median" } },
@@ -51,6 +51,41 @@ const CASES: Case[] = [
   { name: "median+sharpen+flat40 thr0.15 g6", enh: { denoise: "median", sharpen: 1, flat: 40 }, thr: 0.15, grid: 6, patch: 0.6 },
   { name: "2x down+avg3+median+sharpen thr0.15", enh: { average: 3, denoise: "median", sharpen: 1 }, res: 2, down: true, thr: 0.15 },
 ];
+
+/** Round 2: refine around round 1's winners (median denoise, frame averaging, supersampled capture, flat-field, thresholds). */
+const ROUND2: Case[] = [
+  { name: "r2 median", enh: { denoise: "median" } },
+  { name: "r2 median avg2", enh: { denoise: "median", average: 2 } },
+  { name: "r2 median avg3", enh: { denoise: "median", average: 3 } },
+  { name: "r2 median avg4", enh: { denoise: "median", average: 4 } },
+  { name: "r2 median avg6", enh: { denoise: "median", average: 6 } },
+  { name: "r2 avg3 only", enh: { average: 3 } },
+  { name: "r2 median avg3 flat60", enh: { denoise: "median", average: 3, flat: 60 } },
+  { name: "r2 median avg3 flat30", enh: { denoise: "median", average: 3, flat: 30 } },
+  { name: "r2 median avg3 thr0.18", enh: { denoise: "median", average: 3 }, thr: 0.18 },
+  { name: "r2 median avg3 thr0.26", enh: { denoise: "median", average: 3 }, thr: 0.26 },
+  { name: "r2 median avg3 thr0.30", enh: { denoise: "median", average: 3 }, thr: 0.3 },
+  { name: "r2 median avg3 g5 p0.5", enh: { denoise: "median", average: 3 }, grid: 5, patch: 0.5 },
+  { name: "r2 median avg3 g6 p0.5", enh: { denoise: "median", average: 3 }, grid: 6, patch: 0.5 },
+  { name: "r2 median avg3 g6 p0.6", enh: { denoise: "median", average: 3 }, grid: 6, patch: 0.6 },
+  { name: "r2 median avg3 g5 p0.4", enh: { denoise: "median", average: 3 }, grid: 5, patch: 0.4 },
+  { name: "r2 2x down median", enh: { denoise: "median" }, res: 2, down: true },
+  { name: "r2 2x down avg2", enh: { average: 2 }, res: 2, down: true },
+  { name: "r2 2x down avg3", enh: { average: 3 }, res: 2, down: true },
+  { name: "r2 2x down avg3 median", enh: { average: 3, denoise: "median" }, res: 2, down: true },
+  { name: "r2 2x down avg3 median flat60", enh: { average: 3, denoise: "median", flat: 60 }, res: 2, down: true },
+  { name: "r2 2x down avg3 sharpen0.3", enh: { average: 3, sharpen: 0.3 }, res: 2, down: true },
+  { name: "r2 2x down avg3 median sharpen0.3", enh: { average: 3, denoise: "median", sharpen: 0.3 }, res: 2, down: true },
+  { name: "r2 2x native median avg3", enh: { average: 3, denoise: "median" }, res: 2 },
+  { name: "r2 2x native median avg3 g6 p0.6", enh: { average: 3, denoise: "median" }, res: 2, grid: 6, patch: 0.6 },
+  { name: "r2 gauss avg3", enh: { average: 3, denoise: "gauss" } },
+  { name: "r2 box avg3", enh: { average: 3, denoise: "box" } },
+  { name: "r2 median avg3 thr0.22 flat40 g5", enh: { denoise: "median", average: 3, flat: 40 }, grid: 5, patch: 0.5 },
+  { name: "r2 median avg2 thr0.26", enh: { denoise: "median", average: 2 }, thr: 0.26 },
+  { name: "r2 2x down avg2 median thr0.26", enh: { average: 2, denoise: "median" }, res: 2, down: true, thr: 0.26 },
+  { name: "r2 2x down avg4 median g6 p0.6", enh: { average: 4, denoise: "median" }, res: 2, down: true, grid: 6, patch: 0.6 },
+];
+const CASES = process.env.BENCH_ROUND === "2" ? ROUND2 : ROUND1;
 
 const REAL_CORNERS = parseCorners("304,55;397,216;147,292;112,93")!;
 
@@ -104,7 +139,7 @@ describe.skipIf(!process.env.BENCH)("board reader benchmark", () => {
       // real frame (one frame only: denoise/sharpen/flat apply; averaging and 2x are synthetic-only)
       // simulated webcam sensor noise is added to the real frame (a screenshot is cleaner than a live webcam); averaging uses independent noise copies
       const r = { err: 0, miss: 0, fp: 0, colour: 0 };
-      for (const noise of [0, 8, 14])
+      for (const noise of [0, 8, 14, 22])
         for (const seed of [1, 2]) {
           const noisy = (sd: number): GrayFrame => {
             const n = c.enh.average ?? 1, list: GrayFrame[] = [];
@@ -114,7 +149,7 @@ describe.skipIf(!process.env.BENCH)("board reader benchmark", () => {
           const rs = new BoardSampler("B", { ...cfg(), corners: REAL_CORNERS });
           rs.calibrateFromStart(noisy(1));
           const q = score(rs, noisy(2), realTruth);
-          r.err += q.err / 6; r.miss += q.miss / 6; r.fp += q.fp / 6; r.colour += q.colour / 6;
+          r.err += q.err / 8; r.miss += q.miss / 8; r.fp += q.fp / 8; r.colour += q.colour / 8;
         }
       r.err = +r.err.toFixed(2); r.miss = +r.miss.toFixed(2); r.fp = +r.fp.toFixed(2); r.colour = +r.colour.toFixed(2);
       // synthetic: three rigs, two noise levels
@@ -122,7 +157,7 @@ describe.skipIf(!process.env.BENCH)("board reader benchmark", () => {
       for (const sy of synth) {
         const useRes = (c.res ?? 1) === sy.res;
         if (!useRes) continue;
-        for (const noise of [8, 16]) {
+        for (const noise of [8, 16, 24]) {
           const down = c.down && sy.res > 1;
           const k = down ? sy.res : 1;
           const s = new BoardSampler(sy.rig, { ...cfg(), corners: sy.corners.map((p) => ({ x: p.x / k, y: p.y / k })) });
