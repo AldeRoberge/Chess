@@ -10,9 +10,9 @@ import { bus } from "../core/bus";
 import { applyH, boardToImage, invertH } from "../vision/homography";
 import { sqIndex, sqName } from "../vision/types";
 import { drawChevrons } from "../world/chevrons";
-import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, frameScale, looksLikeStart, parseCorners, withDetail, type DetailRow } from "./shared";
+import { brief, CAM_PRESETS, drawBoard, drawFrame, drawReaderBoard, readerTiles, fenPieces, fmtCorners, frameScale, looksLikeStart, parseCorners, withDetail, type DetailRow } from "./shared";
 import { FRAME_H, FRAME_W } from "../sim/rigs";
-import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
+import { boardHover, boardSquareAt, markSquares, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
 import { AlignFollower, evaluate } from "../ui/autoAlign";
 import { GOOD } from "../ui/boardGuide";
@@ -35,6 +35,10 @@ function squareAtPixel(corners: { x: number; y: number }[], x: number, y: number
   return q.x >= 0 && q.y >= 0 && c < 8 && r < 8 ? r * 8 + c : null;
 }
 
+/** The reader preview: the camera picture on top (160×120), the board it reads from that picture below (160×160). */
+const READER_BASE: [number, number] = [160, 280];
+const readerSplit = (w: number, h: number) => { const fh = Math.min(w * 0.75, h * (120 / 280)); return { fh, bh: h - fh }; };
+
 let readerSeq = 0;
 const reader: NodeSpec<ReaderState> = {
   type: "vision.boardReader", title: "Board Reader", category: "Vision",
@@ -56,7 +60,7 @@ const reader: NodeSpec<ReaderState> = {
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
     { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
   ],
-  previewSize: [160, 120],
+  previewSize: READER_BASE,
   frameOf: (s) => s.frame,
   init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, calT: -Infinity, calTries: 0, lastT: -1, cleaner: new FrameCleaner(), key: `reader${++readerSeq}`, inflight: 0, epoch: 0, ready: null, raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0 }),
   process({ frame }, { params, state, setFidelity, span }) {
@@ -132,10 +136,21 @@ const reader: NodeSpec<ReaderState> = {
   },
   dispose(s) { cleanPool().forget(s.key); },
   hover(p, w, h, s) {
-    const v = visualSize(w, h, [160, 120]), f = s.frame;
+    const v = visualSize(w, h, READER_BASE), f = s.frame, { fh, bh } = readerSplit(v.w, v.h);
     if (p.x > v.w || p.y > v.h) return null;
+    if (p.y > fh) { // the board under the picture: this square as the reader reads it
+      const q = boardSquareAt({ x: p.x, y: p.y - fh }, v.w, bh);
+      if (q === null || !s.obs) return null;
+      const t = readerTiles(s.obs, bus.game?.fen)[q];
+      const rows: TipRow[] = [{ label: "Square", value: `${sqName(q)} (${isLightSquare(q) ? "light" : "dark"})` },
+        { label: "Reads as", value: t.occupied ? (t.piece ? pieceLabel(t.piece) : `${t.white ? "white" : "black"} piece (type unknown)`) : "empty" },
+        { label: "Confidence", value: pct(t.conf), bar: t.conf, tone: tone(t.conf) },
+        { label: "Says occupied", value: pct(s.obs.occ[q]), bar: s.obs.occ[q] }];
+      return { title: sqName(q), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4", body: "What this camera alone reads on the square, before the cameras are fused. The piece type comes from the tracked game; the reader itself only tells empty, white and black apart.", rows,
+        mark: (ctx) => { ctx.save(); ctx.translate(0, fh); markSquares(ctx, v.w, bh, q); ctx.restore(); } };
+    }
     if (!f) return { title: "No camera picture", tag: "Board Reader", body: "Wire a camera into this node: it reads the 64 squares from the picture.", rows: [{ label: "Calibrated", value: s.sampler.calibrated ? "yes" : "no", tone: s.sampler.calibrated ? "ok" : "warn" }] };
-    const { r, x, y, inside } = framePixel(f, p, v.w, v.h);
+    const { r, x, y, inside } = framePixel(f, p, v.w, fh);
     if (!inside) return null;
     const cfg = s.sampler.cfg, lum = f.data[Math.floor(y) * f.width + Math.floor(x)];
     const sc = frameScale(f.width, f.height), ax = x / sc.sx, ay = y / sc.sy;
@@ -183,8 +198,11 @@ const reader: NodeSpec<ReaderState> = {
     };
   },
   preview(ctx, w, h, s) {
-    withDetail(ctx, w, h, [160, 120], (pw, ph) => {
-      const r = drawFrame(ctx, pw, ph, s.frame);
+    withDetail(ctx, w, h, READER_BASE, (pw, ph) => {
+      const { fh, bh } = readerSplit(pw, ph);
+      const r = drawFrame(ctx, pw, fh, s.frame);
+      // what the reader sees, tile by tile, under the picture it reads
+      ctx.save(); ctx.translate(0, fh); ctx.beginPath(); ctx.rect(0, 0, pw, bh); ctx.clip(); drawReaderBoard(ctx, pw, bh, s.obs, bus.game?.fen); ctx.restore();
       if (!s.frame || !r) return;
       const sc = frameScale(s.frame.width, s.frame.height);
       const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * sc.sx * r.s, y: r.y + p.y * sc.sy * r.s }), c = s.sampler.cfg.corners;

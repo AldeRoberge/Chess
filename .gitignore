@@ -3,3 +3,5 @@ dist/
 coverage/
 public/stockfish/
 .DS_Store
+ml/data/
+ml/__pycache__/

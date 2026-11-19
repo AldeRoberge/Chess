@@ -196,6 +196,52 @@ export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b
   ctx.lineWidth = 1;
 }
 
+/** What one camera's reader says about a square: nothing, a white piece or a black piece, and how sure it is of that. */
+export interface TileRead { piece: string | null; occupied: boolean; white: boolean; conf: number }
+/**
+ * The raw reading of one camera (no start-position boost, no fusion): occupancy and colour per square.
+ * The reader cannot tell piece types apart, so the type comes from the tracked game (or the start position) and only when its colour agrees.
+ */
+export function readerTiles(o: { occ: ArrayLike<number>; white: ArrayLike<number> }, fen?: string): TileRead[] {
+  const known = fenPieces(fen), tracked = known.length ? known : looksLikeStart(o) ? START_PIECES : [];
+  return Array.from({ length: 64 }, (_, i) => {
+    const occ = o.occ[i], w = o.white[i], occupied = occ > 0.5, white = w > 0.5;
+    const t = tracked[i] ?? null, piece = occupied && t && (t === t.toUpperCase()) === white ? t : null;
+    return { piece, occupied, white, conf: occupied ? Math.min(occ, white ? w : 1 - w) : 1 - occ };
+  });
+}
+
+/** Board of tiles for one camera's reading: the piece it thinks is on each square (or none) and its confidence in %. */
+export function drawReaderBoard(ctx: CanvasRenderingContext2D, w: number, h: number, o: { occ: ArrayLike<number>; white: ArrayLike<number> } | null | undefined, fen?: string) {
+  const th = boardTheme();
+  ctx.fillStyle = th.surround; ctx.fillRect(0, 0, w, h);
+  const s = Math.min(w, h) / 8, ox = (w - s * 8) / 2, oy = (h - s * 8) / 2;
+  const tiles = o ? readerTiles(o, fen) : null;
+  for (let i = 0; i < 64; i++) {
+    const x = ox + (i % 8) * s, y = oy + Math.floor(i / 8) * s, cx = x + s / 2, cy = y + s * 0.44;
+    ctx.fillStyle = ((i % 8) + Math.floor(i / 8)) % 2 ? th.dark : th.light; ctx.fillRect(x, y, s, s);
+    const t = tiles?.[i];
+    if (!t) continue;
+    if (t.occupied) {
+      const ps = s * 0.66;
+      const img = t.piece ? pieceImage((t.white ? "w" : "b") + t.piece.toLowerCase()) : null;
+      ctx.globalAlpha = 0.35 + 0.65 * t.conf;
+      if (img) ctx.drawImage(img, cx - ps / 2, cy - ps / 2, ps, ps);
+      else {
+        ctx.fillStyle = t.white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = t.white ? "#3b3a37" : "#0d0d0d"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(cx, cy, s * 0.22, 0, 7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = t.white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02);
+      }
+      ctx.globalAlpha = 1;
+    }
+    const txt = String(Math.round(t.conf * 100)) + "%";
+    ctx.font = `600 ${Math.max(6, s * 0.22)}px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillText(txt, cx + 0.7, y + s - 1.3 + 0.7);
+    ctx.fillStyle = confColor(t.conf); ctx.fillText(txt, cx, y + s - 1.3);
+  }
+  if (!o) { ctx.fillStyle = "#566"; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("no reading yet", 8, h / 2); }
+}
+
 export type { BoardBelief };
 
 export type DetailRow = [label: string, value: string, color?: string];

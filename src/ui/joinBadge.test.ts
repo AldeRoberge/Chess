@@ -12,6 +12,7 @@ describe("join code badge", () => {
     Object.assign(src, { available: true, code: "4821", urls: ["https://alderoberge.com/chess/#/remote?code=4821"] }); b.update();
     expect(b.el.hidden).toBe(false); expect(b.el.querySelector(".jb-code")!.textContent).toBe("4821");
     expect(b.el.querySelector(".jb-url")!.textContent).toBe("alderoberge.com/chess/");
+    expect(b.el.querySelector(".jb-qr svg path")!.getAttribute("d")!.length).toBeGreaterThan(100);
     (b.el.querySelector(".jb-main") as HTMLButtonElement).click(); expect(open).toHaveBeenCalled();
     b.update(); expect(b.el.hidden).toBe(false);
     expect(b.el.querySelector(".jb-x")).toBeNull();
