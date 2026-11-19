@@ -46,7 +46,7 @@ export function systemPrompt(reg: Registry): string {
   ].join("\n\n");
 }
 
-const clamp = (p: ParamDef, v: unknown): ParamValues[string] | undefined => {
+export const clamp = (p: ParamDef, v: unknown): ParamValues[string] | undefined => {
   if (p.kind === "number") { const n = Number(v); return Number.isFinite(n) ? Math.min(p.max, Math.max(p.min, n)) : undefined; }
   if (p.kind === "bool") return typeof v === "boolean" ? v : v === "true" ? true : v === "false" ? false : undefined;
   if (p.kind === "select") return p.options.includes(String(v)) ? String(v) : undefined;

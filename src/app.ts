@@ -41,6 +41,8 @@ import { buildBotPlay } from "./setup/botPlay";
 import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
+import { AssistantPanel } from "./ui/assistantPanel";
+import type { AssistantHost } from "./assistant/context";
 import { profiler } from "./core/profiler";
 import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
@@ -248,7 +250,27 @@ export function boot(root: HTMLElement): Boot {
   const world = new WorldPanel(graph), log = new LogPanel(); tips.add(log.tips);
   const perf = new PerfPanel(graph, { reveal: (id) => editor.reveal(id), setHeat: (on) => setHeat(on), heatOn: () => editor.heatOn });
   tips.add(perf.tips);
-  const panels: [string, { root: HTMLElement }][] = [["Table", table], ["3D / Mapping", world], ["Log", log], ["Performance", perf]];
+  // The assistant sees and changes the app only through this host, so it can be tested with a fake.
+  const assistantHost: AssistantHost = {
+    registry, graph: () => graph.toJSON(), setup: () => loadSetup(),
+    applySetup: (cfg, why) => { addBackup(why, graph.toJSON(), loadSetup(), true); saveSetup(cfg); buildGraphFromConfig(graph, cfg); editor.rebuild(); persist(); },
+    applyGraph: (g, why) => restore(g, null, why),
+    setParam: (id, key, value) => { const n = graph.nodes.get(id); if (!n) return false; n.params[key] = value; persist(); return true; },
+    setBypass: (id, on) => { const n = graph.nodes.get(id); if (!n) return false; if (!!n.bypass !== on) editor.toggleBypass(id); return true; },
+    selection: () => editor.selection(),
+    nodeErrors: () => [...graph.stats].filter(([, s]) => s.error).map(([id, s]) => ({ node: id, type: graph.nodes.get(id)?.type ?? "?", message: s.error!, hint: s.errorHint })),
+    route: () => route, go: (r) => go(r),
+    undo: () => { const ok = edits.canUndo; undo(); return ok; }, redo: () => { const ok = edits.canRedo; redo(); return ok; },
+    canUndo: () => edits.canUndo, canRedo: () => edits.canRedo,
+    table: {
+      fen: () => virtualTable.game.fen(), legal: () => virtualTable.game.moves(), reset: () => virtualTable.reset(),
+      seat: (on) => { virtualTable.seated = on; table.seatCb(on); }, seated: () => virtualTable.seated, play: (m) => virtualTable.play(m, performance.now()),
+    },
+    sound: () => ({ on: soundOn, muted: mixer.get().muted }),
+    now: () => performance.now(),
+  };
+  const assistant = new AssistantPanel(assistantHost);
+  const panels: [string, { root: HTMLElement }][] = [["Table", table], ["3D / Mapping", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
   const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);
   const themeSel = document.getElementById("theme") as HTMLSelectElement, modeBtn = document.getElementById("mode")!;
@@ -259,9 +281,10 @@ export function boot(root: HTMLElement): Boot {
   if (prefs.heat) setHeat(true);
   const tabs = document.getElementById("tabs")!, dock = document.getElementById("dock")!;
   let active = 0;
-  const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
-  const TAB_INFO = ["Virtual table: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing."];
-  panels.forEach(([name], i) => { const b = document.createElement("button"); b.innerHTML = `${icon(["table", "world", "log", "perf"][i])}<span>${name}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
+  const TAB_INFO = ["Virtual table: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing.", "Chat with the AI: it sees the game, cameras and setup, and can change them for you."];
+  panels.forEach(([name], i) => { const b = document.createElement("button"); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span>${name}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  assistant.onNudge = () => { if (active !== 4) tabs.children[4]?.classList.add("ping"); };
   show(prefs.tab !== undefined && prefs.tab >= 0 && prefs.tab < panels.length ? prefs.tab : 0);
 
   table.seatCb = (seated) => { for (const n of graph.nodes.values()) if (n.type === "sim.person") n.params.seated = seated; };
@@ -475,11 +498,12 @@ export function boot(root: HTMLElement): Boot {
     if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
     profiler.span("editor", () => editor.frame(now));
     wiz?.frame(now);
-    profiler.span(["table", "world", "log", "perf"][active], () => {
+    assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
+    profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {
       if (active === 0) table.frame(now);
       else if (active === 1) world.frame(now);
       else if (active === 2) log.frame();
-      else perf.frame(now);
+      else if (active === 3) perf.frame(now);
     });
     if (now - lastPost > 33 && bus.scene) {
       lastPost = now;
@@ -576,7 +600,7 @@ export function boot(root: HTMLElement): Boot {
   window.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement | null;
     if (e.ctrlKey || e.metaKey || e.altKey || wiz || (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
-    const i = ["1", "2", "3", "4"].indexOf(e.key);
+    const i = ["1", "2", "3", "4", "5"].indexOf(e.key);
     if (i >= 0) { e.preventDefault(); go({ page: PAGES[i] }); }
     else if (e.key === ",") { e.preventDefault(); go({ page: "settings", step: stepIds[0] }); }
   });

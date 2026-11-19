@@ -1,11 +1,11 @@
-/** Hash routes: `#/table`, `#/world`, `#/log`, `#/perf`, `#/settings/<step-id>`. Old `#/setup` links still open settings. Hash routing works on any static host and file://. */
-export type Page = "table" | "world" | "log" | "perf";
+/** Hash routes: `#/table`, `#/world`, `#/log`, `#/perf`, `#/assistant`, `#/settings/<step-id>`. Old `#/setup` links still open settings. Hash routing works on any static host and file://. */
+export type Page = "table" | "world" | "log" | "perf" | "assistant";
 /** Name of a popup that can be shown in the URL as `?dialog=<name>` (see dialogUrl.ts). Kept open-ended until the popups are wired. */
 export type Dialog = string;
 export type Route = { page: Page } | { page: "settings"; step: string | null };
 
-export const PAGES: Page[] = ["table", "world", "log", "perf"];
-export const PAGE_TITLES: Record<Page | "settings", string> = { table: "Table", world: "3D / Mapping", log: "Log", perf: "Performance", settings: "Settings" };
+export const PAGES: Page[] = ["table", "world", "log", "perf", "assistant"];
+export const PAGE_TITLES: Record<Page | "settings", string> = { table: "Table", world: "3D / Mapping", log: "Log", perf: "Performance", assistant: "Assistant", settings: "Settings" };
 
 export function parseRoute(hash: string, stepIds: readonly string[] = []): Route {
   const [page, step] = hash.replace(/^#\/?/, "").split("/").map((s) => decodeURIComponent(s.trim().toLowerCase()));

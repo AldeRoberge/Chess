@@ -45,7 +45,7 @@ describe("first launch", () => {
   it("shows the Halo setup wizard on top of a working demo patch", () => {
     const app = boot(root);
     expect(document.querySelector(".halo")).toBeTruthy(); expect(app.wizard()).toBeTruthy(); expect(app.graph.nodes.size).toBeGreaterThan(10);
-    expect(root.querySelectorAll("#tabs button")).toHaveLength(4);
+    expect(root.querySelectorAll("#tabs button")).toHaveLength(5);
     app.openWizard(); expect(document.querySelectorAll(".halo")).toHaveLength(1); // opening twice does not stack
   });
   it("finishing the wizard saves the setup, rebuilds the patch from it and removes the overlay", () => {
