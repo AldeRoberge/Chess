@@ -54,7 +54,7 @@ describe("TablePanel", () => {
   });
   it("draws pieces, selection, the carried piece's hand and the overlay, and narrates state in the info line", () => {
     const p = new TablePanel(), cv = p.root.querySelector("canvas")!, ctx = cv.getContext("2d")!, text = vi.spyOn(ctx, "fillText"); rect(cv);
-    p.frame(0); expect(text).toHaveBeenCalledTimes(48); expect(p.root.querySelector(".muted")!.textContent).toBe("idle · tracker: — · ");
+    p.frame(0); expect(text).toHaveBeenCalledTimes(48); expect(p.root.querySelector(".muted")!.textContent).toBe("idle · tracker: —");
     click(cv, 4, 6); virtualTable.carried = 52; virtualTable.hand = { x: 4.5, y: 5 }; text.mockClear(); p.frame(16); expect(text).toHaveBeenCalledTimes(48); // 47 on the board + the carried piece, now drawn in the hand
     bus.director = { phase: "game", mode: "engine", elo: 1500, menu: [], progress: {}, events: [], seat: null } as any; bus.game = { status: "synced", history: ["e4", "e5"], last: null, lifted: undefined, diff: [] } as any;
     p.frame(32); expect(p.root.querySelector(".muted")!.textContent).toBe("game · Stockfish 1500 · tracker: synced · e4 e5");
@@ -68,7 +68,7 @@ describe("LogPanel", () => {
     bus.cameras = [{ id: "A", online: true, quality: 0.9, reliability: 0.8 }];
     bus.lines = [{ speaker: "A", name: "Jean", text: "Bonjour", t: 0, priority: 1 }, { speaker: "B", name: "Margot", text: "Salut", t: 1, priority: 1 }];
     bus.events = [{ type: "move", t: 0, data: { san: "e4" } }, { type: "seat", t: 0 }];
-    p.frame(); expect(p.root.querySelector(".chips")!.textContent).toContain("cam A · q 90% · trust 80%");
+    p.frame(); expect(p.root.querySelector(".chips")!.textContent).toContain("cam A · quality 90% · trust 80%");
     const lns = [...p.root.querySelectorAll(".ln")]; expect(lns.map((l) => l.className)).toEqual(["ln B", "ln A"]); expect(p.root.querySelectorAll(".evt")).toHaveLength(2); expect(p.root.querySelector(".evt")!.textContent).toContain("seat");
     const html = p.root.querySelector(".lines")!.innerHTML; p.frame(); expect(p.root.querySelector(".lines")!.innerHTML).toBe(html);
     bus.lines.push({ speaker: "A", name: "Jean", text: "Encore", t: 2, priority: 1 }); p.frame(); expect(p.root.querySelectorAll(".ln")).toHaveLength(3);

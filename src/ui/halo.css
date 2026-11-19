@@ -18,12 +18,12 @@
 .halo-progress i.done{background:var(--signal);opacity:1}
 .halo-progress i.cur{width:22px;border-radius:4px;background:var(--signal-hi);opacity:1;box-shadow:0 0 10px color-mix(in srgb,var(--signal) 53%,transparent)}
 .halo-progress span{margin-left:8px}
-.halo-body{display:grid;grid-template-columns:var(--steps-w,280px) 14px 1fr;gap:10px;padding:8px 32px 16px;min-height:0}
+.halo-body{display:grid;grid-template-columns:var(--steps-w,280px) 14px 1fr;gap:10px;padding:8px 32px 16px;min-height:0;overflow:hidden}
 /* draggable divider: a thin line, a wider invisible grab area, col-resize cursor */
 .halo-split{position:relative;cursor:col-resize;touch-action:none;user-select:none;align-self:stretch}
 .halo-split::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line-hi);transform:translateX(-50%);transition:background .15s,width .15s}
 .halo-split:hover::before,.halo-split:active::before{width:3px;background:var(--signal)}
-.halo-steps{list-style:none;margin:0;padding:6px 0;display:flex;flex-direction:column;gap:6px;align-self:start}
+.halo-steps{list-style:none;margin:0;padding:6px 0;display:flex;flex-direction:column;gap:6px;align-self:stretch;min-height:0;overflow-y:auto;scrollbar-width:thin}
 .halo-step{display:flex;align-items:center;gap:14px;padding:10px 14px 10px 10px;min-height:56px;cursor:pointer;color:var(--text-dim);font-size:1.08em;font-weight:500;background:var(--ink-1);border:1px solid var(--line);border-radius:16px;transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s,border-color .15s,color .15s,box-shadow .15s}
 .halo-step-ic{display:inline-grid;place-items:center;flex:none;width:38px;height:38px;border-radius:12px;color:var(--signal);background:color-mix(in srgb,var(--signal) 14%,var(--ink-2));transition:background .15s,color .15s,transform .15s}
 .halo-step-ic svg{stroke-width:2}
@@ -66,7 +66,7 @@
 .halo-canvas{display:block;width:100%;max-width:640px;border:1px solid var(--line-hi);background:var(--ink-0);touch-action:none}
 .halo-hint{margin-top:14px;color:var(--amber);font:400 var(--t-md)/1.5 var(--font-ui);min-height:1.5em;max-width:62ch}
 .halo-keys{display:flex;gap:28px;padding:10px 32px 14px;color:var(--text-dim);font-size:var(--t-sm);border-top:1px solid var(--line);background:color-mix(in srgb,var(--ink-0) 80%,transparent)}
-.halo-keys span{display:inline-flex;align-items:center;gap:4px}.halo-keys kbd{min-width:22px;padding:0 6px;text-align:center;border:1px solid var(--line-hi);border-bottom-width:2px;border-radius:5px;background:var(--ink-2);color:var(--text);font:500 11px/18px var(--font-ui)}.halo-keys kbd:first-child{margin-right:0}
+.halo-keys span{display:inline-flex;align-items:center;gap:4px}.halo-keys kbd{min-width:22px;padding:0 6px;text-align:center;border:1px solid var(--line-hi);border-bottom-width:2px;border-radius:5px;background:var(--ink-2);color:var(--text);font:500 var(--t-xs)/18px var(--font-ui)}.halo-keys kbd:first-child{margin-right:0}
 
 /* one orchestrated entrance, then stillness */
 @keyframes halo-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -151,13 +151,13 @@
 .elo-axis{stroke:var(--line-hi);stroke-width:1}
 .elo-band{fill:var(--line-hi)}
 .elo-band.alt{fill:var(--signal);opacity:.45}
-.elo-tier{fill:var(--text-dim);font:500 11px var(--font-ui)}
+.elo-tier{fill:var(--text-dim);font:500 var(--t-xs) var(--font-ui)}
 .elo-top{fill:var(--text);stroke:var(--ink-0);stroke-width:1;cursor:help}
 .elo-now{stroke:var(--signal-hi);stroke-width:1.2;stroke-dasharray:3 3}
 .elo-dot{fill:var(--signal-hi);stroke:var(--ink-0);stroke-width:1.5}
-.elo-nowlab{fill:var(--signal-hi);font:600 11px var(--font-ui)}
+.elo-nowlab{fill:var(--signal-hi);font:600 var(--t-xs) var(--font-ui)}
 .elo-leader{fill:none;stroke:var(--text-dim);stroke-width:1;stroke-dasharray:1.5 2.5;opacity:.8}
-.elo-name{fill:var(--text);font:500 11px var(--font-ui)}
+.elo-name{fill:var(--text);font:500 var(--t-xs) var(--font-ui)}
 .elo-name-elo{fill:var(--text);font-weight:600}
 .elo-read{margin:6px 0 0}
 .elo-read b{color:var(--signal-hi);font-weight:600}
@@ -248,3 +248,4 @@
   .halo-sys tr{display:flex;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line);padding:4px 0}
   .halo-sys td{border:0;padding:4px 8px}.halo-sys td:last-child{margin-left:auto}
 }
+@media (max-height:800px){.halo-step{min-height:44px;padding-block:6px}.halo-step-ic{width:30px;height:30px}.halo-steps{gap:4px}}

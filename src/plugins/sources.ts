@@ -87,7 +87,7 @@ const webcam: NodeSpec<WebcamState> = {
 
 interface SynthState { frame: GrayFrame | null; last: number; seed: number; key: string; lum: Float32Array | null; inflight: boolean; epoch: number }
 const synthetic: NodeSpec<SynthState> = {
-  type: "source.synthetic", title: "VIRTUAL CAMERA (3D)", category: "Source",
+  type: "source.synthetic", title: "Virtual camera (3D)", category: "Source",
   inputs: [{ id: "world", type: "world", label: "Virtual world" }], outputs: [{ id: "frame", type: "frame" }],
   params: [
     { id: "online", kind: "bool", label: "Online", value: true },
