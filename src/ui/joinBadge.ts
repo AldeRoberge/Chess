@@ -18,7 +18,7 @@ export function installJoinBadge(src: Source, openPhone: () => void) {
     const show = src.available === true && !!src.code;
     box.hidden = !show; if (!show) return;
     const u = src.urls.find((s) => s.includes("alderoberge.com")) ?? src.urls[0] ?? "";
-    label.textContent = src.clients ? `Phone join code · ${src.clients} connected` : "Phone join code";
+    label.textContent = src.clients ? `This PC’s join code · ${src.clients} connected` : "This PC’s join code";
     code.textContent = src.code; url.textContent = u.replace(/^https?:\/\//, "").replace(/#.*$/, "");
   };
   update();

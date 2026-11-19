@@ -513,7 +513,7 @@ export function boot(root: HTMLElement): Boot {
       const address = remote.urls.find((u) => u.includes("alderoberge.com")) ?? remote.urls[0] ?? "";
       notify(`${lead} ${remote.clients ? `${remote.clients} phone${remote.clients === 1 ? " is" : "s are"} connected now.` : "No phone is connected yet."}`,
         [{ label: "Copy address", run: () => { void navigator.clipboard?.writeText(address).catch(() => {}); } }], "info",
-        { title: "Watch and play from a phone", details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
+        { title: `This PC’s join code: ${remote.code}`, details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
     }
   };
   installJoinBadge(remote, () => document.getElementById("phone")!.click());
