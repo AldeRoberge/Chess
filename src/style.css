@@ -524,11 +524,21 @@ body.simple #organize,body.simple #addsec{display:none!important}
 
   .panel{padding:8px;gap:8px}
   .panel.table .muted:last-child{display:none}
-  /* the board never pushes both players and the move prompt off a tall tablet screen */
-  .panel.table .table-cv{width:min(100%,max(280px,100dvh - 430px));margin-inline:auto}
 
   /* nodes on: the canvas tools become round icon buttons; the canvas owns every touch gesture */
   .ne-tools{left:8px;top:8px}
   .ne-tools button{width:44px;height:44px;padding:0;border-radius:999px;justify-content:center}
   .ne-tools button .lbl{display:none}
+/* Table panel columns: stacked by default (the wrappers vanish); in the simple view the dock is a size container so the board fits its height and nothing needs scrolling. */
+.cc-board,.cc-side{display:contents}
+body.simple #dock{container:dock/size;overflow:hidden}
+body.simple #dock>.panel:not(.table){height:100%;overflow:auto;box-sizing:border-box}
+body.simple .panel.table{height:100%;box-sizing:border-box;overflow:auto}
+body.simple .cc-board{display:flex;flex-direction:column;gap:6px;align-self:center;flex:none;width:min(100%,max(240px,100cqh - 290px))}
+body.simple .cc-side{display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-height:0;overflow:auto}
+body.simple .cc-side .moves{max-height:none;flex:1 1 auto;min-height:60px}
+@container dock (min-width:720px){
+  body.simple .panel.table{flex-direction:row;justify-content:center;align-items:stretch;gap:20px;padding:12px 16px}
+  body.simple .cc-board{align-self:flex-start;width:min(max(220px,100cqh - 140px),100cqw - 392px,1000px)}
+  body.simple .cc-side{flex:0 1 360px;min-width:260px}
 }
