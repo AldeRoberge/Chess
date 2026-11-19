@@ -150,11 +150,26 @@ describe("pan and zoom", () => {
   it("pans on background drag and zooms about the cursor within limits", () => {
     const { ed } = setup(); const world = ed.root.querySelector<HTMLElement>(".ne-world")!;
     expect(world.style.transform).toBe("translate(40px, 30px) scale(0.85)");
-    ptr(ed.root, "pointerdown", 100, 100); ptr(ed.root, "pointermove", 130, 150); expect(world.style.transform).toContain("translate(70px, 80px)"); ptr(ed.root, "pointerup");
-    ptr(ed.root, "pointermove", 500, 500); expect(world.style.transform).toContain("translate(70px, 80px)"); // no longer dragging
-    ed.root.dispatchEvent(Object.assign(new Event("wheel", { cancelable: true, bubbles: true }), { deltaY: -100, clientX: 400, clientY: 300 })); expect(world.style.transform).toContain("scale(0.935)");
-    for (let i = 0; i < 40; i++) ed.root.dispatchEvent(Object.assign(new Event("wheel", { cancelable: true, bubbles: true }), { deltaY: -100, clientX: 0, clientY: 0 })); expect(world.style.transform).toContain("scale(1.6)");
-    for (let i = 0; i < 80; i++) ed.root.dispatchEvent(Object.assign(new Event("wheel", { cancelable: true, bubbles: true }), { deltaY: 100, clientX: 0, clientY: 0 })); expect(world.style.transform).toContain("scale(0.3)");
+    // gestures write the transform once per frame; frame() flushes it
+    ptr(ed.root, "pointerdown", 100, 100); ptr(ed.root, "pointermove", 130, 150); expect(ed.root.classList.contains("moving")).toBe(true); ed.frame(0); expect(world.style.transform).toContain("translate(70px, 80px)"); ptr(ed.root, "pointerup");
+    expect(ed.root.classList.contains("moving")).toBe(false);
+    ptr(ed.root, "pointermove", 500, 500); ed.frame(0); expect(world.style.transform).toContain("translate(70px, 80px)"); // no longer dragging
+    ed.root.dispatchEvent(Object.assign(new Event("wheel", { cancelable: true, bubbles: true }), { deltaY: -100, clientX: 400, clientY: 300 })); ed.frame(0); expect(world.style.transform).toContain("scale(0.935)");
+    for (let i = 0; i < 40; i++) ed.root.dispatchEvent(Object.assign(new Event("wheel", { cancelable: true, bubbles: true }), { deltaY: -100, clientX: 0, clientY: 0 })); ed.frame(0); expect(world.style.transform).toContain("scale(1.6)");
+    for (let i = 0; i < 80; i++) ed.root.dispatchEvent(Object.assign(new Event("wheel", { cancelable: true, bubbles: true }), { deltaY: 100, clientX: 0, clientY: 0 })); ed.frame(0); expect(world.style.transform).toContain("scale(0.3)");
+  });
+  it("zooms in small steps for trackpad deltas and pinches with two fingers", () => {
+    const { ed } = setup(); const world = ed.root.querySelector<HTMLElement>(".ne-world")!;
+    ed.root.dispatchEvent(Object.assign(new Event("wheel", { cancelable: true, bubbles: true }), { deltaY: -4, clientX: 0, clientY: 0 })); ed.frame(0);
+    expect(ed.getView().k).toBeGreaterThan(0.85); expect(ed.getView().k).toBeLessThan(0.86); // a few px is a nudge, not a 10% jump
+    ed.setView({ x: 0, y: 0, k: 1 });
+    const touch = (type: string, id: number, x: number, y: number) => ptr(ed.root, type, x, y, { pointerId: id, pointerType: "touch" });
+    touch("pointerdown", 1, 100, 100); touch("pointerdown", 2, 200, 100); expect(ed.root.classList.contains("moving")).toBe(true);
+    touch("pointermove", 2, 300, 100); ed.frame(0); // fingers twice as far apart, around a midpoint that moved from 150 to 200
+    const v = ed.getView(); expect(v.k).toBe(1.6); expect(v.x).toBeCloseTo(200 - 150 * 1.6); expect(v.y).toBeCloseTo(100 - 100 * 1.6); // 2x is capped at 1.6; the point under the fingers follows them
+    expect(world.style.transform).toContain("scale(1.6)");
+    touch("pointerup", 2, 300, 100); expect(ed.root.classList.contains("moving")).toBe(false);
+    touch("pointerup", 1, 100, 100);
   });
 });
 

@@ -83,6 +83,8 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne{position:absolute;inset:0;overflow:hidden;background-color:var(--ink-0);background-image:radial-gradient(var(--ink-3) 1px,transparent 1px);background-size:24px 24px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .ne input[type=text],.ne select{user-select:text;-webkit-user-select:text}
 .ne-world{position:absolute;left:0;top:0;transform-origin:0 0}
+/* while the map moves: one compositor layer, no hover hit-testing; dropped afterwards so zoomed text re-rasterises crisp */
+.ne.moving .ne-world{will-change:transform}.ne.moving .ne-world>*{pointer-events:none}.ne.moving{cursor:grabbing}
 .ne-wires{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .ne-wires path{fill:none;stroke-width:3.5;opacity:1}.ne-wires path.idle{opacity:.85;stroke-dasharray:6 5}
 .ne-wires path.live{stroke-dasharray:8 6;animation:flow .9s linear infinite}
@@ -498,8 +500,7 @@ body.simple #organize,body.simple #addsec{display:none!important}
   .rgroup,.rgroup:first-child{padding:0;border-right:0;justify-content:flex-start}
   .rlabel{display:none}
   .rbtns{gap:4px;align-items:center}
-  .ribbon .rb{width:64px;min-width:64px;height:56px;padding:4px 2px;gap:4px;border-radius:12px;scroll-snap-align:start;font-size:11px;line-height:1.1}
-  .ribbon .rb>span:not(.ic-slot){max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ribbon .rb{width:auto;min-width:60px;height:56px;padding:4px 8px;gap:4px;border-radius:12px;scroll-snap-align:start;font-size:11px;line-height:1.1;white-space:nowrap}
   .ribbon .rb .ic{width:22px;height:22px}
   .ribbon .rb:disabled{display:none}
   .ribbon select{min-height:44px;border-radius:12px;scroll-snap-align:start}
@@ -523,6 +524,8 @@ body.simple #organize,body.simple #addsec{display:none!important}
 
   .panel{padding:8px;gap:8px}
   .panel.table .muted:last-child{display:none}
+  /* the board never pushes both players and the move prompt off a tall tablet screen */
+  .panel.table .table-cv{width:min(100%,max(280px,100dvh - 430px));margin-inline:auto}
 
   /* nodes on: the canvas tools become round icon buttons; the canvas owns every touch gesture */
   .ne-tools{left:8px;top:8px}
