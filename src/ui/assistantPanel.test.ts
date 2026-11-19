@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bus } from "../core/bus";
 import { fakeHost, scripted } from "../assistant/testHost";
-import { AssistantPanel, md } from "./assistantPanel";
+import { AssistantPanel } from "./assistantPanel";
 
 const flush = async (n = 8) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 5)); };
 const store = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) }; };
@@ -14,13 +14,6 @@ const mount = (replies: Parameters<typeof scripted>[0], o: { key?: string; opts?
   document.body.append(p.root); return { p, f, h, st };
 };
 beforeEach(() => { document.body.innerHTML = ""; bus.events.length = 0; bus.cameras.length = 0; bus.game = null; bus.board = null; });
-
-describe("markdown", () => {
-  it("renders a safe subset", () => {
-    expect(md("**hi** `x<y` *it*\n- a\n- b\n\n1. one\n# Title\nplain <script>")).toBe("<p><b>hi</b> <code>x&lt;y</code> <i>it</i></p><ul><li>a</li><li>b</li></ul><ul><li>one</li></ul><p>Title<br>plain &lt;script&gt;</p>");
-    expect(md("")).toBe("");
-  });
-});
 
 describe("assistant panel", () => {
   it("answers with streamed text, shows context chips, and remembers the chat", async () => {
@@ -69,9 +62,10 @@ describe("assistant panel", () => {
   });
 
   it("explains errors and retries", async () => {
-    const { p } = mount([{}], { opts: { status: 401 } }); p.submit("hi"); await flush();
-    expect(q(p, ".as-err").textContent).toContain("rejected"); expect(q(p, ".as-key").classList.contains("open")).toBe(true);
-    const f = scripted([{ content: "fine now" }]); (p as any).deps.fetchImpl = f.fetch; btn(p, "Retry").click(); await flush();
+    localStorage.setItem("cx.ai.v1", JSON.stringify({ apiKey: "sk-test", model: "m", remember: true }));
+    let next = scripted([{}], { status: 401 }).fetch; const p = new AssistantPanel(fakeHost().host, { fetchImpl: ((...a: Parameters<typeof fetch>) => next(...a)) as typeof fetch, storage: store() }); document.body.append(p.root);
+    p.submit("hi"); await flush(); expect(q(p, ".as-err").textContent).toContain("rejected"); expect(q(p, ".as-key").classList.contains("open")).toBe(true);
+    next = scripted([{ content: "fine now" }]).fetch; btn(p, "Retry").click(); await flush();
     expect(qa(p, ".as-msg.retry")).toHaveLength(0); expect(q(p, ".as-msg.assistant:last-child .as-body").textContent).toBe("fine now"); expect(p.history.filter((m) => m.role === "user")).toHaveLength(1);
   });
 

@@ -22,6 +22,10 @@ export interface AgentTool {
   /** JSON schema of the arguments. */
   parameters: Record<string, unknown>;
   risk: Risk;
+  /** What the chat shows while the tool runs and after it ran. Defaults to the tool name. */
+  label?: { doing: string; done: string };
+  /** The tool changes the app in a way the Undo button on its card can take back. */
+  undoable?: boolean;
   /** One line shown on the approval card of a "danger" tool. */
   describe?(args: any): string;
   run(args: any, ctx: ToolCtx): Promise<unknown> | unknown;
@@ -29,7 +33,7 @@ export interface AgentTool {
 
 export type AgentEvent =
   | { type: "text"; delta: string }
-  | { type: "tool_start"; id: string; name: string; args: any; risk: Risk }
+  | { type: "tool_start"; id: string; name: string; args: any; risk: Risk; label?: AgentTool["label"]; undoable?: boolean }
   | { type: "tool_end"; id: string; name: string; ok: boolean; result: unknown; ms: number }
   | { type: "usage"; prompt: number; completion: number }
   | { type: "step"; n: number };
@@ -135,7 +139,7 @@ export async function runAgent(r: RunOptions): Promise<string> {
     const run = async (call: ToolCall): Promise<ChatMsg> => {
       const tool = byName.get(call.function.name); let args: any = {}, t0 = performance.now(), ok = true, result: unknown;
       try { args = call.function.arguments.trim() ? JSON.parse(call.function.arguments) : {}; } catch { args = null; }
-      r.emit({ type: "tool_start", id: call.id, name: call.function.name, args, risk: tool?.risk ?? "read" });
+      r.emit({ type: "tool_start", id: call.id, name: call.function.name, args, risk: tool?.risk ?? "read", label: tool?.label, undoable: tool?.undoable });
       try {
         if (!tool) throw new Error(`Unknown tool "${call.function.name}".`);
         if (args === null || typeof args !== "object") throw new Error("The arguments were not valid JSON.");

@@ -42,7 +42,7 @@ import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
 import { AssistantPanel } from "./ui/assistantPanel";
-import type { AssistantHost } from "./assistant/context";
+import { createAppHost } from "./assistant/appHost";
 import { profiler } from "./core/profiler";
 import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
@@ -250,25 +250,19 @@ export function boot(root: HTMLElement): Boot {
   const world = new WorldPanel(graph), log = new LogPanel(); tips.add(log.tips);
   const perf = new PerfPanel(graph, { reveal: (id) => editor.reveal(id), setHeat: (on) => setHeat(on), heatOn: () => editor.heatOn });
   tips.add(perf.tips);
-  // The assistant sees and changes the app only through this host, so it can be tested with a fake.
-  const assistantHost: AssistantHost = {
-    registry, graph: () => graph.toJSON(), setup: () => loadSetup(),
+  // The assistant sees and changes the app only through this host (see assistant/appHost.ts)
+  const assistantHost = createAppHost({
+    registry, graph, loadSetup,
     applySetup: (cfg, why) => { addBackup(why, graph.toJSON(), loadSetup(), true); saveSetup(cfg); buildGraphFromConfig(graph, cfg); editor.rebuild(); persist(); },
     applyGraph: (g, why) => restore(g, null, why),
-    setParam: (id, key, value) => { const n = graph.nodes.get(id); if (!n) return false; n.params[key] = value; persist(); return true; },
-    setBypass: (id, on) => { const n = graph.nodes.get(id); if (!n) return false; if (!!n.bypass !== on) editor.toggleBypass(id); return true; },
-    selection: () => editor.selection(),
-    nodeErrors: () => [...graph.stats].filter(([, s]) => s.error).map(([id, s]) => ({ node: id, type: graph.nodes.get(id)?.type ?? "?", message: s.error!, hint: s.errorHint })),
-    route: () => route, go: (r) => go(r),
-    undo: () => { const ok = edits.canUndo; undo(); return ok; }, redo: () => { const ok = edits.canRedo; redo(); return ok; },
-    canUndo: () => edits.canUndo, canRedo: () => edits.canRedo,
+    persist: () => persist(), toggleBypass: (id) => editor.toggleBypass(id), selection: () => editor.selection(),
+    route: () => route, go: (r) => go(r), history: { get canUndo() { return edits.canUndo; }, get canRedo() { return edits.canRedo; } }, undo: () => undo(), redo: () => redo(),
     table: {
       fen: () => virtualTable.game.fen(), legal: () => virtualTable.game.moves(), reset: () => virtualTable.reset(),
       seat: (on) => { virtualTable.seated = on; table.seatCb(on); }, seated: () => virtualTable.seated, play: (m) => virtualTable.play(m, performance.now()),
     },
-    sound: () => ({ on: soundOn, muted: mixer.get().muted }),
-    now: () => performance.now(),
-  };
+    sound: () => ({ on: soundOn, muted: mixer.get().muted }), now: () => performance.now(),
+  });
   const assistant = new AssistantPanel(assistantHost);
   const panels: [string, { root: HTMLElement }][] = [["Table", table], ["3D / Mapping", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
   const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };

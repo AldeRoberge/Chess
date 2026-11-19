@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import { createRegistry } from "../plugins";
 import { Graph } from "../core/graph";
 import { buildGraphFromConfig, defaultSetup, type SetupConfig } from "../setup/config";
-import type { AssistantHost } from "./context";
+import type { AssistantHost } from "./host";
 import type { Route } from "../ui/route";
 
 /** A real graph and setup behind the host interface, with spies for what the assistant changes. Test helper only. */

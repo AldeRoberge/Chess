@@ -49,8 +49,9 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const neg = btn("Negative grid: on");
   neg.title = "Draw the grid as the inverse of the camera picture so it stays visible on light and dark squares";
   neg.onclick = () => { negative = !negative; neg.textContent = `Negative grid: ${negative ? "on" : "off"}`; };
-  bar.append(neg, auto, reset, cancel, ok);
-  box.append(head, hint, cv, bar); back.append(box); document.body.append(back);
+  bar.append(auto, reset, cancel, ok);
+  const opts = document.createElement("div"); opts.className = "qe-bar"; opts.append(neg);
+  box.append(head, hint, cv, bar, opts); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;

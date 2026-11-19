@@ -2,6 +2,7 @@ import { MAX_CAMERAS, nextCameraId, virtualCamera, webcamSetup, withDefaults, ty
 import { parseCorners } from "../plugins/shared";
 import { SCENES } from "../scene/types";
 import { SCENARIOS } from "../sim/scenarios";
+import { SECRET } from "./host";
 
 /** Settings the assistant may change, with their limits. Secrets (API keys) are deliberately absent: the person types those in Setup. */
 type Rule = { kind: "num"; min: number; max: number; int?: boolean } | { kind: "bool" } | { kind: "enum"; of: readonly (string | number)[] } | { kind: "text"; max: number; pattern?: RegExp };
@@ -19,7 +20,6 @@ export const RULES: Record<string, Rule> = {
   "demo.autoplay": { kind: "bool" }, "demo.scenario": { kind: "enum", of: SCENARIOS.map((s) => s.id) },
 };
 const CAM_RULES: Record<string, Rule> = { online: { kind: "bool" }, channel: { kind: "enum", of: ["luma", "red", "green", "blue"] }, trust: { kind: "num", min: 0, max: 2 }, fov: { kind: "num", min: 10, max: 120 }, label: { kind: "text", max: 60 } };
-const SECRET = /key|token|secret|password/i;
 
 /** Checks one value against its rule. Returns the cleaned value, or an error string. */
 export function check(rule: Rule, v: unknown): { v: string | number | boolean } | { err: string } {
