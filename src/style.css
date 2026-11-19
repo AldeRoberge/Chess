@@ -387,3 +387,6 @@ aside{container-type:inline-size}
 .ne-tools button{display:inline-flex;align-items:center;gap:6px}
 .scen-pause{display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .notice-actions button,.bk-bar button,.bk-head button,.bk-row button{display:inline-flex;align-items:center;gap:7px}
+
+/* touch sizing must not stretch the round section dot */
+.coarse .ne-gdot{min-height:0}
