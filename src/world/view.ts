@@ -130,7 +130,9 @@ export class WorldView {
       vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: `uniform sampler2D map; uniform mat4 vp; varying vec3 vW;
         void main(){ vec4 c = vp * vec4(vW,1.0); if (c.w <= 0.0) discard; vec2 n = c.xy / c.w; if (abs(n.x) > 1.0 || abs(n.y) > 1.0) discard;
-          gl_FragColor = texture2D(map, n * 0.5 + 0.5); #include <colorspace_fragment> }`,
+          gl_FragColor = texture2D(map, n * 0.5 + 0.5);
+          #include <colorspace_fragment>
+        }`,
     });
     this.ov.material = this.projMat; this.projDirty = true;
   }
