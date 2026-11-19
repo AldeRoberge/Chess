@@ -83,6 +83,8 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne{position:absolute;inset:0;overflow:hidden;background-color:var(--ink-0);background-image:radial-gradient(var(--ink-3) 1px,transparent 1px);background-size:24px 24px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .ne input[type=text],.ne select{user-select:text;-webkit-user-select:text}
 .ne-world{position:absolute;left:0;top:0;transform-origin:0 0}
+/* while the map moves: one compositor layer, no hover hit-testing; dropped afterwards so zoomed text re-rasterises crisp */
+.ne.moving .ne-world{will-change:transform}.ne.moving .ne-world>*{pointer-events:none}.ne.moving{cursor:grabbing}
 .ne-wires{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .ne-wires path{fill:none;stroke-width:3.5;opacity:1}.ne-wires path.idle{opacity:.85;stroke-dasharray:6 5}
 .ne-wires path.live{stroke-dasharray:8 6;animation:flow .9s linear infinite}
@@ -465,6 +467,68 @@ aside{container-type:inline-size}
 body.simple main{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
 body.simple #graph,body.simple #resize,body.simple #selgroup{display:none!important}
 body.simple aside{border-left:0!important;border-top:0!important}
+
+/* Tabs carry a long label for wide screens and a one-word one for the phone bar. */
+#tabs .ts{display:none}
+/* Simple view has no graph, so the graph-only ribbon tools go too. */
+body.simple #organize,body.simple #addsec{display:none!important}
+
+/*
+ * Portrait (phones, tablets held upright): one thing per screen, icons first, menus swipe sideways.
+ * Top: knight + icon tabs + the few live controls. Under it, one swipeable row of icon buttons with
+ * short captions (no group titles, no dividers). Bottom: an icon tab bar. Every target is at least 44px.
+ */
+@media (max-aspect-ratio:1/1) and (max-width:900px){
+  #app{grid-template-rows:auto minmax(0,1fr) auto}
+  #app>header{grid-template-columns:auto minmax(0,1fr)}
+  #app>header .brand{margin:0 2px 0 6px;padding:4px;border-right:0}
+  .rtabs{align-items:center;gap:2px;padding:4px 6px 4px 0}
+  .rtabs>button[data-rtab]{min-width:44px;min-height:40px;padding:0 10px;border-radius:999px;border:0;margin:0;justify-content:center}
+  .rtabs>button[data-rtab] span{display:none}
+  .rtabs>button[data-rtab].on{background:var(--ink-3);padding:0 14px 0 12px}
+  .rtabs>button[data-rtab].on span{display:inline}
+  .rtabs>button[data-rtab].on::before{display:none}
+  .rtabs>button[data-rtab] .ic{width:18px;height:18px}
+  #hist{display:none}
+  .scen-pause{min-width:44px;min-height:40px;padding:0 10px}.scen-pause .lbl{display:none}.scen-pause:disabled{display:none}
+  .hud-more>.chip{min-width:44px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px}
+
+  .ribbon{padding:6px 0;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;scroll-padding-inline:8px;overscroll-behavior-x:contain;scrollbar-width:none;
+    -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+  .ribbon::-webkit-scrollbar{display:none}
+  .rpane.on{width:max-content;padding:0 28px 0 8px;gap:4px}
+  .rgroup,.rgroup:first-child{padding:0;border-right:0;justify-content:flex-start}
+  .rlabel{display:none}
+  .rbtns{gap:4px;align-items:center}
+  .ribbon .rb{width:auto;min-width:60px;height:56px;padding:4px 8px;gap:4px;border-radius:12px;scroll-snap-align:start;font-size:11px;line-height:1.1;white-space:nowrap}
+  .ribbon .rb .ic{width:22px;height:22px}
+  .ribbon .rb:disabled{display:none}
+  .ribbon select{min-height:44px;border-radius:12px;scroll-snap-align:start}
+  .rdrop{display:flex;align-items:center}
+
+  /* bottom bar: icon over a one-word label; swipes if a future tab does not fit */
+  #tabs{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+  #tabs::-webkit-scrollbar{display:none}
+  #tabs button{flex:1 0 64px;min-height:48px;scroll-snap-align:start;gap:3px;font-size:11px;font-weight:500}
+  #tabs button .tl,#tabs button kbd{display:none}
+  #tabs button .ts{display:block}
+  #tabs button .ic{width:22px;height:22px}
+  #tabs button.on{color:var(--signal-hi);box-shadow:none}
+  #tabs button.on .ic{color:var(--signal)}
+  #tabs button.on::before{content:"";position:absolute;top:0;left:30%;right:30%;height:3px;border-radius:0 0 3px 3px;background:var(--signal)}
+  #tabs button{position:relative}
+
+  /* the status line only takes room while it has something to say */
+  footer{height:28px;font-size:var(--t-xs)}
+  footer:empty{height:0;border-top:0}
+
+  .panel{padding:8px;gap:8px}
+  .panel.table .muted:last-child{display:none}
+
+  /* nodes on: the canvas tools become round icon buttons; the canvas owns every touch gesture */
+  .ne-tools{left:8px;top:8px}
+  .ne-tools button{width:44px;height:44px;padding:0;border-radius:999px;justify-content:center}
+  .ne-tools button .lbl{display:none}
 /* Table panel columns: stacked by default (the wrappers vanish); in the simple view the dock is a size container so the board fits its height and nothing needs scrolling. */
 .cc-board,.cc-side{display:contents}
 body.simple #dock{container:dock/size;overflow:hidden}
