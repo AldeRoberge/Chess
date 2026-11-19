@@ -86,10 +86,20 @@ export class PositionTracker {
     return c;
   }
 
+  /** Bumped whenever this class changes the game, so the position summary below is only rebuilt after a move. */
+  private ver = 0;
+  private memo: { game: Chess; ver: number; fen: string; turn: "w" | "b"; over: boolean; history: string[] } | null = null;
+
   private base(status: TrackStatus, diff: number[], events: ExperienceEvent[], fid: number, lifted?: string): TrackResult {
+    // chess.js rebuilds the SAN history by undoing and replaying every move, and this runs on every tick:
+    // keep the summary until the game actually changes.
+    let m = this.memo;
+    if (!m || m.game !== this.game || m.ver !== this.ver) {
+      m = this.memo = { game: this.game, ver: this.ver, fen: this.game.fen(), turn: this.game.turn(), over: this.game.isGameOver(), history: this.game.history() };
+    }
     return {
-      status, fen: this.game.fen(), turn: this.game.turn(), ply: this.game.history().length,
-      over: this.game.isGameOver(), last: this.lastMove, history: this.game.history(),
+      status, fen: m.fen, turn: m.turn, ply: m.history.length,
+      over: m.over, last: this.lastMove, history: m.history.slice(),
       diff, lifted, fidelity: fid, moveFidelity: this.moveFid, events,
     };
   }
@@ -97,6 +107,7 @@ export class PositionTracker {
   /** Plays one move on the tracked game and appends the events it causes (move, capture, castle, promotion, check, mate). */
   private commit(m: Move | { from: string; to: string; promotion?: string }, t: number, fid: number, events: ExperienceEvent[]) {
     const done = this.game.move(m);
+    this.ver++;
     const info: MoveInfo = {
       san: done.san, from: done.from, to: done.to, piece: done.piece, color: done.color,
       captured: done.captured, flags: done.flags, promotion: done.promotion,

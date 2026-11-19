@@ -5,7 +5,7 @@
 import { Chess } from "chess.js";
 import { fmtClock } from "../clock/types";
 import type { GrayFrame } from "../vision/types";
-import type { PlayMode, RemoteCommand, RemoteMove, RemoteState } from "./protocol";
+import { resultText, type PlayMode, type RemoteCommand, type RemoteMove, type RemoteState } from "./protocol";
 
 /** The parts of the shared bus the snapshot reads. */
 export interface BusView {
@@ -38,7 +38,7 @@ export function snapshot(b: BusView, opts: { now: number; virtualBoard: boolean;
   const g = b.game;
   return {
     v: 1, t: opts.now, phase: b.director?.phase ?? "idle", status: g?.status ?? "pending",
-    fen: g?.fen ?? new Chess().fen(), turn: g?.turn ?? "w", ply: g?.ply ?? 0, over: g?.over ?? false,
+    fen: g?.fen ?? new Chess().fen(), turn: g?.turn ?? "w", ply: g?.ply ?? 0, over: g?.over ?? false, result: g?.over ? resultText(g.fen) : null,
     moves: g ? [...g.history] : [], last: g?.last ? { from: g.last.from, to: g.last.to, san: g.last.san } : null,
     hint: b.engineHint, fidelity: g?.fidelity ?? 0,
     cameras: b.cameras.map((c) => ({ id: c.id, online: c.online, quality: c.quality, hasFrame: opts.framed.has(c.id) })),

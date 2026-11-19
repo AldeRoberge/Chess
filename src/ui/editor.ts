@@ -643,6 +643,10 @@ export class NodeEditor {
     }
     const doPrev = now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
     if (doPrev) this.lastPrev = now;
+    // Measure which previews are on screen before anything below writes to the DOM. Reading a node's size
+    // after another node's stats were rewritten would force a fresh layout once per node, every frame.
+    const visible = new Set<string>();
+    if (doPrev) for (const [id, v] of this.views) { const n = this.graph.nodes.get(id); if (n && v.preview && this.onScreen(n, v)) visible.add(id); }
     for (const [id, v] of this.views) {
       const st = this.graph.stats.get(id);
       const n = this.graph.nodes.get(id)!;
@@ -664,7 +668,7 @@ export class NodeEditor {
       const seen = (v.seen ??= new Map()), busy = v.el.contains(document.activeElement); // a focused widget is never overwritten, so never memoise it
       for (const [k, set] of v.params) { const val = n.params[k]; if (busy || seen.get(k) !== val) { seen.set(k, val); set(val); } }
       // Previews are the costliest part of a frame, so nodes scrolled out of view skip painting (they repaint on the next pass once visible).
-      if (!doPrev || !v.preview || !this.onScreen(n, v)) continue;
+      if (!doPrev || !v.preview || !visible.has(id)) continue;
       if (n.bypass) { // bypassed: nothing is computed, so show what is passing through
         const ctx = v.preview.getContext("2d")!, lw = v.preview.width, lh = v.preview.height, rows = objRows(this.graph.inputValues(id));
         ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh);

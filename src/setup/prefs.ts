@@ -6,6 +6,10 @@ export interface Prefs {
   tab?: number;
   /** Width in px of the right-hand inspector; unset = the responsive default. */
   asideW?: number;
+  /** Simple view (the default): hide the node editor and show just the table, log and assistant. false = show the nodes too. */
+  simple?: boolean;
+  /** The top ribbon is folded away to just its tab row (click the open tab to toggle). */
+  ribbonCollapsed?: boolean;
   /** Show per-node timings (bars, sparklines) on the patch. */
   heat?: boolean;
   /** Per-node cost budget in ms for the Performance tab (0 = off). */
