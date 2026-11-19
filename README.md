@@ -32,7 +32,9 @@ npm run setup:stockfish   # copies the single-thread WASM into public/ (otherwis
 npm run dev               # http://localhost:5173  -> the guided setup opens by itself
 npm test                  # the whole suite, including full-game end-to-end runs
 npm run coverage          # same, enforcing 100% lines / branches / functions / statements
-npm run check             # typecheck + 100% coverage + production build (what CI runs)
+npm run check             # full local suite, coverage and production build
+npm run check:ci          # CI: typecheck, coverage and build, excluding the slow camera simulations
+npm run test:simulation   # run the camera simulation matrix locally
 ```
 
 ## First launch: the guided setup
