@@ -1,6 +1,6 @@
 import { applyH, boardToImage } from "./homography";
 import { CROP, extractCrops } from "./squareCrops";
-import { SquareCache, type SquareCnn } from "./squareCnn";
+import { blendReadings, SquareCache, type SquareCnn } from "./squareCnn";
 import { clamp, sigmoid, type GrayFrame, type Pt, type SquareObs } from "./types";
 
 export interface SamplerConfig {
@@ -352,11 +352,7 @@ export class BoardSampler {
       this.prepare();
       if (this.cnnCacheOf !== net) { this.cnnCache = new SquareCache(net); this.cnnCacheOf = net; }
       const p = this.cnnCache!.classify(extractCrops(frame, this.cfg.corners, this.crops));
-      for (let sq = 0; sq < 64; sq++) {
-        const e = p[sq * 3], w = p[sq * 3 + 1], b = p[sq * 3 + 2];
-        occ[sq] = clamp(1 - e, 0.001, 0.999);
-        white[sq] = w + b > 1e-6 ? w / (w + b) : 0.5;
-      }
+      blendReadings(occ, white, p);
     }
     return {
       cam: this.cam, t: frame.t,

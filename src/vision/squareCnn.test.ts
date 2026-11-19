@@ -6,7 +6,7 @@ import { applySensor, renderLuminance } from "../sim/render3d";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { parseCorners } from "../plugins/shared";
 import { BoardSampler, defaultSamplerConfig } from "./sampler";
-import { SquareCache } from "./squareCnn";
+import { blendReadings, SquareCache } from "./squareCnn";
 import { loadSquareCnn } from "./squareModel";
 import { CROP } from "./squareCrops";
 import check from "./squareCnn.check.json";
@@ -44,6 +44,20 @@ describe("square CNN", () => {
     for (let i = 0; i < 16 * CROP; i++) moved[3 * CROP * CROP + 8 * CROP + i] = 0.1; // a dark blob on one square
     cache.classify(moved);
     expect(cache.ran).toBeGreaterThanOrEqual(1);
+  });
+
+  it("ignores a network reading that collapses against the brightness reader, and tempers one that agrees", () => {
+    const rulesOcc = () => Float32Array.from({ length: 64 }, (_, i) => (i < 16 || i >= 48 ? 0.95 : 0.05)), rulesWhite = () => new Float32Array(64).fill(0.5);
+    const probs = (pieces: number) => Float32Array.from({ length: 192 }, (_, k) => (k % 3 === 0 ? (Math.floor(k / 3) < pieces ? 0.001 : 0.999) : 0.4995));
+    const occ = rulesOcc(), white = rulesWhite();
+    expect(blendReadings(occ, white, probs(0))).toBe(false); // the network sees an empty board: not believable
+    expect(Array.from(occ)).toEqual(Array.from(rulesOcc()));
+    expect(blendReadings(rulesOcc(), rulesWhite(), probs(40))).toBe(false); // more than 32 pieces
+    const agree = rulesOcc();
+    expect(blendReadings(agree, rulesWhite(), Float32Array.from({ length: 192 }, (_, k) => (k % 3 === 0 ? (Math.floor(k / 3) < 16 || Math.floor(k / 3) >= 48 ? 0.001 : 0.999) : 0.4995)))).toBe(true);
+    expect(agree[0]).toBeGreaterThan(0.9);
+    expect(agree[20]).toBeLessThan(0.1);
+    expect(agree[0]).toBeLessThan(0.999); // tempered, never certain
   });
 
   it("reads the real camera frame of the starting position", () => {
