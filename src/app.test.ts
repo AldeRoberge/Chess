@@ -45,7 +45,7 @@ describe("first launch", () => {
   it("shows the Halo setup wizard on top of a working demo patch", () => {
     const app = boot(root);
     expect(document.querySelector(".halo")).toBeTruthy(); expect(app.wizard()).toBeTruthy(); expect(app.graph.nodes.size).toBeGreaterThan(10);
-    expect(root.querySelectorAll("#tabs button")).toHaveLength(4);
+    expect(root.querySelectorAll("#tabs button")).toHaveLength(5);
     app.openWizard(); expect(document.querySelectorAll(".halo")).toHaveLength(1); // opening twice does not stack
   });
   it("finishing the wizard saves the setup, rebuilds the patch from it and removes the overlay", () => {
@@ -68,10 +68,10 @@ describe("first launch", () => {
 });
 
 describe("returning launch", () => {
-  it("skips the wizard once setup is complete and opens it from the Setup button", () => {
+  it("skips the wizard once setup is complete and opens it from the Settings button", () => {
     finishSetup(); const app = boot(root);
     expect(app.wizard()).toBeNull(); expect(document.querySelector(".halo")).toBeNull();
-    root.querySelector<HTMLElement>("#setup")!.click(); expect(app.wizard()).toBeTruthy();
+    root.querySelector<HTMLElement>("#settings")!.click(); expect(app.wizard()).toBeTruthy();
   });
   it("restores the saved patch (user edits survive), and falls back to the setup-built one when the save is corrupt", () => {
     finishSetup(); const g = new Graph(createRegistry()); buildGraphFromConfig(g, defaultSetup()); const extra = g.addNode("narration.narrator", 5, 5); localStorage.setItem("cx.graph.v1", JSON.stringify(g.toJSON()));
@@ -155,7 +155,10 @@ describe("running", () => {
   });
   it("the Sit/stand control seats the virtual player in the patch", () => {
     finishSetup(); const app = boot(root); const p = [...app.graph.nodes.values()].find((n) => n.type === "sim.person")!;
-    root.querySelector<HTMLButtonElement>("#dock button")!.click(); expect(p.params.seated).toBe(true);
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "More")!.click();
+    const item = (label: string) => [...document.querySelectorAll<HTMLElement>(".cm-row")].find((r) => r.querySelector(".cm-label")?.textContent === label)!;
+    item("Table").click(); item("Sit down").click();
+    expect(p.params.seated).toBe(true);
   });
   it("start() drives the app from requestAnimationFrame", () => {
     finishSetup(); const app = boot(root); const q: ((t: number) => void)[] = []; vi.stubGlobal("requestAnimationFrame", (cb: any) => { q.push(cb); return q.length; });
@@ -172,7 +175,9 @@ describe("top-bar buttons", () => {
   });
   it("reset forgets the saved patch and setup, then reloads", () => {
     finishSetup(); localStorage.setItem("cx.graph.v1", "{}"); boot(root); const reload = vi.fn(); vi.stubGlobal("location", { reload, search: "" });
-    root.querySelector<HTMLElement>("#reset")!.click(); expect(localStorage.getItem("cx.graph.v1")).toBeNull(); expect(loadSetup()).toBeNull(); expect(reload).toHaveBeenCalled();
+    root.querySelector<HTMLElement>("#reset")!.click(); expect(localStorage.getItem("cx.graph.v1")).not.toBeNull(); expect(reload).not.toHaveBeenCalled();
+    [...document.querySelectorAll<HTMLButtonElement>(".notice button")].find((b) => b.textContent === "Reset workflow")!.click();
+    expect(localStorage.getItem("cx.graph.v1")).toBeNull(); expect(loadSetup()).toBeNull(); expect(reload).toHaveBeenCalled();
   });
 });
 
@@ -181,20 +186,18 @@ describe("navigation", () => {
     finishSetup(); const app = boot(root);
     expect(location.hash).toBe("#/table");
     root.querySelectorAll<HTMLElement>("#tabs button")[2].click(); expect(location.hash).toBe("#/log"); expect(app.route()).toEqual({ page: "log" });
-    root.querySelector<HTMLElement>("#setup")!.click(); expect(location.hash).toBe("#/setup/briefing"); expect(app.wizard()).toBeTruthy();
-    app.wizard()!.handle("next"); expect(location.hash).toBe("#/setup/cameras");
+    root.querySelector<HTMLElement>("#settings")!.click(); expect(location.hash).toBe("#/settings/briefing"); expect(app.wizard()).toBeTruthy();
+    app.wizard()!.handle("next"); expect(location.hash).toBe("#/settings/cameras");
     app.go({ page: "world" }); expect(app.wizard()).toBeNull(); expect(location.hash).toBe("#/world");
   });
-  it("opens straight at a deep link and runs suggestions", () => {
-    finishSetup(); history.replaceState(null, "", "#/setup/board"); const app = boot(root);
+  it("opens straight at a deep link", () => {
+    finishSetup(); history.replaceState(null, "", "#/settings/board"); const app = boot(root);
     expect(app.wizard()!.stepId).toBe("board");
-    app.go({ page: "table" }); root.querySelector<HTMLElement>(".next-card")!.click();
-    expect(location.hash).toMatch(/^#\/(setup|world)/);
   });
   it("keeps first-time users in setup whatever the URL says", () => {
     midSetup();
     history.replaceState(null, "", "#/log"); const app = boot(root);
-    expect(app.route().page).toBe("setup"); expect(location.hash).toBe("#/setup/briefing");
+    expect(app.route().page).toBe("settings"); expect(location.hash).toBe("#/settings/briefing");
   });
 });
 
@@ -288,7 +291,7 @@ describe("workflows", () => {
   it("the Workflows button loads a demo into the live patch, and Ctrl+Z brings the old one back", () => {
     finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
     (document.getElementById("workflows") as HTMLButtonElement).click();
-    expect(document.querySelectorAll(".wf-row")).toHaveLength(6);
+    expect(document.querySelectorAll(".wf-row")).toHaveLength(7);
     (document.querySelector(".wf-row button") as HTMLButtonElement).click();
     expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);
@@ -300,6 +303,26 @@ describe("workflows", () => {
     Object.defineProperty(input, "files", { value: [new File([JSON.stringify({ graph: { nodes: [], edges: [] } })], "w.json")] });
     input.dispatchEvent(new Event("change")); await new Promise((r) => setTimeout(r, 30));
     expect(app.graph.nodes.size).toBe(0);
+  });
+});
+
+describe("collapsible ribbon", () => {
+  const hdr = () => document.querySelector("#app>header, header") as HTMLElement;
+  const tab = (n: string) => document.querySelector<HTMLElement>(`[data-rtab="${n}"]`)!;
+  it("clicking the open tab folds the ribbon, clicking again or another tab reopens it, and it is remembered", () => {
+    finishSetup(); boot(root);
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
+    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
+    expect(tab("view").getAttribute("aria-expanded")).toBe("false");
+    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBe(true);
+    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
+    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBeUndefined();
+    tab("home").click(); tab("view").click();
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false); expect(tab("view").classList.contains("on")).toBe(true);
+  });
+  it("restores the folded ribbon on launch", () => {
+    finishSetup(); localStorage.setItem("cx.prefs.v1", JSON.stringify({ ribbonCollapsed: true })); boot(root);
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
   });
 });
 
@@ -327,5 +350,35 @@ describe("resizable inspector", () => {
     h.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })); expect(mainEl().style.getPropertyValue("--aside-w")).toBe("280px");
     h.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); h.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
     h.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 2 })); expect(document.body.classList.contains("resizing")).toBe(false);
+  });
+});
+
+describe("phone remote", () => {
+  it("explains it is not running when the page has no relay (a static build)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
+    const app = boot(root); finishSetup(); root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-title")!.textContent).toBe("Phone remote"); // still probing
+    app.step(0); await new Promise((r) => setTimeout(r, 10));
+    root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-title")!.textContent).toBe("Phone remote is not running");
+  });
+  it("shows the address and join code, and plays a phone's move on the virtual table", async () => {
+    const posted: any[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("host/info")) return { ok: true, json: async () => ({ code: "4321", urls: ["http://10.0.0.5:5173/#/remote?code=4321"], clients: 1 }) };
+      if (url.endsWith("host/state")) { posted.push(JSON.parse(String(init!.body))); return { ok: true, json: async () => ({ clients: 1, code: "4321", commands: posted.length === 2 ? [{ type: "move", from: "e2", to: "e4" }] : [] }) }; }
+      return { ok: true, json: async () => ({}) };
+    }));
+    const copy = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: copy }, configurable: true });
+    const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
+    root.querySelector<HTMLElement>("#phone")!.click();
+    expect(document.querySelector(".notice-title")!.textContent).toBe("This PC’s join code: 4321"); expect(document.querySelector(".notice-msg")!.textContent).toContain("4321"); expect(document.querySelector(".notice-details")!.textContent).toContain("10.0.0.5");
+    [...document.querySelectorAll<HTMLElement>(".notice button")].find((b) => b.textContent === "Copy address")!.click(); expect(copy).toHaveBeenCalledWith("http://10.0.0.5:5173/#/remote?code=4321");
+    bus.game = { fen: virtualTable.game.fen(), turn: "w", ply: 0, over: false, status: "synced", history: [], fidelity: 1, last: null } as never;
+    for (let i = 0; i < 3; i++) { app.step(1000 * (i + 2)); await new Promise((r) => setTimeout(r, 10)); }
+    expect(virtualTable.busy).toBe(true); expect(posted.length).toBeGreaterThanOrEqual(2);
+  });
+  it("tells the player to connect to Wi-Fi when this computer has no address", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ code: "1", urls: [], clients: 0 }) })));
+    const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
+    root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-details")!.textContent).toContain("Connect this computer to Wi-Fi"); expect(document.querySelector(".notice-msg")!.textContent).toContain("No phone is connected yet");
   });
 });

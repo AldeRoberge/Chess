@@ -8,7 +8,7 @@ import { GroupLayer } from "./groups";
 import { NODE_H, NODE_W } from "../core/groups";
 import { profiler, type NodeSummary } from "../core/profiler";
 import type { NodeInstance, NodeSpec, ParamDef, PortType } from "../core/types";
-import { drawRows, objRows } from "../plugins/shared";
+import { drawRows, fmtCorners, frameScale, objRows, parseCorners } from "../plugins/shared";
 import { portsCompatible } from "../core/types";
 import { openQuadEditor } from "./quadEditor";
 import { openModelChart } from "./modelChart";
@@ -97,11 +97,11 @@ export class NodeEditor {
     const ico = h("span", "ne-ico"); ico.innerHTML = nodeIcon(n.type, spec.category, 18);
     head.append(ico, h("span", "ne-title", spec.title));
     const fid = h("span", "ne-fid", ""), ms = h("span", "ne-ms", "");
-    const byp = h("button", "ne-btn", "⏻"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
+    const byp = h("button", "ne-btn", "⏻"); byp.type = "button"; byp.setAttribute("aria-label", "Bypass"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
     byp.onclick = (e) => { e.stopPropagation(); n.bypass = !n.bypass; el.classList.toggle("bypass", !!n.bypass); this.onChange(); };
-    const del = h("button", "ne-btn", "✕"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "#ff7070";
+    const del = h("button", "ne-btn", "✕"); del.type = "button"; del.setAttribute("aria-label", "Delete node"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "#ff7070";
     del.onclick = (e) => { e.stopPropagation(); this.removeNode(n.id); };
-    const exp = h("button", "ne-btn", "⤢"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
+    const exp = h("button", "ne-btn", "⤢"); exp.type = "button"; exp.setAttribute("aria-label", "Expand"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
     exp.onclick = (e) => { e.stopPropagation(); if (n.w || n.h) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); };
     const acts = h("span", "ne-acts"); acts.append(byp, del, exp);
     head.append(fid, acts);
@@ -143,7 +143,7 @@ export class NodeEditor {
     el.append(body);
     const foot = h("div", "ne-foot"); foot.append(ms); el.append(foot); // latency lives below so titles keep their width
     const heat = h("div", "ne-heat"), heatTxt = h("span", "ne-heat-t"), spark = h("canvas", "ne-spark");
-    spark.width = 120; spark.height = 24;
+    { const d = Math.min(3, Math.max(1, Math.ceil(window.devicePixelRatio || 1))); spark.width = 120 * d; spark.height = 24 * d; spark.style.width = "120px"; spark.style.height = "24px"; } // sharp on hi-dpi
     const track = h("div", "ne-heat-bar"); track.append(h("i"));
     heat.append(track, spark, heatTxt); el.append(heat);
     const grip = h("div", "ne-grip"); grip.dataset.tip = "Resize"; el.append(grip);
@@ -190,7 +190,7 @@ export class NodeEditor {
   private applySize(n: NodeInstance) {
     const el = this.views.get(n.id)?.el; if (!el) return;
     el.style.width = n.w ? n.w + "px" : ""; el.style.height = n.h ? n.h + "px" : "";
-    el.classList.toggle("sized", !!n.h); el.classList.toggle("wide", (n.w ?? 0) >= 360);
+    el.classList.toggle("sized", !!n.h); el.classList.toggle("wide", (n.w ?? 0) >= 480);
     const v = this.views.get(n.id)!;
     if (n.h && !v.preview && !this.spec(n).preview) { // a node without a preview gets a live readout of its outputs once it is expanded
       v.preview = h("canvas", "ne-preview"); v.generic = true; v.preview.width = 160; v.preview.height = 100; this.watchPreview(n.id, v.preview, 160, 100);
@@ -224,12 +224,13 @@ export class NodeEditor {
 
   private paramRow(n: NodeInstance, p: ParamDef, sync: Map<string, (v: any) => void>) {
     if (p.kind === "separator") { const sep = h("div", "ne-param-sep", p.label); sep.setAttribute("role", "separator"); sep.dataset.node = n.id; sep.dataset.param = p.id; return sep; }
-    const row = h("label", "ne-param"); row.dataset.node = n.id; row.dataset.param = p.id; const pn = h("span", "ne-pn"); pn.innerHTML = `<span class="ne-pi">${paramIcon(p.id, p.kind)}</span>`; pn.append(p.label); row.append(pn);
+    // A div, not a label: a checkbox inside a label is toggled when it is inserted, which cleared "Seated" on every new patch.
+    const row = h("div", "ne-param"); row.dataset.node = n.id; row.dataset.param = p.id; const pn = h("span", "ne-pn"); pn.innerHTML = `<span class="ne-pi">${paramIcon(p.id, p.kind)}</span>`; pn.append(p.label); row.append(pn);
     const ic0 = pn.querySelector<HTMLElement>(".ne-pi")!;
     const mark = () => { const ch = n.params[p.id] !== p.value; row.classList.toggle("changed", ch); if (ch) { ic0.dataset.tip = "Reset to default"; ic0.dataset.tipBody = `Back to ${p.value}.`; ic0.dataset.tipHint = "Click the icon"; } else { delete ic0.dataset.tip; delete ic0.dataset.tipBody; delete ic0.dataset.tipHint; } };
     const commit = (v: any) => { n.params[p.id] = v; mark(); this.onChange(); };
     const ic = pn.querySelector<HTMLElement>(".ne-pi")!;
-    ic.onclick = (e) => { if (n.params[p.id] === p.value) return; e.preventDefault(); commit(p.value); sync.get(p.id)?.(p.value); };
+    ic.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (n.params[p.id] === p.value) return; commit(p.value); sync.get(p.id)?.(p.value); };
     queueMicrotask(mark);
     if (p.kind === "number") {
       const r = h("input"); r.type = "range"; r.min = String(p.min); r.max = String(p.max); r.step = String(p.step ?? 0.01); r.value = String(n.params[p.id]);
@@ -240,13 +241,15 @@ export class NodeEditor {
       sync.set(p.id, (v) => { if (document.activeElement !== r) { r.value = String(v); val.textContent = String(v); fill(); } });
       row.append(r, val);
     } else if (p.kind === "bool" && p.action) {
-      const b = h("button", "ne-action", p.label); b.type = "button";
+      const b = h("button", "ne-action", p.label); b.type = "button"; b.setAttribute("aria-label", p.label);
       b.onpointerdown = (e) => e.stopPropagation();
       b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); n.params[p.id] = true; this.onChange(); };
-      row.append(b);
+      pn.setAttribute("aria-hidden", "true"); row.append(b);
     } else if (p.kind === "bool") {
-      const c = h("input"); c.type = "checkbox"; c.checked = !!n.params[p.id]; c.onchange = () => commit(c.checked);
-      sync.set(p.id, (v) => (c.checked = !!v)); row.append(c);
+      const c = h("input"); c.type = "checkbox"; c.setAttribute("aria-label", p.label); c.checked = !!n.params[p.id];
+      let ready = false; c.onchange = () => { if (ready) commit(c.checked); }; // inserting the box can fire change before it shows the saved value
+      sync.set(p.id, (v) => (c.checked = !!v)); row.append(c); ready = true;
+      pn.addEventListener("click", (e) => { if ((e.target as HTMLElement).closest(".ne-pi")) return; c.click(); });
     } else if (p.kind === "select") {
       const s = h("select");
       // Rebuilt from the param's options each time it opens, so a list fetched later (e.g. OpenAI models) shows up; a saved value missing from the list stays visible.
@@ -280,17 +283,27 @@ export class NodeEditor {
         pn.append(b);
       }
     } else {
-      const t = h("input"); t.type = "text"; t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
+      const t = h("input"); t.type = p.secret ? "password" : "text"; if (p.secret) { t.autocomplete = "off"; t.spellcheck = false; } t.setAttribute("aria-label", p.label); t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
       sync.set(p.id, (v) => { if (document.activeElement !== t) t.value = String(v); }); row.append(t);
       if (p.quad) {
         const q = p.quad, b = h("button", "ne-qbtn", "⌖ Edit"); b.type = "button"; b.dataset.tip = "Edit corners"; b.dataset.tipBody = "Drag the corners on the live camera picture instead of typing numbers.";
         b.onpointerdown = (e) => e.stopPropagation();
         b.onclick = (e) => {
           e.preventDefault(); e.stopPropagation();
+          const live = () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null;
+          // The editor works in the picture's own pixels. Saved corners stay in the 480×360 reader frame, so a sharper camera does not move the grid.
+          const toView = (stored: string) => {
+            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(stored);
+            return !pts || (sc.sx === 1 && sc.sy === 1) ? stored : fmtCorners(pts.map((pt) => ({ x: pt.x * sc.sx, y: pt.y * sc.sy })));
+          };
+          const toStored = (view: string) => {
+            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(view);
+            return !pts || (sc.sx === 1 && sc.sy === 1) ? view : fmtCorners(pts.map((pt) => ({ x: pt.x / sc.sx, y: pt.y / sc.sy })));
+          };
           openQuadEditor({
-            title: `${this.spec(n).title} — ${p.label}`, value: String(n.params[p.id]), names: q.names, grid: q.grid,
-            frame: () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null,
-            change: (v) => { t.value = v; commit(v); }, done: () => {},
+            title: `${this.spec(n).title} — ${p.label}`, value: toView(String(n.params[p.id])), names: q.names, grid: q.grid,
+            frame: live,
+            change: (v) => { const s = toStored(v); t.value = s; commit(s); }, done: () => {},
           });
         };
         pn.append(b);
@@ -331,7 +344,7 @@ export class NodeEditor {
       v.heat.txt.textContent = `${s.avg.toFixed(2)} avg · ${s.p95.toFixed(2)} p95 · ${s.max.toFixed(2)} max ms · ${(share * 100).toFixed(0)}%`;
       const c = v.heat.spark, g = c.getContext("2d")!, vals = profiler.series(id), mx = Math.max(0.5, s.max);
       g.clearRect(0, 0, c.width, c.height);
-      g.strokeStyle = col; g.lineWidth = 1.5; g.beginPath();
+      g.strokeStyle = col; g.lineWidth = 1.5 * (c.width / 120); g.beginPath();
       vals.forEach((x, i) => { const px = (i / 119) * c.width, py = c.height - 2 - (x / mx) * (c.height - 4); if (i) g.lineTo(px, py); else g.moveTo(px, py); });
       g.stroke();
     }
@@ -339,7 +352,8 @@ export class NodeEditor {
 
   private refreshSel() {
     for (const [id, v] of this.views) v.el.classList.toggle("sel", this.selected.has(id));
-    this.root.classList.toggle("has-sel", this.selected.size > 0); // dims the nodes that are not selected
+    this.root.classList.toggle("has-sel", this.selected.size > 0); // slightly softens the nodes that are not selected
+    this.dirty = true; // re-evaluate which wires are highlighted
     this.onSelect([...this.selected]);
   }
   /** Called whenever the selection changes; the top ribbon uses it to offer the matching actions. */
@@ -389,26 +403,101 @@ export class NodeEditor {
     return n;
   }
 
-  private applyView() { this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; }
+  private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; }
+  /** Pan and zoom gestures change the view many times a frame; the transform is written once, on the next animation frame. */
+  private viewRaf = 0;
+  private scheduleView() { if (!this.viewRaf) this.viewRaf = requestAnimationFrame(() => { this.viewRaf = 0; this.applyView(); }); }
+  /** While a pan or pinch runs the world is its own compositor layer and previews hold still, so moving the map costs no repaint. */
+  private moving = 0;
+  private setMoving(on: boolean) { this.moving = Math.max(0, this.moving + (on ? 1 : -1)); this.root.classList.toggle("moving", this.moving > 0); }
+  /** Zoom by `f` around a point in canvas pixels, keeping that point still. */
+  private zoomAt(mx: number, my: number, f: number) {
+    const k = Math.min(1.6, Math.max(0.3, this.view.k * f));
+    this.view.x = mx - ((mx - this.view.x) * k) / this.view.k; this.view.y = my - ((my - this.view.y) * k) / this.view.k; this.view.k = k;
+  }
+  private fling = 0;
+  /** A touch pan released while moving keeps gliding and slows to a stop. */
+  private glide(vx: number, vy: number) {
+    cancelAnimationFrame(this.fling);
+    if (Math.hypot(vx, vy) < 0.25) return; // px per ms
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = Math.min(48, now - last); last = now;
+      this.view.x += vx * dt; this.view.y += vy * dt; this.applyView();
+      const decay = Math.pow(0.995, dt); vx *= decay; vy *= decay;
+      this.fling = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : 0;
+      if (!this.fling) this.onView();
+    };
+    this.fling = requestAnimationFrame(step);
+  }
+  /** Pans the view with the pointer; touch and pen pans glide on after release. */
+  private pan(e: PointerEvent) {
+    cancelAnimationFrame(this.fling); this.fling = 0;
+    const sx = e.clientX, sy = e.clientY, ox = this.view.x, oy = this.view.y;
+    let vx = 0, vy = 0, lt = e.timeStamp, lx = sx, ly = sy;
+    this.setMoving(true);
+    const mv = (ev: PointerEvent) => {
+      const dt = ev.timeStamp - lt;
+      if (dt > 0) { const a = Math.min(1, dt / 50); vx += ((ev.clientX - lx) / dt - vx) * a; vy += ((ev.clientY - ly) / dt - vy) * a; } // smoothed velocity
+      lt = ev.timeStamp; lx = ev.clientX; ly = ev.clientY;
+      this.view.x = ox + ev.clientX - sx; this.view.y = oy + ev.clientY - sy; this.scheduleView();
+    };
+    this.track(this.root, e, mv, (ev) => {
+      this.setMoving(false); this.applyView();
+      if (ev && (e.pointerType === "touch" || e.pointerType === "pen") && ev.timeStamp - lt < 80) this.glide(vx, vy); else this.onView();
+    });
+  }
+  /** Fingers on the canvas, for two-finger pinch zoom. */
+  private touches = new Map<number, { x: number; y: number }>();
+  private pinch: { d: number; mx: number; my: number; x: number; y: number; k: number; left: number; top: number } | null = null;
+  private bindTouch() {
+    const spread = () => { const [a, b] = [...this.touches.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
+    this.root.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch" || (e.target as HTMLElement).closest(".ne-palette")) return;
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size !== 2) return;
+      // second finger: whatever the first one started (a pan, a node drag, a wire) gives way to a pinch
+      e.preventDefault(); e.stopPropagation(); this.endGesture?.(); cancelAnimationFrame(this.fling);
+      const r = this.root.getBoundingClientRect(), s = spread();
+      this.pinch = { ...s, x: this.view.x, y: this.view.y, k: this.view.k, left: r.left, top: r.top };
+      this.setMoving(true);
+    }, true);
+    this.root.addEventListener("pointermove", (e) => {
+      const t = this.touches.get(e.pointerId); if (!t) return;
+      t.x = e.clientX; t.y = e.clientY;
+      const p = this.pinch; if (!p || this.touches.size < 2) return;
+      e.stopPropagation();
+      const s = spread(), k = Math.min(1.6, Math.max(0.3, p.k * s.d / p.d));
+      const wx = (p.mx - p.left - p.x) / p.k, wy = (p.my - p.top - p.y) / p.k; // the map point first under the fingers stays under them
+      this.view.k = k; this.view.x = s.mx - p.left - wx * k; this.view.y = s.my - p.top - wy * k;
+      this.scheduleView();
+    }, true);
+    const lift = (e: PointerEvent) => {
+      if (!this.touches.delete(e.pointerId)) return;
+      if (this.pinch && this.touches.size < 2) { this.pinch = null; this.setMoving(false); this.applyView(); this.onView(); }
+    };
+    for (const ev of ["pointerup", "pointercancel"] as const) window.addEventListener(ev, lift, true);
+  }
 
   private bindInteraction() {
     this.applyView();
+    this.bindTouch();
     this.root.addEventListener("wheel", (e) => {
       if ((e.target as HTMLElement).closest(".ne-palette")) return;
       e.preventDefault();
       const r = this.root.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-      const k = Math.min(1.6, Math.max(0.3, this.view.k * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
-      this.view.x = mx - ((mx - this.view.x) * k) / this.view.k; this.view.y = my - ((my - this.view.y) * k) / this.view.k; this.view.k = k;
-      this.applyView(); this.onView();
+      // Proportional zoom: one mouse-wheel notch (100px) is 10%, a trackpad's many small deltas glide smoothly instead of jumping 10% each.
+      const dy = Math.max(-300, Math.min(300, e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 300 : 1)));
+      cancelAnimationFrame(this.fling); this.fling = 0;
+      this.zoomAt(mx, my, Math.pow(1.1, -dy / (e.ctrlKey ? 12 : 100))); // ctrlKey: a trackpad pinch, which sends small deltas
+      this.scheduleView(); this.onView();
     }, { passive: false });
     // middle mouse button pans from anywhere, including over nodes (capture phase so nothing underneath claims it)
     this.root.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); }, true); // no browser autoscroll
     this.root.addEventListener("pointerdown", (e) => {
       if (e.button !== 1 || (e.target as HTMLElement).closest(".ne-palette")) return;
       e.preventDefault(); e.stopPropagation(); window.getSelection()?.removeAllRanges();
-      const sx = e.clientX, sy = e.clientY, ox = this.view.x, oy = this.view.y;
-      const mv = (ev: PointerEvent) => { this.view.x = ox + ev.clientX - sx; this.view.y = oy + ev.clientY - sy; this.applyView(); };
-      this.track(this.root, e, mv, () => this.onView());
+      this.pan(e);
     }, true);
     this.root.addEventListener("pointerdown", (e) => {
       if (e.button > 0) return; // right-click opens the palette; it must not start a drag that never gets its pointerup
@@ -417,9 +506,7 @@ export class NodeEditor {
       if (t.closest(".ne-node") || t.closest(".ne-palette")) return;
       e.preventDefault(); window.getSelection()?.removeAllRanges(); // no text selection or native drag while panning
       this.palette.hidden = true; this.selected.clear(); this.refreshSel();
-      const sx = e.clientX, sy = e.clientY, ox = this.view.x, oy = this.view.y;
-      const mv = (ev: PointerEvent) => { this.view.x = ox + ev.clientX - sx; this.view.y = oy + ev.clientY - sy; this.applyView(); };
-      this.track(this.root, e, mv, () => this.onView());
+      this.pan(e);
     });
     this.root.addEventListener("dblclick", (e) => { if (!(e.target as HTMLElement).closest(".ne-node")) this.openPalette(e.clientX, e.clientY); });
     registerContextMenu(this.root, (e) => this.contextItems(e));
@@ -604,6 +691,7 @@ export class NodeEditor {
   }
 
   frame(now: number) {
+    if (this.viewRaf) this.applyView();
     if (this.dirty || now - this.lastWire > 400) {
       this.lastWire = now; this.dirty = false;
       // Wires are reconciled in place rather than rebuilt: replacing the <path> elements would restart their CSS flow animation on every refresh (the visible back-and-forth jitter).
@@ -616,8 +704,9 @@ export class NodeEditor {
         const val = this.graph.outputs.get(e.from.node)?.[e.from.port];
         const live = val !== undefined && val !== null && !(Array.isArray(val) && !val.length);
         const fid = this.graph.stats.get(e.from.node)?.fidelity ?? null;
-        const cls = live ? wireClass(this.settle(e.id, t === "frame" ? undefined : val, now), fid) : "idle";
-        const tip = !live ? "No data yet" : cls === "constant" ? "Constant: has not changed" : fid == null ? "Live data" : `Certainty ${Math.round(fid * 100)}%`;
+        const hot = this.selected.has(e.from.node) || this.selected.has(e.to.node); // wires touching a selected node shine brighter
+        const cls = (live ? wireClass(this.settle(e.id, t === "frame" ? undefined : val, now), fid) : "idle") + (hot ? " hot" : "");
+        const tip = !live ? "No data yet" : cls.startsWith("constant") ? "Constant: has not changed" : fid == null ? "Live data" : `Certainty ${Math.round(fid * 100)}%`;
         wanted.set(e.id, { d: this.wirePath(a, b), stroke: PORT_COLOR[t], cls, tip, style: `pointer-events:stroke${fid != null && live ? `;opacity:${(0.5 + 0.5 * fid).toFixed(2)}` : ""}`, e: e.id });
       }
       if (this.drag) {
@@ -626,8 +715,12 @@ export class NodeEditor {
       }
       this.reconcileWires(wanted);
     }
-    const doPrev = now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
+    const doPrev = !this.moving && now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
     if (doPrev) this.lastPrev = now;
+    // Measure which previews are on screen before anything below writes to the DOM. Reading a node's size
+    // after another node's stats were rewritten would force a fresh layout once per node, every frame.
+    const visible = new Set<string>();
+    if (doPrev) for (const [id, v] of this.views) { const n = this.graph.nodes.get(id); if (n && v.preview && this.onScreen(n, v)) visible.add(id); }
     for (const [id, v] of this.views) {
       const st = this.graph.stats.get(id);
       const n = this.graph.nodes.get(id)!;
@@ -649,7 +742,7 @@ export class NodeEditor {
       const seen = (v.seen ??= new Map()), busy = v.el.contains(document.activeElement); // a focused widget is never overwritten, so never memoise it
       for (const [k, set] of v.params) { const val = n.params[k]; if (busy || seen.get(k) !== val) { seen.set(k, val); set(val); } }
       // Previews are the costliest part of a frame, so nodes scrolled out of view skip painting (they repaint on the next pass once visible).
-      if (!doPrev || !v.preview || !this.onScreen(n, v)) continue;
+      if (!doPrev || !v.preview || !visible.has(id)) continue;
       if (n.bypass) { // bypassed: nothing is computed, so show what is passing through
         const ctx = v.preview.getContext("2d")!, lw = v.preview.width, lh = v.preview.height, rows = objRows(this.graph.inputValues(id));
         ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh);

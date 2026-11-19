@@ -38,6 +38,7 @@ export function displayItems(): CtxItem[] {
   const d = () => viewSettings().display;
   return [
     { kind: "toggle", label: "Coordinates", get: () => d().coords, set: (v) => setDisplay({ coords: v }) },
+    { kind: "toggle", label: "Flip board", get: () => d().flip, set: (v) => setDisplay({ flip: v }) },
     { kind: "toggle", label: "Legal-move dots", get: () => d().legalMoves, set: (v) => setDisplay({ legalMoves: v }) },
     { kind: "toggle", label: "Move hints", get: () => d().hints, set: (v) => setDisplay({ hints: v }) },
     { kind: "toggle", label: "Last-move highlight", get: () => d().lastMove, set: (v) => setDisplay({ lastMove: v }) },

@@ -5,7 +5,7 @@ import { ClockModel, parseControl } from "../clock/model";
 import { fmtClock, type ClockEstimate, type Side } from "../clock/types";
 import { readClock, type ClockKind, type ClockRead } from "../vision/clockReader";
 import type { GrayFrame, Pt } from "../vision/types";
-import { brief, drawFrame, fmtCorners, parseCorners, withDetail, type DetailRow } from "./shared";
+import { brief, drawFrame, fmtCorners, frameScale, parseCorners, withDetail, type DetailRow } from "./shared";
 import { pct, tone, visualSize } from "./hover";
 
 const rect = (x: number, y: number, w: number, h: number): Pt[] => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
@@ -25,7 +25,7 @@ const reader: NodeSpec<ClockState> = {
   outputs: [{ id: "clock", type: "clock" }, { id: "events", type: "event" }],
   params: [
     { id: "kind", kind: "select", label: "Clock type", options: ["auto", "lcd", "phone", "analog", "manual"], value: "auto" },
-    { id: "control", kind: "text", label: "Time control", value: "10+0" },
+    { id: "control", kind: "select", label: "Time control", options: ["1+0", "1+1", "2+1", "3+0", "3+2", "5+0", "5+3", "10+0", "10+5", "15+10", "30+0", "30+20"], labels: ["1+0 bullet", "1+1 bullet", "2+1 bullet", "3+0 blitz", "3+2 blitz", "5+0 blitz", "5+3 blitz", "10+0 rapid", "10+5 rapid", "15+10 rapid", "30+0 classical", "30+20 classical"], value: "10+0" },
     { id: "whiteBox", kind: "text", label: "White display", value: fmtCorners(rect(20, 20, 130, 44)), quad: { names: ["tl", "tr", "br", "bl"], grid: 1 } },
     { id: "blackBox", kind: "text", label: "Black display", value: fmtCorners(rect(170, 20, 130, 44)), quad: { names: ["tl", "tr", "br", "bl"], grid: 1 } },
     { id: "flagHour", kind: "number", label: "Flag position", min: 1, max: 12, step: 1, value: 12 },
@@ -63,8 +63,14 @@ const reader: NodeSpec<ClockState> = {
     if (kind !== "manual" && frame && frame.t !== s.lastT) {
       s.lastT = frame.t;
       for (const side of SIDES) {
-        const key = String(side === "w" ? params.whiteBox : params.blackBox);
-        if (key !== s.quadKey[side]) { s.quadKey[side] = key; s.quads[side] = parseCorners(key); }
+        const raw = String(side === "w" ? params.whiteBox : params.blackBox);
+        const sc = frameScale(frame.width, frame.height);
+        const key = sc.sx === 1 ? raw : `${raw}@${frame.width}x${frame.height}`;
+        if (key !== s.quadKey[side]) {
+          s.quadKey[side] = key;
+          const parsed = parseCorners(raw);
+          s.quads[side] = parsed ? parsed.map((p) => ({ x: p.x * sc.sx, y: p.y * sc.sy })) : null;
+        }
         const q = s.quads[side];
         if (!q) { s.reads[side] = null; continue; }
         const r = span(`read clock ${side}`, () => readClock(kind, frame, q, Number(params.flagHour)));
@@ -137,7 +143,7 @@ const reader: NodeSpec<ClockState> = {
 
 interface OverlayState { shown: boolean }
 const overlay: NodeSpec<OverlayState> = {
-  type: "clock.overlay", title: "CLOCK PROJECTION", category: "Output",
+  type: "clock.overlay", title: "Clock projection", category: "Output",
   desc: "Projects the time left onto the table: digits, a depleting circle, or a square outline around the board. Uncertain estimates are drawn dashed and faded.",
   inputs: [{ id: "clock", type: "clock" }], outputs: [],
   params: [

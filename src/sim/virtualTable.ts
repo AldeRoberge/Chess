@@ -65,10 +65,34 @@ export class VirtualTable {
   /** the pieces knocked loose by the last fist bang */
   private scatter: { at: number; pieces: Map<number, Tumble> } | null = null;
   private seed = 12345;
+  /** Set when a player resigns or agrees a draw; mate and stalemate still come from chess.js. */
+  ended: { kind: "resign"; color: "w" | "b" } | { kind: "draw" } | null = null;
 
   reset() {
     this.game = new Chess(); this.carried = null; this.hand = null; this.queue = []; this.visual = null; this.lastT = null; this.side = 1;
-    this.shakeAt = null; this.fist = null; this.scatter = null;
+    this.shakeAt = null; this.fist = null; this.scatter = null; this.ended = null;
+  }
+
+  /** True after mate, stalemate, a resignation, or an agreed draw. */
+  get over() { return this.ended !== null || this.game.isGameOver(); }
+
+  /** Undo the last ply, or cancel a resignation / agreed draw. False while a hand is still moving. */
+  takeback(): boolean {
+    if (this.busy) return false;
+    if (this.ended) { this.ended = null; return true; }
+    return this.game.undo() !== null;
+  }
+
+  /** The side to move gives up. False if the game is already over. */
+  resign(color: "w" | "b"): boolean {
+    if (this.over) return false;
+    this.ended = { kind: "resign", color }; return true;
+  }
+
+  /** Both sides agree a draw. False if the game is already over. */
+  agreeDraw(): boolean {
+    if (this.over) return false;
+    this.ended = { kind: "draw" }; return true;
   }
 
   /** Changes whenever anything a camera could see changes (lets renderers cache the clean image). */
@@ -110,7 +134,7 @@ export class VirtualTable {
     if (!t) return [];
     const idle: Hand = this.activeHand === "R" ? "L" : "R";
     return [
-      armPose({ side: this.side, hand: this.activeHand, tip: t.p, grasp: t.grasp, active: true }),
+      armPose({ side: this.side, hand: this.activeHand, tip: t.p, grasp: t.grasp, active: true, grip: this.carried !== null ? "pinch" : "fist" }),
       armPose({ side: this.side, hand: idle, tip: restTarget(this.side, idle), grasp: 0, active: false }),
     ];
   }
@@ -221,6 +245,7 @@ export class VirtualTable {
 
   /** Physically play a move (SAN or UCI): hand goes to `from`, lifts, travels, drops. Returns false when illegal. */
   play(move: string, now: number): boolean {
+    if (this.over) return false;
     const m = this.game.moves({ verbose: true }).find((x) => x.san === move || x.from + x.to + (x.promotion ?? "") === move);
     if (!m) return false;
     const from = sqIndex(m.from), to = sqIndex(m.to);

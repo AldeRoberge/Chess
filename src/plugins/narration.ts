@@ -2,6 +2,7 @@ import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import type { HoverInfo, ModelInfo, NodeSpec, Plugin } from "../core/types";
 import { LANGS, Narrator, type Lang, type NarrationLine } from "../narrator/narrator";
+import { effectiveKey } from "../net/vendorFetch";
 
 /** Language param shared by every narration node; unknown or missing values fall back to French. */
 const langParam = { id: "language", kind: "select" as const, label: "Language", options: LANGS, value: "fr" as Lang };
@@ -108,7 +109,7 @@ const aiNarrator: NodeSpec<AiState> = {
   outputs: [{ id: "lines", type: "text" }],
   params: [
     { id: "provider", kind: "select", label: "Commentary engine", options: ["builtin", "openai"], value: "openai" },
-    { id: "aiKey", kind: "text", label: "OpenAI API key", value: "" },
+    { id: "aiKey", kind: "text", label: "OpenAI API key", value: "", secret: true },
     aiModelParam,
     { id: "voices", kind: "select", label: "Commentators", options: ["1", "2"], value: "2" },
     { id: "nameA", kind: "text", label: "Voice A", value: "Jean" },
@@ -122,7 +123,7 @@ const aiNarrator: NodeSpec<AiState> = {
     const evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
     for (const e of evs) { const san = (e.data as any)?.san; if (san && (e.type === "move" || e.type === "capture" || e.type === "castle" || e.type === "promotion")) state.history.push(san); }
     state.history = state.history.slice(-40);
-    const key = String(params.aiKey ?? "").trim();
+    const key = effectiveKey(String(params.aiKey ?? ""), "openai").trim();
     // One model-list request per key; a failed request keeps the priced fallback list.
     if (key && key !== state.keyFetched) { state.keyFetched = key; fetchOpenAiModelIds(key).then(adoptLiveModels).catch(() => {}); }
     const lines = state.ready.splice(0);
@@ -132,7 +133,7 @@ const aiNarrator: NodeSpec<AiState> = {
         else {
           state.inflight++;
           const prio = Math.max(...base.map((l) => l.priority));
-          commentate(evs, state.history, { apiKey: key, model: String(params.aiModel || LLM_DEFAULT_MODEL), names: [String(params.nameA), String(params.nameB)], voices: params.voices === "1" ? 1 : 2, lang: langOf(params.language) }, prio)
+          commentate(evs, state.history, { apiKey: key, model: String(params.aiModel || LLM_DEFAULT_MODEL), names: [String(params.nameA), String(params.nameB)], voices: params.voices === "1" ? 1 : 2, lang: langOf(params.language), recentLines: [...state.lines, ...state.ready].slice(-16).map((l) => l.text) }, prio)
             .catch(() => base).then((ls) => { state.ready.push(...ls); }).finally(() => { state.inflight--; });
         }
       }
@@ -168,7 +169,7 @@ const speak: NodeSpec<SpeakState> = {
     { id: "browserA", kind: "text", label: "Voice A", value: "" },
     { id: "browserB", kind: "text", label: "Voice B", value: "" },
     { id: "sepElevenlabs", kind: "separator", label: ELEVENLABS_PROVIDER.label, value: "" },
-    { id: "apiKey", kind: "text", label: "API key", value: "" },
+    { id: "apiKey", kind: "text", label: "API key", value: "", secret: true },
     voiceParamA,
     voiceParamB,
     { id: "model", kind: "text", label: "Model", value: ELEVENLABS_DEFAULTS.model },
@@ -176,7 +177,7 @@ const speak: NodeSpec<SpeakState> = {
   ],
   init: () => ({ enabled: true, keyFetched: "" }),
   process({ lines }, { params, state }) {
-    const key = String(params.apiKey ?? "").trim();
+    const key = effectiveKey(String(params.apiKey ?? ""), "elevenlabs").trim();
     // One voice-list request per key; a failed request keeps the default voices.
     if (key && key !== state.keyFetched) { state.keyFetched = key; fetchElevenVoices(key).then(adoptElevenVoices).catch(() => {}); }
     if (!params.enabled) return;

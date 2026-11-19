@@ -69,7 +69,7 @@ const cues: NodeSpec<CueState> = {
 
 interface OutState { audio: AudioEngine; dmx: DmxSink; dmxOn: boolean }
 const sceneOut: NodeSpec<OutState> = {
-  type: "scene.output", title: "AUDIO + DMX OUT", category: "Output",
+  type: "scene.output", title: "Audio + DMX out", category: "Output",
   inputs: [{ id: "scene", type: "scene" }, { id: "fired", type: "any" }], outputs: [],
   params: [
     { id: "audio", kind: "bool", label: "Ambient audio", value: true },

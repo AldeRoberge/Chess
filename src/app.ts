@@ -1,3 +1,4 @@
+import { Calibrate, renderCalibration } from "./ui/calibrate";
 import "./style.css";
 import { chipIcons, chipTone } from "./ui/chipIcons";
 import { installContextMenus, registerContextMenu } from "./ui/contextMenu";
@@ -25,29 +26,39 @@ import { detectEnv } from "./setup/system";
 import { Sfx } from "./ui/sfx";
 import { SetupWizard } from "./ui/wizard";
 import { NodeEditor } from "./ui/editor";
+import { alignAllBoards } from "./ui/alignAll";
+import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
 import { clearPrefs, loadPrefs, patchPrefs } from "./setup/prefs";
+import { loadServerKeys } from "./net/vendorFetch";
 import { History } from "./core/history";
 import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, openSession, type Backup } from "./setup/backups";
 import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
 import { virtualTable } from "./sim/virtualTable";
+import { RemoteHost, applyRemoteCommand, playMode, snapshot } from "./remote/host";
+import { drawFrame } from "./plugins/shared";
+import type { GrayFrame } from "./vision/types";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
 import { buildBotPlay } from "./setup/botPlay";
 import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
+import { speakAssistant } from "./assistant/voiceOut";
+import { AssistantPanel } from "./ui/assistantPanel";
+import { createAppHost } from "./assistant/appHost";
 import { profiler } from "./core/profiler";
+import { CalibrationOverlay } from "./ui/calibrationOverlay";
 import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
 import { STEPS } from "./ui/wizardSteps";
-import { icon } from "./ui/icons";
+import { icon, withIcon } from "./ui/icons";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
 import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
+import { installJoinBadge } from "./ui/joinBadge";
 import { PAGES, formatRoute, parseRoute, routeTitle, sameRoute, type Route } from "./ui/route";
-import { suggestNext, type Suggestion } from "./ui/nextSteps";
 
 export interface Boot { graph: Graph; editor: NodeEditor; go(r: Route): void; route(): Route; step(now: number): void; start(): void; openWizard(): void; wizard: () => SetupWizard | null }
 
@@ -66,6 +77,7 @@ export function boot(root: HTMLElement): Boot {
     recovered = listBackups()[0] ?? null;
     if (recovered) try { graph.load(recovered.graph); } catch { recovered = null; for (const id of [...graph.nodes.keys()]) graph.removeNode(id); }
   }
+  void loadServerKeys(); // which API keys the site worker holds (see worker/index.ts)
   let setup = loadSetup();
   if (!graph.nodes.size) {
     if (!setup && !loadPrefs().draft) {
@@ -107,7 +119,7 @@ export function boot(root: HTMLElement): Boot {
       { tone: "", html: `<span class="chip" data-tip="Actions" data-tip-body="Edits to the workflow this session. A drag counts once." data-tip-rows="Recorded:${edits.actions}|Nodes:${graph.nodes.size}|Wires:${graph.edges.length}">${chipIcons.actions(edits.actions)}${edits.actions} actions</span>` },
       { tone: chipTone.workflow(edits.patchChars / 1024), html: `<span class="chip${chipTone.workflow(edits.patchChars / 1024)}" data-tip="Workflow size" data-tip-body="Size of the node graph as saved JSON." data-tip-rows="Workflow:${kb(edits.patchChars)}|Nodes:${graph.nodes.size}|Wires:${graph.edges.length}|Unsaved backup:${dirty ? "yes" : "no"}">${chipIcons.workflow(edits.patchChars / 1024)}workflow ${kb(edits.patchChars)}</span>` },
       { tone: chipTone.hist(edits.chars / 1024), html: `<span class="chip${chipTone.hist(edits.chars / 1024)}" data-tip="History memory" data-tip-body="Memory held by every undo and redo snapshot." data-tip-rows="Snapshots:${edits.undoCount + edits.redoCount + 1}|Total:${kb(edits.chars)}">${chipIcons.hist(edits.chars / 1024)}hist ${kb(edits.chars)}</span>` },
-      { tone: chipTone.store(stored / 5242880), html: `<span class="chip${chipTone.store(stored / 5242880)}" data-tip="Browser storage" data-tip-body="Everything this site keeps in localStorage: workflow, setup, backups, preferences. Browsers allow about 5 MB." data-tip-rows="Used:${kb(stored)}|Typical limit:5 MB:${stored / 5242880}">${chipIcons.store(stored / 5242880)}store ${kb(stored)}</span>` },
+      { tone: chipTone.store(stored / 5242880), html: `<span class="chip${chipTone.store(stored / 5242880)}" data-tip="Browser storage" data-tip-body="Everything this site keeps in localStorage: workflow, settings, backups, preferences. Browsers allow about 5 MB." data-tip-rows="Used:${kb(stored)}|Typical limit:5 MB:${stored / 5242880}">${chipIcons.store(stored / 5242880)}store ${kb(stored)}</span>` },
     ];
     if (mem) out.push({ tone: chipTone.heap(mem.usedJSHeapSize / 1048576), html: `<span class="chip${chipTone.heap(mem.usedJSHeapSize / 1048576)}" data-tip="JS heap" data-tip-body="Memory used by the page's JavaScript (Chromium only).">${chipIcons.heap(mem.usedJSHeapSize / 1048576)}heap ${(mem.usedJSHeapSize / 1048576).toFixed(0)} MB</span>` });
     return out;
@@ -120,13 +132,13 @@ export function boot(root: HTMLElement): Boot {
     <header>
       <a class="brand" id="home" href="#/table" aria-label="Chess XP home" data-tip="Chess XP" data-tip-body="Back to the start page.">${KNIGHT_SVG}<span>Chess XP</span></a>
       <nav class="rtabs" role="tablist" aria-label="Ribbon">
-        <button role="tab" class="on" data-rtab="home" aria-selected="true">Home</button>
-        <button role="tab" data-rtab="view" aria-selected="false">View</button>
-        <button role="tab" data-rtab="tools" aria-selected="false">Tools</button>
+        <button role="tab" class="on" data-rtab="home" aria-selected="true">${icon("home", 16)}<span>Home</span></button>
+        <button role="tab" data-rtab="view" aria-selected="false">${icon("eye", 16)}<span>View</span></button>
+        <button role="tab" data-rtab="tools" aria-selected="false">${icon("tools", 16)}<span>Tools</span></button>
         <div class="spacer"></div>
         <div class="chips" id="hud"></div>
         <div class="chips" id="buildchips"></div>
-        <button id="scenpause" class="scen-pause" type="button" disabled aria-label="Pause scenario" data-tip="Pause scenario" data-tip-body="Holds the scenario player between moves while a game is replaying. Press again to resume."><span class="lbl">❚❚ Pause</span></button>
+        <button id="scenpause" class="scen-pause" type="button" disabled aria-label="Pause scenario" data-tip="Pause scenario" data-tip-body="Holds the scenario player between moves while a game is replaying. Press again to resume.">${icon("pause", 16)}<span class="lbl">Pause</span></button>
         <div class="chips" id="hist">
           <button id="hudundo" class="chip" type="button" disabled aria-label="Undo" data-act="undo" data-tip="Undo" data-tip-keys="Ctrl,Z" data-tip-body="Step back through your edits to the workflow."></button>
           <button id="hudredo" class="chip" type="button" disabled aria-label="Redo" data-act="redo" data-tip="Redo" data-tip-keys="Ctrl,Y" data-tip-body="Bring back an edit you undid."></button>
@@ -146,7 +158,10 @@ export function boot(root: HTMLElement): Boot {
             <button id="playnow" class="rb" data-tip="Play now against bot" data-tip-body="Start a game against Stockfish right away. Choose who starts, and whether you are simulated (mouse) or real (webcams).">${icon("film", 22)}<span>Play bot</span></button>
             <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
-            <button id="setup" class="rb" data-tip="Setup wizard" data-tip-body="Step-by-step setup for cameras, projector and players.">${icon("setup", 22)}<span>Setup</span></button>
+            <button id="settings" class="rb" data-tip="Settings" data-tip-body="Cameras, projector, narration, and players.">${icon("setup", 22)}<span>Settings</span></button>
+            <button id="calibrate" class="rb"><span>Calibrate</span></button>
+            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8)."><span>Align boards</span></button>
+            <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
           </div><div class="rlabel">Start</div></div>
           <div class="rgroup"><div class="rbtns">
             <button id="undo" class="rb" disabled aria-label="Undo" data-tip="Undo" data-tip-keys="Ctrl,Z" data-tip-body="Step back through your edits to the workflow.">${icon("undo", 22)}<span>Undo</span></button>
@@ -164,17 +179,18 @@ export function boot(root: HTMLElement): Boot {
             <button id="backupnow" class="rb" data-tip="Backup now" data-tip-body="Keep a restore point of the workflow as it is right now.">${icon("plus", 22)}<span>Backup now</span></button>
             <div class="rdrop"><button id="more" class="rb" aria-haspopup="menu" aria-expanded="false" data-tip="More" data-tip-body="Reset the workflow to the default."><span class="ic-slot"></span><span>More ▾</span></button>
               <div class="rmenu" role="menu" hidden>
-                <button id="reset" role="menuitem" data-tip="Reset workflow" data-tip-tag="destructive" data-tip-color="#ff7070" data-tip-body="Discards your saved node layout and setup, then reloads the page."><span class="ic-slot"></span>Reset workflow</button>
+                <button id="reset" role="menuitem" data-tip="Reset workflow" data-tip-tag="destructive" data-tip-color="#ff7070" data-tip-body="Discards your saved node layout and settings, then reloads the page."><span class="ic-slot"></span>Reset workflow</button>
               </div></div>
           </div><div class="rlabel">Backups</div></div>
         </div>
         <div class="rpane" data-rpane="view">
           <div class="rgroup"><div class="rbtns">
-            <button id="heat" class="rb" data-tip="Node timings" data-tip-body="Show each node's cost on the workflow: a share bar, a sparkline of recent ticks, and avg / p95 / max milliseconds."><b>◔</b>Timings</button>
+            <button id="nodesview" class="rb" data-tip="Show nodes" data-tip-body="Show the node editor next to the table. Off (the default) is the simple view: just the board, the log and the assistant, and the editor is not drawn, which keeps the app light.">${icon("grid", 22)}<span>Show nodes</span></button>
+            <button id="heat" class="rb" data-tip="Node timings" data-tip-body="Show each node's cost on the workflow: a share bar, a sparkline of recent ticks, and avg / p95 / max milliseconds.">${icon("gauge", 22)}<span>Timings</span></button>
           </div><div class="rlabel">Graph</div></div>
           <div class="rgroup"><div class="rbtns">
             <select id="theme" aria-label="Theme" data-tip="Theme" data-tip-body="Pick the look of the whole app.">${APP_THEMES.map((t) => `<option value="${t.id}">${t.name}</option>`).join("")}</select>
-            <button id="mode" class="rb" data-tip="Light / dark" data-tip-body="Cycle dark, light, or follow the system."><b>◐</b><span class="lbl"></span></button>
+            <button id="mode" class="rb" data-tip="Light / dark" data-tip-body="Cycle dark, light, or follow the system.">${icon("contrast", 22)}<span class="lbl"></span></button>
           </div><div class="rlabel">Theme</div></div>
         </div>
         <div class="rpane" data-rpane="tools">
@@ -190,7 +206,6 @@ export function boot(root: HTMLElement): Boot {
       <aside>
         <div class="resize" id="resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize inspector" data-tip="Resize inspector" data-tip-body="Drag to change the width of this panel." data-tip-keys="Drag,Double-click" data-tip-hint="Double-click resets"></div>
         <nav id="tabs"></nav>
-        <div id="next" aria-label="Suggested next steps"></div>
         <div id="dock"></div>
       </aside>
     </main>
@@ -198,7 +213,17 @@ export function boot(root: HTMLElement): Boot {
 
   const tips = installTooltips().add(editorTips(graph));
   // ---- ribbon: tab headers switch panes; "File" dropdown closes on outside click / Escape
+  // Clicking the tab that is already open folds the ribbon away (Office-style); any tab click brings it back. Remembered between visits.
+  const headerEl = app.querySelector("header")!;
+  const setRibbonCollapsed = (c: boolean, save = true) => {
+    headerEl.classList.toggle("ribbon-collapsed", c);
+    for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) o.setAttribute("aria-expanded", String(!c));
+    if (save) patchPrefs({ ribbonCollapsed: c || undefined });
+  };
+  setRibbonCollapsed(!!loadPrefs().ribbonCollapsed, false);
   for (const t of app.querySelectorAll<HTMLElement>("[data-rtab]")) t.onclick = () => {
+    if (t.classList.contains("on")) { setRibbonCollapsed(!headerEl.classList.contains("ribbon-collapsed")); return; }
+    if (headerEl.classList.contains("ribbon-collapsed")) setRibbonCollapsed(false);
     for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) { const on = o === t; o.classList.toggle("on", on); o.setAttribute("aria-selected", String(on)); }
     for (const p of app.querySelectorAll<HTMLElement>("[data-rpane]")) p.classList.toggle("on", p.dataset.rpane === t.dataset.rtab);
   };
@@ -236,16 +261,39 @@ export function boot(root: HTMLElement): Boot {
   editor.onView = () => { clearTimeout(viewTimer); viewTimer = setTimeout(() => patchPrefs({ view: editor.getView() }), 400); };
   document.getElementById("graph")!.append(editor.root);
   const tools = document.createElement("div"); tools.className = "ne-tools";
-  const tool = (label: string, tip: string, body: string, fn: () => void) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.dataset.tip = tip; b.dataset.tipBody = body; b.onclick = fn; tools.append(b); return b; };
-  tool("+ Section", "Add section", "Wrap the selected nodes (or the middle of the view) in a titled, coloured frame. Drag its title to move everything inside.", () => editor.addGroup());
-  tool("Organize", "Organize into sections", "Lay the workflow out in bands: demo & input, analysis, game & experience, output (sound & narration). Undo with Ctrl+Z.", () => editor.organize());
+  const tool = (label: string, ic: string, tip: string, body: string, fn: () => void) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.setAttribute("aria-label", tip); withIcon(b, ic, 15); b.dataset.tip = tip; b.dataset.tipBody = body; b.onclick = fn; tools.append(b); return b; };
+  tool("Section", "plus", "Add section", "Wrap the selected nodes (or the middle of the view) in a titled, coloured frame. Drag its title to move everything inside.", () => editor.addGroup());
+  tool("Organize", "grid", "Organize into sections", "Lay the workflow out in bands: demo & input, analysis, game & experience, output (sound & narration). Undo with Ctrl+Z.", () => editor.organize());
   document.getElementById("graph")!.append(tools);
 
   const table = new TablePanel(); tips.add(table.tips);
+  const inputPreview = document.createElement("section"); inputPreview.className = "simple-input";
+  const inputHeader = document.createElement("div"); inputHeader.className = "simple-input-header";
+  const inputTitle = document.createElement("strong"); inputTitle.textContent = "Input webcam";
+  const adjustCorners = document.createElement("button"); adjustCorners.type = "button"; adjustCorners.textContent = "Adjust corners";
+  adjustCorners.onclick = () => go({ page: "settings", step: "board" });
+  const inputCanvas = document.createElement("canvas"); inputCanvas.width = 480; inputCanvas.height = 360;
+  inputCanvas.setAttribute("aria-label", "Input webcam preview");
+  inputHeader.append(inputTitle, adjustCorners); inputPreview.append(inputHeader, inputCanvas);
+  table.root.querySelector(".cc-side")!.prepend(inputPreview);
   const world = new WorldPanel(graph), log = new LogPanel(); tips.add(log.tips);
   const perf = new PerfPanel(graph, { reveal: (id) => editor.reveal(id), setHeat: (on) => setHeat(on), heatOn: () => editor.heatOn });
   tips.add(perf.tips);
-  const panels: [string, { root: HTMLElement }][] = [["Table", table], ["3D / Mapping", world], ["Log", log], ["Performance", perf]];
+  // The assistant sees and changes the app only through this host (see assistant/appHost.ts)
+  const assistantHost = createAppHost({
+    registry, graph, loadSetup,
+    applySetup: (cfg, why) => { addBackup(why, graph.toJSON(), loadSetup(), true); saveSetup(cfg); buildGraphFromConfig(graph, cfg); editor.rebuild(); persist(); },
+    applyGraph: (g, why) => restore(g, null, why),
+    persist: () => persist(), toggleBypass: (id) => editor.toggleBypass(id), selection: () => editor.selection(),
+    route: () => route, go: (r) => go(r), history: { get canUndo() { return edits.canUndo; }, get canRedo() { return edits.canRedo; } }, undo: () => undo(), redo: () => redo(),
+    table: {
+      fen: () => virtualTable.game.fen(), legal: () => virtualTable.game.moves(), reset: () => virtualTable.reset(),
+      seat: (on) => { virtualTable.seated = on; table.seatCb(on); }, seated: () => virtualTable.seated, play: (m) => virtualTable.play(m, performance.now()),
+    },
+    sound: () => ({ on: soundOn, muted: mixer.get().muted }), now: () => performance.now(),
+  });
+  const assistant = new AssistantPanel(assistantHost, { speak: speakAssistant });
+  const panels: [string, { root: HTMLElement }][] = [["Game", table], ["World", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
   const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);
   const themeSel = document.getElementById("theme") as HTMLSelectElement, modeBtn = document.getElementById("mode")!;
@@ -254,18 +302,25 @@ export function boot(root: HTMLElement): Boot {
   modeBtn.onclick = () => setAppMode(nextMode(appMode()));
   onAppTheme(syncTheme); syncTheme();
   if (prefs.heat) setHeat(true);
+  // Simple view is the default: the node editor is hidden (and so not painted), leaving the table, log and assistant at full width.
+  const nodesBtn = document.getElementById("nodesview")!;
+  const setSimple = (simple: boolean, save = true) => { document.body.classList.toggle("simple", simple); nodesBtn.classList.toggle("on", !simple); nodesBtn.setAttribute("aria-pressed", String(!simple)); if (save) patchPrefs({ simple }); };
+  setSimple(prefs.simple !== false, false);
+  nodesBtn.onclick = () => setSimple(!document.body.classList.contains("simple"));
   const tabs = document.getElementById("tabs")!, dock = document.getElementById("dock")!;
   let active = 0;
-  const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); b.setAttribute("aria-current", k === i ? "page" : "false"); }); };
-  const TAB_INFO = ["Virtual table: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing."];
-  panels.forEach(([name], i) => { const b = document.createElement("button"); b.innerHTML = `${icon(["table", "world", "log", "perf"][i])}<span>${name}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
+  const TAB_INFO = ["The game: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing.", "Chat with the AI: it sees the game, cameras and setup, and can change them for you."];
+  const TAB_SHORT = ["Table", "3D", "Log", "Perf", "AI"]; // phone bar: icon over a one-word label
+  panels.forEach(([name], i) => { const b = document.createElement("button"); b.setAttribute("aria-label", name); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span class="tl">${name}</span><span class="ts" aria-hidden="true">${TAB_SHORT[i]}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  assistant.onNudge = () => { if (active !== 4) tabs.children[4]?.classList.add("ping"); };
   show(prefs.tab !== undefined && prefs.tab >= 0 && prefs.tab < panels.length ? prefs.tab : 0);
 
   table.seatCb = (seated) => { for (const n of graph.nodes.values()) if (n.type === "sim.person") n.params.seated = seated; };
   let soundOn = false;
   const soundLabel = () => { document.getElementById("audio")!.querySelector(".lbl")!.textContent = soundOn && !mixer.get().muted ? "Sound on" : "Sound off"; };
-  const doSound = () => { if (!soundOn) { startAudio(graph); startFxAudio(graph); soundOn = true; } mixer.setMuted(false); patchPrefs({ sound: true }); soundLabel(); refreshNext(true); };
-  const toggleSound = () => { if (!soundOn) { doSound(); return; } const muted = mixer.toggleMuted(); patchPrefs({ sound: !muted }); soundLabel(); refreshNext(true); };
+  const doSound = () => { if (!soundOn) { startAudio(graph); startFxAudio(graph); soundOn = true; } mixer.setMuted(false); patchPrefs({ sound: true }); soundLabel(); };
+  const toggleSound = () => { if (!soundOn) { doSound(); return; } const muted = mixer.toggleMuted(); patchPrefs({ sound: !muted }); soundLabel(); };
   document.getElementById("audio")!.onclick = toggleSound;
 
   // mixer popover: one slider per bus, plus a mute-all switch. Opens under its button; closes on an outside click.
@@ -273,7 +328,7 @@ export function boot(root: HTMLElement): Boot {
   const mixBtn = document.getElementById("mixer")!;
   const mixPanel = document.createElement("div");
   mixPanel.hidden = true; mixPanel.setAttribute("role", "dialog"); mixPanel.setAttribute("aria-label", "Mixer");
-  mixPanel.style.cssText = "position:fixed;z-index:1000;min-width:240px;padding:10px 12px;display:grid;gap:8px;background:var(--panel,#1b1f27);color:var(--text,inherit);border:1px solid var(--border,#3a4150);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:12px";
+  mixPanel.style.cssText = "position:fixed;z-index:1000;min-width:240px;padding:10px 12px;display:grid;gap:8px;background:#1b1f27;color:#eef3fa;border:1px solid #3a4150;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:12px";
   mixPanel.innerHTML = MIX_ROWS.map(([k, l]) => `<label style="display:grid;grid-template-columns:110px 1fr 40px;gap:8px;align-items:center"><span>${l}</span><input type="range" min="0" max="100" step="1" data-bus="${k}"><output style="text-align:right"></output></label>`).join("")
     + `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mixmute"><span>Mute all</span></label>`;
   document.body.append(mixPanel);
@@ -309,8 +364,8 @@ export function boot(root: HTMLElement): Boot {
   const askCi = () => { void latestCi().then((r) => { ci = r; drawBuild(); }); };
   drawBuild(); askCi();
   setInterval(drawBuild, 30_000); setInterval(askCi, 300_000);
-  for (const [id, name] of [["audio", "sound"], ["more", "sliders"], ["reset", "refresh"]]) document.querySelector(`#${id} .ic-slot`)!.outerHTML = icon(name, 22);
-  document.getElementById("reset")!.onclick = () => { addBackup("Before reset", graph.toJSON(), loadSetup(), false); localStorage.removeItem(KEY); clearSetup(); clearPrefs(); location.reload(); };
+  for (const [id, name] of [["audio", "sound"], ["mixer", "wave"], ["more", "sliders"], ["reset", "refresh"]]) document.querySelector(`#${id} .ic-slot`)!.outerHTML = icon(name, 22);
+  document.getElementById("reset")!.onclick = () => notify("This clears the saved workflow, setup and preferences, then reloads the page.", [{ label: "Reset workflow", run: () => { addBackup("Before reset", graph.toJSON(), loadSetup(), false); localStorage.removeItem(KEY); clearSetup(); clearPrefs(); location.reload(); } }], "warn", { title: "Reset this workflow?" });
   const doExport = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([serializeCe(graph.toJSON(), loadSetup())], { type: "application/json" })); a.download = ceFileName(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
   document.getElementById("export")!.onclick = doExport;
 
@@ -380,8 +435,13 @@ export function boot(root: HTMLElement): Boot {
   editor.onChange = () => { persist(); syncRibbon(); };
   syncRibbon();
   window.addEventListener("pagehide", () => { if (dirty) addBackup("On exit", graph.toJSON(), loadSetup(), true); closeSession(); });
-  if (prefs.sound) {
-    const arm = () => { window.removeEventListener("pointerdown", arm, true); window.removeEventListener("keydown", arm, true); if (!soundOn) doSound(); };
+  if (prefs.sound !== false) { // a first visit has no preference yet: the first click or key should turn sound on
+    const arm = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("#audio,#mixer,#mixmute")) return; // those controls toggle sound themselves; arming here would mute them again
+      window.removeEventListener("pointerdown", arm, true); window.removeEventListener("keydown", arm, true);
+      if (!soundOn) doSound();
+    };
     window.addEventListener("pointerdown", arm, true); window.addEventListener("keydown", arm, true);
   }
   if (recovered) notify(`Your saved workflow could not be read, so the backup from ${ago(recovered.t)} was restored.`, [{ label: "Open backups", run: panel }], "warn", { title: "Saved workflow restored from backup", details: ["The autosaved copy was unreadable, so the most recent backup was loaded instead.", "Edits made after that backup may be missing."] });
@@ -403,8 +463,8 @@ export function boot(root: HTMLElement): Boot {
     scenPause.disabled = !playing;
     scenPause.classList.toggle("on", bus.scenarioPaused);
     const label = scenPause.querySelector(".lbl")!;
-    const text = bus.scenarioPaused ? "▶ Resume" : "❚❚ Pause";
-    if (label.textContent !== text) label.textContent = text;
+    const text = bus.scenarioPaused ? "Resume" : "Pause";
+    if (label.textContent !== text) { label.textContent = text; scenPause.querySelector(".ic")!.outerHTML = icon(bus.scenarioPaused ? "play" : "pause", 16); }
   };
   scenPause.onclick = () => { bus.scenarioPaused = !bus.scenarioPaused; syncScenarioPause(); };
   // ---- clicking the table while two AI players are playing: pause, ask, then swap the AI player for a Desktop Controller
@@ -433,20 +493,98 @@ export function boot(root: HTMLElement): Boot {
   let lastTick = 0, lastHud = 0, lastPost = 0, lastLine = "", lastFrame = 0, frameMs = 16.7, worstMs = 0;
   let lastBackup = 0, lastBeat = 0;
   let hudBarHtml = "", hudMenuHtml = "";
+  // ---- phone remote: publishes the game to the relay in the dev server and plays the moves a phone sends
+  const camFrames = () => [...graph.nodes.values()].flatMap((n) => {
+    if (n.type !== "vision.boardReader") return [];
+    const f = registry.get(n.type)?.frameOf?.(graph.states.get(n.id)) as GrayFrame | null | undefined;
+    const cam = (graph.states.get(n.id) as { sampler?: { cam?: string } } | undefined)?.sampler?.cam;
+    return f && cam ? [{ id: cam, frame: f }] : [];
+  });
+  const virtualBoard = () => {
+    const on = (t: string) => [...graph.nodes.values()].some((n) => n.type === t && n.params.online !== false);
+    return on("source.synthetic") && !camFrames().some((c) => [...graph.nodes.values()].some((n) => n.type === "source.webcam" && n.params.online !== false && graph.states.get(n.id)?.frame));
+  };
+  const calibrate = new Calibrate(graph, persist);
+  const calibrationDialog = document.createElement("dialog"); calibrationDialog.className = "calibrate-dialog"; calibrationDialog.setAttribute("aria-label", "Calibrate piece detection");
+  const calibrationPanel = document.createElement("div"); calibrationDialog.append(calibrationPanel); document.body.append(calibrationDialog);
+  let calibrationSignature = "";
+  const drawCalibration = () => {
+    const signature = JSON.stringify(calibrate.view);
+    if (signature === calibrationSignature) return;
+    calibrationSignature = signature;
+    renderCalibration(calibrationPanel, calibrate.view, c => { const answer = calibrate.command(c); if (!answer.ok) notify(answer.text); calibrationSignature = ""; drawCalibration(); });
+  };
+  document.getElementById("calibrate")!.onclick = () => { calibrationSignature = ""; drawCalibration(); calibrationDialog.showModal(); };
+  const remote = new RemoteHost({
+    cloud: !!(import.meta as any).env?.PROD,
+    base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
+    build: (framed, notice, now) => {
+      const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
+      s.calibration = calibrate.view ? { ...calibrate.view, results: calibrate.view.results.map(r => ({ ...r, errors: r.errors.slice(0, 12) })) } : null;
+      if (calibrate.view) s.play = "off";
+      if (virtualTable.over) {
+        s.over = true; s.play = "off";
+        const e = virtualTable.ended;
+        if (e) s.result = e.kind === "draw" ? "Draw agreed." : `${e.color === "w" ? "White" : "Black"} resigns. ${e.color === "w" ? "Black" : "White"} wins.`;
+      }
+      return s;
+    },
+    frames: camFrames,
+    command: (c, now) => c.type === "calibrate" ? calibrate.command(c) : calibrate.view ? { ok: false, text: "Close Calibrate before playing." } : applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
+  });
+  document.getElementById("alignall")!.onclick = async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement; if (btn.disabled) return;
+    const label = btn.querySelector("span")!, was = label.textContent; btn.disabled = true;
+    try {
+      const r = await alignAllBoards(graph, (d, t) => { label.textContent = `Aligning ${d}/${t}`; });
+      if (r.aligned) { editor.rebuild(); persist(); }
+      notify(r.total ? `Aligned ${r.aligned} of ${r.total} board${r.total === 1 ? "" : "s"}, up to ${alignConcurrency()} at a time.` : "No camera with a live picture and a board grid was found.", [], r.aligned === r.total && r.total ? "info" : "warn", { title: "Align boards" });
+    } finally { label.textContent = was; btn.disabled = false; }
+  };
+  document.getElementById("phone")!.onclick = () => {
+    if (remote.available === false) notify("The phone connection could not be opened. Reload this page to retry. If it still fails, the server’s phone bridge may be unavailable.", [], "warn", { title: "Phone remote is not running" });
+    else if (remote.available === null) notify("Still checking for the phone connection. Try again in a second.", [], "info", { title: "Phone remote" });
+    else {
+      const away = remote.urls.some((u) => u.includes("alderoberge.com"));
+      const lead = away
+        ? `On a phone, open an address below and enter the join code ${remote.code} if asked. The alderoberge.com address works from anywhere; a local address needs the same Wi-Fi.`
+        : `On a phone using the same Wi-Fi, open the address below and enter the join code ${remote.code} if asked.`;
+      const address = remote.urls.find((u) => u.includes("alderoberge.com")) ?? remote.urls[0] ?? "";
+      notify(`${lead} ${remote.clients ? `${remote.clients} phone${remote.clients === 1 ? " is" : "s are"} connected now.` : "No phone is connected yet."}`,
+        [{ label: "Copy address", run: () => { void navigator.clipboard?.writeText(address).catch(() => {}); } }], "info",
+        { title: `This PC’s join code: ${remote.code}`, details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
+    }
+  };
+  const calWin = new CalibrationOverlay(() => { bus.calibrationDismiss = true; });
+  installJoinBadge(remote, () => document.getElementById("phone")!.click());
   const step = (now: number) => {
+    remote.tick(now);
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }
     lastFrame = now;
     profiler.beginFrame(now);
     if (now - lastBeat > 5000) { lastBeat = now; beatSession(); }
     if (now - lastBackup > 300000) { lastBackup = now; if (dirty) { dirty = false; addBackup("Autosave", graph.toJSON(), loadSetup(), true); } }
     if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
+    calWin.render(bus.calibration);
     profiler.span("editor", () => editor.frame(now));
+    if (calibrationDialog.open) drawCalibration();
+    document.getElementById("calibrate")!.classList.toggle("on", !!calibrate.view);
     wiz?.frame(now);
-    profiler.span(["table", "world", "log", "perf"][active], () => {
-      if (active === 0) table.frame(now);
+    assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
+    profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {
+      if (active === 0) {
+        table.frame(now);
+        if (document.body.classList.contains("simple")) {
+          const webcams = [...graph.nodes.values()].filter((n) => n.type === "source.webcam");
+          const source = webcams.find((n) => n.params.online !== false) ?? webcams[0];
+          const state = source ? graph.states.get(source.id) as { frame?: GrayFrame | null; err?: string } | undefined : undefined;
+          const ctx = inputCanvas.getContext("2d");
+          if (ctx) drawFrame(ctx, 480, 360, source?.params.online === false ? null : state?.frame, state?.err || (source ? "Webcam offline" : "Add a webcam in Settings / Cameras"));
+        }
+      }
       else if (active === 1) world.frame(now);
       else if (active === 2) log.frame();
-      else perf.frame(now);
+      else if (active === 3) perf.frame(now);
     });
     if (now - lastPost > 33 && bus.scene) {
       lastPost = now;
@@ -457,10 +595,11 @@ export function boot(root: HTMLElement): Boot {
       profiler.begin("hud");
       lastHud = now; worstMs = 0;      const g = bus.game, b = bus.board;
       const tot = [...graph.stats.values()].reduce((a, s) => a + s.ms, 0);
-      refreshNext();
-      const boardT = chipTone.board(b ? b.fidelity : 0), moveT = chipTone.move(g ? g.moveFidelity : 0), fpsT = chipTone.fps(1000 / frameMs), camT = chipTone.cam(bus.cameras.length), tickT = chipTone.tick(tot / 66);
+      const boardPending = !b || b.settled === false || !!b.handOver; // missing, still warming up, or a hand over the board: not a failed calibration
+      const boardT = boardPending ? "" : chipTone.board(b.fidelity), moveT = chipTone.move(g ? g.moveFidelity : 0), fpsT = chipTone.fps(1000 / frameMs), camT = chipTone.cam(bus.cameras.length), tickT = chipTone.tick(tot / 66);
+      const boardPct = boardPending ? "…" : `${Math.round(b.fidelity * 100)}%`;
       const items: Hud[] = [
-        { tone: boardT, html: `<span class="chip${boardT}" data-tip="Board fidelity" data-tip-body="How sure the fused cameras are about all 64 squares." data-tip-rows="Reading:${b ? Math.round(b.fidelity * 100) : 0}%:${b ? b.fidelity : 0}|Healthy:above 80%">${chipIcons.board(b ? b.fidelity : 0)}board ${b ? Math.round(b.fidelity * 100) : 0}%</span>` },
+        { tone: boardT, html: `<span class="chip${boardT}" data-tip="Board fidelity" data-tip-body="${boardPending ? "The board reading is still settling, or a hand is covering it." : "How sure the fused cameras are about all 64 squares."}" data-tip-rows="Reading:${boardPct}:${b ? b.fidelity : 0}|Healthy:above 80%">${chipIcons.board(b ? b.fidelity : 0)}board ${boardPct}</span>` },
         { tone: moveT, html: `<span class="chip${moveT}" data-tip="Move confidence" data-tip-body="How sure the tracker is that the last move really happened." data-tip-rows="Reading:${g ? Math.round(g.moveFidelity * 100) : 0}%:${g ? g.moveFidelity : 0}|Healthy:above 80%">${chipIcons.move(g ? g.moveFidelity : 0)}move ${g ? Math.round(g.moveFidelity * 100) : 0}%</span>` },
         { tone: fpsT, html: `<span class="chip${fpsT}" data-tip="Frame rate" data-tip-body="How smoothly the page is drawing. Lag spikes mean something is hogging the main thread." data-tip-rows="Average:${frameMs.toFixed(1)} ms|Worst recently:${worstMs.toFixed(0)} ms">${chipIcons.fps(1000 / frameMs)}${Math.round(1000 / frameMs)} fps</span>` },
         { tone: camT, html: `<span class="chip${camT}" data-tip="Cameras" data-tip-body="Cameras currently feeding the workflow." data-tip-rows="Active:${bus.cameras.length}">${chipIcons.cam(bus.cameras.length)}${bus.cameras.length} cam</span>` },
@@ -474,7 +613,7 @@ export function boot(root: HTMLElement): Boot {
       // Rewrite only when the markup changed: replacing it every 250 ms would rebuild the chips under the pointer and drop their tooltips.
       const barHtml = items.filter(needsAttention).map((c) => c.html).join(""), menuHtml = quiet.map((c) => c.html).join("");
       if (barHtml !== hudBarHtml) { hudBarHtml = barHtml; hud.innerHTML = barHtml; }
-      if (menuHtml !== hudMenuHtml) { hudMenuHtml = menuHtml; hudMenu.innerHTML = menuHtml; }
+      if (menuHtml !== hudMenuHtml) { hudMenuHtml = menuHtml; hudMenu.innerHTML = menuHtml; hudMenu.append(buildChips); }
       hudMore.disabled = quiet.length === 0; // stays in place, just grayed out, so nothing shifts
       if (!quiet.length) setHudMenu(false);
       syncHistChips(); syncScenarioPause();
@@ -490,38 +629,17 @@ export function boot(root: HTMLElement): Boot {
   // ---- routing: the URL hash always mirrors the page (and setup step) on screen
   const stepIds = STEPS.map((x) => x.id);
   let route: Route = { page: "table" };
-  const nextEl = document.getElementById("next")!;
-  let nextKey = "";
-  const doSuggestion = (s: Suggestion) => { if (s.to) go(s.to); else if (s.action === "sound") doSound(); else if (s.action === "export") doExport(); };
-  function refreshNext(force = false) {
-    const b = bus.board;
-    const list = suggestNext({ route, setupDone: !!loadSetup()?.completed, soundOn: soundOn && !mixer.get().muted,boardFidelity: b ? b.fidelity : 0, cameras: graph.nodes.size ? 1 : 0 });
-    // Keyed on everything rendered, so an unchanged bar is never rebuilt (rebuilding replays the cards' entry animation).
-    const key = list.map((x) => `${x.id}\u0001${x.title}\u0001${x.hint}\u0001${x.icon}`).join("\u0002");
-    if (key === nextKey) return;
-    nextKey = key;
-    nextEl.replaceChildren();
-    const lead = document.createElement("span"); lead.className = "next-lead"; lead.innerHTML = `${icon("spark", 14)}<span>Next</span>`; nextEl.append(lead);
-    list.forEach((s, i) => {
-      const b = document.createElement("button"); b.type = "button"; b.className = `next-card${i === 0 ? " primary" : ""}`; b.title = s.hint;
-      b.innerHTML = `<span class="next-ic">${icon(s.icon, 18)}</span><span class="next-tx"><b></b><small></small></span>`;
-      b.querySelector("b")!.textContent = s.title; b.querySelector("small")!.textContent = s.hint;
-      b.onclick = () => doSuggestion(s);
-      nextEl.append(b);
-    });
-  }
   /** Show `r` without touching the URL. */
   function apply(r: Route) {
     route = r;
-    if (r.page === "setup") { openWizard(); if (r.step) wiz?.setStep(r.step); }
+    if (r.page === "settings") { openWizard(); if (r.step) wiz?.setStep(r.step); }
     else { if (wiz && loadSetup()?.completed) closeWizard(); show(PAGES.indexOf(r.page)); }
-    document.title = routeTitle(r, r.page === "setup" ? STEPS.find((x) => x.id === r.step)?.title : undefined);
+    document.title = routeTitle(r, r.page === "settings" ? STEPS.find((x) => x.id === r.step)?.title : undefined);
     document.body.dataset.page = r.page;
-    refreshNext(true);
   }
   /** Navigate: show it and push a history entry so Back works. */
   function go(r: Route, replace = false) {
-    if (r.page !== "setup" && !loadSetup()?.completed) r = { page: "setup", step: wiz?.stepId ?? stepIds[loadPrefs().draft?.step ?? 0] ?? stepIds[0] };
+    if (r.page !== "settings" && !loadSetup()?.completed) r = { page: "settings", step: wiz?.stepId ?? stepIds[loadPrefs().draft?.step ?? 0] ?? stepIds[0] };
     if (sameRoute(r, route) && location.hash === formatRoute(r)) return;
     apply(r);
     const h = formatRoute(r);
@@ -532,7 +650,7 @@ export function boot(root: HTMLElement): Boot {
   const fromUrl = () => {
     const done = !!loadSetup()?.completed, p = loadPrefs();
     const tab = p.tab !== undefined && p.tab >= 0 && p.tab < PAGES.length ? p.tab : 0;
-    go(location.hash ? parseRoute(location.hash, stepIds) : done ? { page: PAGES[tab] } : { page: "setup", step: stepIds[p.draft?.step ?? 0] ?? stepIds[0] }, true);
+    go(location.hash ? parseRoute(location.hash, stepIds) : done ? { page: PAGES[tab] } : { page: "settings", step: stepIds[p.draft?.step ?? 0] ?? stepIds[0] }, true);
   };
   const onUrl = () => { const r = parseRoute(location.hash, stepIds); if (!sameRoute(r, route)) go(r, true); };
   window.addEventListener("popstate", onUrl);
@@ -540,9 +658,9 @@ export function boot(root: HTMLElement): Boot {
   window.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement | null;
     if (e.ctrlKey || e.metaKey || e.altKey || wiz || (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
-    const i = ["1", "2", "3", "4"].indexOf(e.key);
+    const i = ["1", "2", "3", "4", "5"].indexOf(e.key);
     if (i >= 0) { e.preventDefault(); go({ page: PAGES[i] }); }
-    else if (e.key === ",") { e.preventDefault(); go({ page: "setup", step: stepIds[0] }); }
+    else if (e.key === ",") { e.preventDefault(); go({ page: "settings", step: stepIds[0] }); }
   });
 
   // ---- guided setup (first run, or reopened from the top bar)
@@ -571,7 +689,7 @@ export function boot(root: HTMLElement): Boot {
       listCameras, openCamera, detectEnv, sfx, speak: speakLine,
       thunder: () => { audio.start(); audio.play({ do: "thunder", strength: 0.8 }); },
       onFinish: (done: SetupConfig) => { patchPrefs({ draft: null }); addBackup("Before setup", graph.toJSON(), loadSetup(), true); saveSetup(done); buildGraphFromConfig(graph, done); editor.rebuild(); persist(); closeWizard(); go({ page: "table" }); },
-      onStep: (id) => { if (!wiz || (route.page === "setup" && route.step === id)) return; go({ page: "setup", step: id }); },
+      onStep: (id) => { if (!wiz || (route.page === "settings" && route.step === id)) return; go({ page: "settings", step: id }); },
       canCancel: () => !!loadSetup()?.completed,
       onCancel: () => { if (loadSetup()?.completed) { patchPrefs({ draft: null }); closeWizard(); go({ page: "table" }); } },
     }, draft?.step ?? 0);
@@ -579,7 +697,7 @@ export function boot(root: HTMLElement): Boot {
   };
   const closeWizard = () => { wiz?.destroy(); wiz = null; };
   document.getElementById("home")!.onclick = (e) => { e.preventDefault(); go({ page: PAGES[0] }); };
-  document.getElementById("setup")!.onclick = () => go({ page: "setup", step: wiz?.stepId ?? stepIds[0] });
+  document.getElementById("settings")!.onclick = () => go({ page: "settings", step: wiz?.stepId ?? stepIds[0] });
   fromUrl();
 
   return { graph, editor, go, route: () => route, step, start, openWizard, wizard: () => wiz };

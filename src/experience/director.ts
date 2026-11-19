@@ -17,8 +17,8 @@ export const defaultDirectorConfig = (): DirectorConfig => ({ dwellMs: 1500, int
 /** Lays the options out on the player's side of the table, rotated to face them. */
 export function layoutMenu(seat: Seat, elos: number[]): MenuButton[] {
   const items: Omit<MenuButton, "x" | "y">[] = [
-    ...elos.map((e) => ({ id: `elo${e}`, label: `Ordinateur ${e}`, r: 0.55, mode: "engine" as const, elo: e })),
-    { id: "human", label: "Deux joueurs", r: 0.55, mode: "human" as const },
+    ...elos.map((e) => ({ id: `elo${e}`, label: `Computer ${e}`, r: 0.55, mode: "engine" as const, elo: e })),
+    { id: "human", label: "Two players", r: 0.55, mode: "human" as const },
   ];
   // the seat may be far from the table: anchor the menu on the table edge nearest the player
   const clampT = (v: number) => Math.min(10.5, Math.max(-2.5, v));
@@ -63,6 +63,7 @@ export class Director {
     }
     if (seat) this.seat = seat;
     this.emptySince = seat ? 0 : this.emptySince || now;
+    this.openOnFirstMove(now, events, gameEvents);
 
     switch (this.phase) {
       case "idle":
@@ -105,7 +106,7 @@ export class Director {
       case "game": {
         const over = gameEvents.find((e) => e.type === "mate" || e.type === "draw");
         if (over) this.go("outro", now, events, { result: over.type === "mate" ? `échec et mat, ${over.data?.color === "w" ? "victoire des blancs" : "victoire des noirs"}` : "partie nulle" });
-        else if (!seat && now - this.emptySince > this.cfg.leaveMs * 3) { events.push({ type: "leave", t: now }); this.go("outro", now, events); }
+        else if (this.seat && !seat && now - this.emptySince > this.cfg.leaveMs * 3) { events.push({ type: "leave", t: now }); this.go("outro", now, events); }
         break;
       }
       case "outro":
@@ -119,4 +120,27 @@ export class Director {
   }
   private lastStep = 0;
   private dwellMs = new Map<string, number>();
+
+  /**
+   * A piece moved on the real board (or a stored game picked up after a restart) starts the game immediately.
+   * Waiting for a detected seat and the intro left the first move with nobody to answer it.
+   */
+  private openOnFirstMove(now: number, events: ExperienceEvent[], gameEvents: ExperienceEvent[]) {
+    if (this.phase === "game" || this.phase === "outro") return;
+    // a game picked up after a restart counts the same: it is already under way, against the opponent it had
+    const resumed = gameEvents.find((e) => e.type === "resume");
+    if (!resumed && !gameEvents.some((e) => e.type === "move")) return;
+    const was = resumed?.data?.mode;
+    if (was === "engine" || was === "human") {
+      this.mode = was;
+      if (resumed?.data?.elo) this.elo = Number(resumed.data.elo);
+      events.push({ type: "mode", t: now, data: { mode: this.mode, elo: this.elo } });
+    } else if (!this.mode) {
+      this.mode = this.cfg.preset === "human" ? "human" : "engine";
+      this.elo = this.cfg.presetElo;
+      events.push({ type: "mode", t: now, data: { mode: this.mode, elo: this.elo } });
+    }
+    this.dwellMs.clear();
+    this.go("game", now, events);
+  }
 }

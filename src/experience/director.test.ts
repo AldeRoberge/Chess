@@ -28,6 +28,10 @@ describe("Director", () => {
     const r = run(d, 7500, 9000, [seat], []);
     expect(r.last.phase).toBe("menu");
   });
+  it("labels the dwell buttons in English, matching the rest of the chrome", () => {
+    const m = layoutMenu(seat, [500, 1000]);
+    expect(m.map((b) => b.label)).toEqual(["Computer 500", "Computer 1000", "Two players"]);
+  });
   it("menu is mirrored for a player sitting on the opposite side", () => {
     const a = layoutMenu({ id: "a", x: 4, y: 10, angle: 0 }, [500, 1000]);
     const b = layoutMenu({ id: "b", x: 4, y: -2, angle: 180 }, [500, 1000]);

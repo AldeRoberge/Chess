@@ -1,11 +1,14 @@
 import type { GraphJSON, Registry } from "../core/types";
 import type { SetupConfig } from "../setup/config";
+import { effectiveKey, serverHas } from "../net/vendorFetch";
 import { AiSession, loadAiSettings, saveAiSettings, type Built } from "../workflows/ai";
-import { WORKFLOWS } from "../workflows";
+import { WORKFLOWS, withLiveCameras } from "../workflows";
+import { loadSetup } from "../setup/config";
 import { withSpinner } from "./spinner";
+import { BUTTON_ICON, withIcon } from "./icons";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
-const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return b; };
+const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return BUTTON_ICON[label] ? withIcon(b, BUTTON_ICON[label]) : b; };
 
 export interface WorkflowApi {
   registry: Registry;
@@ -40,7 +43,7 @@ export function openWorkflowPanel(api: WorkflowApi) {
   const rows = WORKFLOWS.map((w) => {
     const row = el("div", "bk-row wf-row"), info = el("div", "bk-info");
     info.append(el("b", "", w.name), el("span", "wf-desc", w.description), el("span", "", `${w.graph.nodes.length} nodes · ${w.graph.edges.length} wires`));
-    row.append(info, btn("Load", () => { api.apply(w.graph, w.setup, `Before workflow: ${w.name}`); m.close(); }));
+    row.append(info, btn("Load", () => { const l = withLiveCameras(w, loadSetup()); api.apply(l.graph, l.setup, `Before workflow: ${w.name}`); m.close(); }));
     return row;
   });
   const foot = el("div", "bk-bar"); foot.append(btn("Open workflow file…", () => file.click()), file);
@@ -58,23 +61,27 @@ export function openAiWizard(api: WorkflowApi) {
     m.body.replaceChildren();
     const ask = el("textarea", "wf-text"); ask.rows = 6; ask.placeholder = "e.g. Track my chess board with two cameras, narrate in a calm voice, play rain and thunder when a queen is captured, and let me play against chess.com user MyName.";
     const from = el("select"); from.append(new Option("Start from scratch", "blank"), new Option("Modify my current workflow", "current"));
+    const onServer = serverHas("openai") && !saved.apiKey.trim();
     const key = el("input"); key.type = "password"; key.placeholder = "OpenAI API key (sk-...)"; key.value = saved.apiKey; key.autocomplete = "off";
     const model = el("input"); model.type = "text"; model.value = saved.model;
     const remember = el("input"); remember.type = "checkbox"; remember.checked = saved.remember;
     const status = el("p", "wf-status"); status.setAttribute("role", "status");
     const go = btn("Generate workflow", async () => {
       if (!ask.value.trim()) { status.textContent = "Describe the workflow you want first."; return; }
-      if (!key.value.trim()) { status.textContent = "Enter an OpenAI API key."; return; }
-      saveAiSettings({ apiKey: key.value, model: model.value.trim(), remember: remember.checked });
-      session = new AiSession(api.registry, { apiKey: key.value, model: model.value.trim() }, from.value === "current" ? api.current() : undefined, api.fetchImpl);
+      const apiKey = effectiveKey(key.value, "openai");
+      if (!apiKey.trim()) { status.textContent = "Enter an OpenAI API key."; return; }
+      saveAiSettings({ apiKey: onServer ? "" : key.value, model: model.value.trim(), remember: onServer ? false : remember.checked });
+      session = new AiSession(api.registry, { apiKey, model: model.value.trim() }, from.value === "current" ? api.current() : undefined, api.fetchImpl);
       go.disabled = true; status.replaceChildren(withSpinner("Thinking… this usually takes 5 to 20 seconds.", "pawn", 20));
       try { review(await session.ask(ask.value.trim())); } catch (e) { status.textContent = (e as Error).message; go.disabled = false; }
     }, "primary");
     const field = (label: string, input: HTMLElement) => { const l = el("label", "wf-field"); l.append(el("span", "", label), input); return l; };
     const keep = el("label", "chk"); keep.append(remember, el("span", "", "Remember the key in this browser (stored unencrypted)"));
     m.body.append(
-      el("p", "bk-note", "Your description is sent to OpenAI with your own API key, straight from this page. Nothing else leaves your machine: key-like settings in your workflow are never included."),
-      field("What should it do?", ask), field("Start", from), field("API key", key), keep, field("Model", model), status, go);
+      el("p", "bk-note", onServer
+        ? "The Cloudflare worker already has an OpenAI key, so this page does not ask for one. Key-like settings in your workflow are never sent."
+        : "Your description is sent to OpenAI with your own API key, straight from this page. Nothing else leaves your machine: key-like settings in your workflow are never included."),
+      field("What should it do?", ask), field("Start", from), ...(onServer ? [] : [field("API key", key), keep]), field("Model", model), status, go);
     ask.focus();
   };
 

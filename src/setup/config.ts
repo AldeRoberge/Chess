@@ -1,6 +1,7 @@
 import type { Graph } from "../core/graph";
 import { LLM_DEFAULT_MODEL } from "../narrator/llm";
 import { ELEVENLABS_DEFAULTS } from "../narrator/voice";
+import { effectiveKey } from "../net/vendorFetch";
 import { fmtCorners, parseCorners } from "../plugins/shared";
 import { poseString } from "../vision/boardPose";
 import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
@@ -26,7 +27,7 @@ export interface CameraSetup {
   autoFields?: AutoField[];
 }
 
-export type AutoField = "fov" | "trust" | "channel";
+export type AutoField = "fov" | "trust" | "channel" | "corners";
 
 /** Records whether a field was filled by auto detect (true) or set by hand (false). */
 export function setAutoField(cam: CameraSetup, field: AutoField, auto: boolean) {
@@ -121,11 +122,11 @@ export function validateSetup(c: SetupConfig, voiceNames?: Record<string, string
   if (online === 1) warn("cameras", "Only one camera online: occlusion by hands cannot be bridged. Two or more is recommended.");
   if (!c.narrator.nameA.trim() || !c.narrator.nameB.trim()) err("narrator", "Both commentators need a name.");
   if (c.ai.engine === "openai") {
-    if (!c.ai.apiKey.trim()) warn("ai", "AI commentary is set to OpenAI but no API key is entered: the built-in commentary will be used.");
-    else if (!/^sk-/.test(c.ai.apiKey.trim())) warn("ai", "OpenAI keys start with \"sk-\": check that you copied the whole key.");
+    if (!effectiveKey(c.ai.apiKey, "openai")) warn("ai", "AI commentary is set to OpenAI but no API key is entered: the built-in commentary will be used.");
+    else if (c.ai.apiKey.trim() && !/^sk-/.test(c.ai.apiKey.trim())) warn("ai", "OpenAI keys start with \"sk-\": check that you copied the whole key.");
   }
-  if (c.voice.engine === "elevenlabs" && !c.voice.apiKey.trim()) warn("voice", "The voice engine is set to ElevenLabs but no API key is entered: the system voices will be used.");
-  if (c.voice.engine === "elevenlabs" && c.voice.apiKey.trim() && voiceNames) {
+  if (c.voice.engine === "elevenlabs" && !effectiveKey(c.voice.apiKey, "elevenlabs")) warn("voice", "The voice engine is set to ElevenLabs but no API key is entered: the system voices will be used.");
+  if (c.voice.engine === "elevenlabs" && effectiveKey(c.voice.apiKey, "elevenlabs") && voiceNames) {
     // the commentator's name must be the ElevenLabs voice it speaks with (A = slot 1, B = slot 2)
     const slots = [[c.narrator.nameA, c.voice.voiceIdA, "A"], [c.narrator.nameB, c.voice.voiceIdB, "B"]].slice(0, c.narrator.voices);
     for (const [name, id, slot] of slots) {

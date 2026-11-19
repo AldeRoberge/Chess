@@ -3,7 +3,7 @@
  * `color` is the side the bot plays: black sits at the top, white at the bottom. `busy` makes the eyes glow amber
  * and the head lean toward `look` (where its hand is, in board units); `t` is seconds for the idle sway and blinks.
  */
-export function drawBotAvatar(c: CanvasRenderingContext2D, px: number, color: "w" | "b", busy: boolean, look: { x: number; y: number } | null, t: number) {
+export function drawBotAvatar(c: CanvasRenderingContext2D, px: number, color: "w" | "b", busy: boolean, look: { x: number; y: number } | null, t: number, elo?: number) {
   const dir = color === "b" ? -1 : 1, base = color === "b" ? 0 : 8; // the table edge nearest the bot
   const X = (u: number) => u * px, Y = (v: number) => (base + dir * v) * px; // v = distance out from that edge
   const lean = look ? Math.max(-0.35, Math.min(0.35, (look.x - 4) * 0.07)) : 0;
@@ -21,8 +21,10 @@ export function drawBotAvatar(c: CanvasRenderingContext2D, px: number, color: "w
     c.fillStyle = "#101826"; c.beginPath(); c.arc(X(hx + ex), Y(hv), X(0.14), 0, 7); c.fill();
     if (!blink) { c.fillStyle = busy ? "#ffb347" : "#4dffb8"; c.beginPath(); c.arc(X(hx + ex + lean * 0.3), Y(hv), X(0.07), 0, 7); c.fill(); }
   }
-  c.fillStyle = "rgba(255,255,255,.85)"; c.font = `700 ${px * 0.2}px system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = "rgba(255,255,255,.92)"; c.font = `700 ${px * 0.2}px system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
   c.fillText("BOT", X(4), Y(2.5));
+  c.fillStyle = busy ? "#ffb347" : "rgba(255,255,255,.8)"; c.font = `600 ${px * 0.16}px system-ui, sans-serif`;
+  c.fillText(`${busy ? "thinking" : color === "b" ? "Black" : "White"}${elo ? " · " + elo : ""}`, X(4), Y(2.95));
   c.restore();
 }
 

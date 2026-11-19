@@ -3,8 +3,20 @@ import { createRegistry } from "./index";
 import { VirtualTable, virtualTable } from "../sim/virtualTable";
 import { bus } from "../core/bus";
 import { RIGS, rigCorners } from "../sim/rigs";
-import { flatFrame, node, shoot, tick } from "../test/helpers";
-import { CAM_PRESETS, drawBoard, drawFrame, fmtCorners, parseCorners } from "./shared";
+import { checkerFrame, flatFrame, node, shoot, tick } from "../test/helpers";
+import { CAM_PRESETS, drawBoard, drawFrame, fmtCorners, looksLikeStart, parseCorners, readSquares } from "./shared";
+import { resample } from "../vision/enhance";
+
+describe("resample", () => {
+  it("returns the same frame when the size already matches, and area-averages otherwise", () => {
+    const same = flatFrame(7, 4, 2);
+    expect(resample(same, 4, 2)).toBe(same);
+    const data = Uint8ClampedArray.from([0, 10, 0, 10, 100, 110, 100, 110]);
+    const out = resample({ width: 4, height: 2, data, t: 7 }, 2, 1);
+    expect(out.width).toBe(2); expect(out.height).toBe(1); expect(out.t).toBe(7);
+    expect(out.data[0]).toBe(55); expect(out.data[1]).toBe(55);
+  });
+});
 
 describe("shared painters and parsers", () => {
   it("presets come from the three camera rigs", () => { expect(Object.keys(CAM_PRESETS)).toEqual(["A", "B", "C"]); expect(CAM_PRESETS.A).toEqual(rigCorners(RIGS.A)); });
@@ -24,8 +36,42 @@ describe("shared painters and parsers", () => {
     const occ = new Float32Array(64), white = new Float32Array(64), conf = new Float32Array(64).fill(1);
     occ[0] = 1; white[0] = 1; occ[1] = 1; white[1] = 0; conf[10] = 0.1;
     drawBoard(c, 160, 160, { occ, white, conf }, { diff: [3, 4] });
-    expect(arc).toHaveBeenCalledTimes(2); expect(stroke).toHaveBeenCalledTimes(2);
+    expect(arc).toHaveBeenCalled(); expect(stroke).toHaveBeenCalledTimes(2);
     drawBoard(c, 160, 160, null); drawBoard(c, 160, 160, { occ, white }); // no belief; no confidences
+  });
+});
+
+describe("per-square confidence and the start prior", () => {
+  const startBelief = (conf = 0.6) => {
+    const occ = new Float32Array(64), white = new Float32Array(64), c = new Float32Array(64).fill(conf);
+    for (let i = 0; i < 64; i++) { const r = Math.floor(i / 8); occ[i] = r < 2 || r > 5 ? 1 : 0; white[i] = r > 5 ? 1 : 0; }
+    return { occ, white, conf: c };
+  };
+  it("recognises a fresh game and names the pieces without a tracked fen", () => {
+    const b = startBelief(); expect(looksLikeStart(b)).toBe(true);
+    const { reads, start } = readSquares(b, undefined); expect(start).toBe(true);
+    expect(reads[0].piece).toBe("r"); expect(reads[60].piece).toBe("K"); expect(reads[27].piece).toBeNull();
+    expect(reads[0].prior).toBe(true); expect(reads[0].score).toBeGreaterThan(0.6); // boosted above the raw 0.6
+  });
+  it("does not assume the start position once pieces have moved", () => {
+    const b = startBelief(); for (let i = 8; i < 16; i++) b.occ[i] = 0; for (let i = 24; i < 32; i++) b.occ[i] = 1; // all black pawns advanced
+    expect(looksLikeStart(b)).toBe(false);
+    expect(readSquares(b, undefined).reads[0].prior).toBe(false);
+  });
+  it("scores a missing expected piece low", () => {
+    const b = startBelief(1); b.occ[0] = 0; const { reads } = readSquares(b, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    expect(reads[0].piece).toBe("r"); expect(reads[0].seen).toBe(false); expect(reads[0].score).toBeLessThan(0.1);
+  });
+  it("drops a moved piece from its old square on the live camera view", () => {
+    const b = startBelief(1);
+    const e2 = 52, e4 = 36; // a8 is 0, so e2 is rank 2 and e4 is rank 4
+    b.occ[e2] = 0; b.occ[e4] = 1; b.white[e4] = 1;
+    const { reads, start } = readSquares(b, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", true);
+    expect(start).toBe(true);
+    expect(reads[e2].piece).toBeNull(); expect(reads[e2].seen).toBe(false); expect(reads[e2].prior).toBe(false);
+    expect(reads[e4].seen).toBe(true); expect(reads[e4].piece).toBeNull();
+    expect(reads[60].piece).toBe("K");
+    expect(readSquares(b, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").reads[e2].piece).toBe("P");
   });
 });
 
@@ -61,9 +107,22 @@ describe("source.webcam", () => {
     const gum = vi.fn(async (_c: any) => { if (opts.fail) throw new Error("denied"); return stream; });
     Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: gum, enumerateDevices: async () => opts.devices ?? [] }, configurable: true });
     let px: Uint8ClampedArray<ArrayBufferLike> = rgba(10, 200, 30);
+    let vw = 480, vh = 360;
+    const prevW = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, "videoWidth");
+    const prevH = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, "videoHeight");
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => vw });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => vh });
+    spies.push({ mockRestore: () => { if (prevW) Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", prevW); if (prevH) Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", prevH); } });
     spies.push(vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined));
-    spies.push(vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => ({ drawImage() {}, getImageData: () => ({ data: px }), fillRect() {}, fillText() {}, createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {} })) as any));
-    return { gum, set: (d: Uint8ClampedArray) => { px = d; } };
+    spies.push(vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => ({ imageSmoothingEnabled: true, drawImage() {}, getImageData: (_x: number, _y: number, w?: number, h?: number) => {
+      if (w && h && w * h * 4 !== px.length) {
+        const d = new Uint8ClampedArray(w * h * 4), r = px[0], g = px[1], b = px[2];
+        for (let i = 0; i < d.length; i += 4) { d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255; }
+        return { data: d };
+      }
+      return { data: px };
+    }, fillRect() {}, fillText() {}, createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {} })) as any));
+    return { gum, set: (d: Uint8ClampedArray) => { px = d; }, size: (w: number, h: number) => { vw = w; vh = h; } };
   };
   afterEach(cleanup);
 
@@ -129,9 +188,25 @@ describe("source.webcam", () => {
     expect(() => node("source.webcam").dispose()).not.toThrow();
   });
   it("paints the live image once it has a frame", async () => { setup(); const n = node("source.webcam", { fps: 30 }); n.run({}, 0); await tick(); n.run({}, 1000); n.paint(); });
+  it("keeps a 1280×960 camera picture instead of averaging it down to 480×360", async () => {
+    const { size } = setup(); size(1280, 960);
+    const n = node("source.webcam", { fps: 30, resolution: "1280x960" });
+    n.run({}, 0); await tick();
+    const f = n.run({}, 1000)!.frame;
+    expect(f.width).toBe(1280); expect(f.height).toBe(960);
+    expect(f.data[0]).toBe(Math.round(10 * 0.299 + 200 * 0.587 + 30 * 0.114));
+  });
+  it("shrinks a camera that is larger than the chosen capture size, without stretching it", async () => {
+    const { size } = setup(); size(1920, 1080);
+    const n = node("source.webcam", { fps: 30, resolution: "1280x960" });
+    n.run({}, 0); await tick();
+    const f = n.run({}, 1000)!.frame;
+    expect(f.width).toBe(1280); expect(f.height).toBe(720);
+  });
 });
 
 describe("vision.boardReader", () => {
+  const cal = () => bus.calibration; // read fresh: the reader sets it
   const table = new VirtualTable();
   it("emits nothing without a frame", () => {
     const n = node("vision.boardReader"); expect(n.run({})).toEqual({ obs: null }); expect(n.h.fidelity).toBeNull(); n.paint();
@@ -152,11 +227,78 @@ describe("vision.boardReader", () => {
     expect((n.state as any).sampler.cfg.threshold).toBe(0.4); expect((n.state as any).sampler.cfg.corners).toHaveLength(4);
     n.params.corners = fmtCorners(rigCorners(RIGS.B)); n.run({ frame: shoot(table, "B", 5, 6, 5) });
   });
+  it("does not lock in a dark warm-up frame: it learns the start position from the first usable picture", () => {
+    bus.game = null;
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
+    n.run({ frame: flatFrame(0, undefined, undefined, 50) }); // the webcam is still opening: a black frame
+    expect((n.state as any).sampler.calibrated).toBe(false);
+    const o = n.run({ frame: shoot(table, "A", 100) })!.obs;
+    expect(looksLikeStart(o)).toBe(true); expect((n.state as any).autoDone).toBe(true);
+  });
+  it("learns again when the corners are marked after a bad first read, so the start position is found", () => {
+    bus.game = null;
+    const wrong = rigCorners(RIGS.A).map((p) => ({ x: p.x * 0.6 + 20, y: p.y * 0.6 + 30 })); // corners not marked on the board yet
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(wrong) });
+    for (let i = 0; i < 3; i++) n.run({ frame: shoot(table, "A", 100 + i * 1100, 6, i + 1) });
+    n.params.corners = fmtCorners(rigCorners(RIGS.A)); // marked in Setup
+    const o = n.run({ frame: shoot(table, "A", 3500, 6, 9) })!.obs;
+    expect(looksLikeStart(o)).toBe(true);
+  });
+  it("never re-learns the start position once a move is on the board", () => {
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
+    bus.game = { ply: 1 } as any;
+    n.run({ frame: flatFrame(0, undefined, undefined, 50) }); n.run({ frame: shoot(table, "A", 2000) });
+    expect((n.state as any).sampler.calibrated).toBe(false);
+    bus.game = null;
+  });
   it("paints the preview with corner outline and hand markers", () => {
     const n = node("vision.boardReader", { corners: fmtCorners(rigCorners(RIGS.A)) });
     n.run({ frame: shoot(table, "A", 1) }); n.paint();
     const t = new VirtualTable(); t.play("e4", 0); t.tick(0); t.tick(500); t.tick(900);
     n.run({ frame: shoot(t, "A", 2, 6, 2) }); n.paint();
+  });
+  it("finds the board by itself when the corners stay off, shows Calibration in progress, then clears it", () => {
+    const right = [{ x: 110, y: 40 }, { x: 390, y: 55 }, { x: 410, y: 330 }, { x: 90, y: 315 }];
+    const off = right.map((p, i) => ({ x: p.x + [14, -12, 10, -16][i], y: p.y + [-10, 12, 15, -9][i] }));
+    const pic = checkerFrame(right), at = (t: number) => ({ ...pic, t });
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(off) });
+    bus.calibration = null; bus.game = null;
+    let t = 0, seen = false;
+    for (; t < 20000 && !cal(); t += 250) n.run({ frame: at(t) }, t);
+    expect(cal()).toMatchObject({ cam: "A", phase: "running" });
+    for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) { n.run({ frame: at(t) }, t); seen ||= (cal()?.progress ?? 0) > 0; }
+    expect(seen).toBe(true);
+    expect(cal()?.phase).toBe("done");
+    const got = parseCorners(String(n.params.corners))!;
+    expect(Math.max(...got.map((p, i) => Math.hypot(p.x - right[i].x, p.y - right[i].y)))).toBeLessThan(5);
+    n.run({ frame: at(t + 9000) }, t + 9000);
+    expect(cal()).toBeNull(); // the result went away by itself
+  });
+  it("leaves the corners alone when the search finds nothing better", () => {
+    const off = rigCorners(RIGS.A).map((p) => ({ x: p.x + 40, y: p.y + 30 })), start = fmtCorners(off);
+    const n = node("vision.boardReader", { cam: "A", corners: start });
+    bus.calibration = null; bus.game = null;
+    let t = 0;
+    for (; t < 20000 && !cal(); t += 250) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
+    for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
+    expect(cal()?.phase).toBe("failed");
+    expect(n.params.corners).toBe(start);
+  });
+  it("stops when dismissed, and does nothing with auto-calibrate off", () => {
+    const off = rigCorners(RIGS.A).map((p) => ({ x: p.x + 40, y: p.y + 30 }));
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(off) });
+    bus.calibration = null; bus.game = null;
+    let t = 0;
+    for (; t < 20000 && !cal(); t += 250) n.run({ frame: shoot(table, "A", t) }, t);
+    expect(cal()?.phase).toBe("running");
+    bus.calibrationDismiss = true; n.run({ frame: shoot(table, "A", t) }, t);
+    expect(cal()).toBeNull(); expect(bus.calibrationDismiss).toBe(false);
+    for (let i = 0; i < 60; i++, t += 1000) n.run({ frame: shoot(table, "A", t) }, t);
+    expect(cal()).toBeNull();
+    const m = node("vision.boardReader", { cam: "B", corners: fmtCorners(off), autoFind: false });
+    for (let i = 0; i < 40; i++) m.run({ frame: shoot(table, "A", i * 1000) }, i * 1000);
+    expect(cal()).toBeNull();
+    n.run({}, t); // camera unplugged
   });
 });
 

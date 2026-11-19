@@ -38,7 +38,8 @@ export type ParamDef =
   /** `pick`, when given, adds a "Compare" button that opens a cost chart of `models()`; choosing a bar sets this param. */
   | { id: string; kind: "select"; label: string; options: string[]; labels?: string[]; icons?: string[]; value: string; pick?: { title: string; models: () => ModelInfo[] } }
   /** `quad` marks a "x,y;x,y;x,y;x,y" camera-pixel value that gets a drag-the-corners editor (needs the node's `frameOf`). */
-  | { id: string; kind: "text"; label: string; value: string; quad?: { names: string[]; grid: number } }
+  /** `secret` draws a password field (API keys): masked, and left out of autocomplete. */
+  | { id: string; kind: "text"; label: string; value: string; secret?: boolean; quad?: { names: string[]; grid: number } }
   /** A non-editable heading row that groups the params below it. `value` is unused (kept so defaults stay uniform). */
   | { id: string; kind: "separator"; label: string; value: string };
 

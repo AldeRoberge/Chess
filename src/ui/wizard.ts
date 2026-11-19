@@ -4,6 +4,8 @@ import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
 import { virtualTable } from "../sim/virtualTable";
 import { camHealth, setAutoField, type AutoField, type CameraSetup, type SetupConfig } from "../setup/config";
 import { CHANNEL_NAME, boardSeparation, detectChannel, estimateFov, trustFor } from "../setup/autodetect";
+import { detectBoardCorners } from "../setup/corners";
+import { effectiveKey } from "../net/vendorFetch";
 import type { CameraDevice } from "../setup/devices";
 import { evaluateEnv, runCheckAction, type Env } from "../setup/system";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "../setup/buildInfo";
@@ -16,7 +18,6 @@ import type { Sfx } from "./sfx";
 import { icon } from "./icons";
 import { KNIGHT_SVG } from "./brandIcon";
 import { resizableColumns } from "./colResize";
-import { spinnerHTML } from "./spinner";
 import { STEPS, sceneStateFor, type StepCtx, type WizardState } from "./wizardSteps";
 
 export interface WizardDeps {
@@ -62,6 +63,8 @@ export class SetupWizard {
   private pad = new GamepadPoller();
   private canvas = el("canvas", "halo-canvas");
   private picker: CornerPicker | null = null;
+  /** Bumped when a corner detection is superseded, so a late reply cannot overwrite a newer one. */
+  private cornerJob = 0;
   private video: HTMLVideoElement | null = null;
   private stream: MediaStream | null = null;
   private streamFor = "";
@@ -81,9 +84,10 @@ export class SetupWizard {
     this.state = { checks: null, detected: [], scanning: false, boardCam: 0, scenePreview: sceneStateFor(cfg), tests: {}, groups: {}, frame: null, board: {}, autoMsg: "" };
     this.canvas.width = FRAME_W; this.canvas.height = FRAME_H;
     const brand = el("div", "halo-brand"); brand.innerHTML = `<span class="halo-brand-ic">${KNIGHT_SVG}</span>`; brand.append(el("span", "halo-logo", "Chess XP"));
-    const head = el("header"); head.append(brand, this.progress);
+    this.buildRow = el("div", "halo-build"); this.buildRow.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;justify-content:center";
+    const head = el("header"); head.append(brand, this.buildRow, this.progress);
     if (deps.canCancel?.() !== false) { // first run can't be skipped, so there is nothing to close back to
-      const x = el("button", "halo-close"); x.innerHTML = icon("x", 14); x.type = "button"; x.title = "Close setup (Esc)"; x.setAttribute("aria-label", "Close setup");
+      const x = el("button", "halo-close"); x.innerHTML = icon("x", 14); x.type = "button"; x.title = "Close settings (Esc)"; x.setAttribute("aria-label", "Close settings");
       x.onclick = () => this.cancel(); head.append(x);
     }
     const foot = el("footer", "halo-keys"); foot.innerHTML = "<span><kbd>↑</kbd><kbd>↓</kbd> Select</span><span><kbd>←</kbd><kbd>→</kbd> Adjust</span><span><kbd>Enter</kbd> / <kbd>A</kbd> Confirm</span><span><kbd>Esc</kbd> / <kbd>B</kbd> Back</span>";
@@ -97,7 +101,7 @@ export class SetupWizard {
     this.render();
   }
 
-  mount(parent: HTMLElement) { parent.append(this.root); window.addEventListener("keydown", this.onKey); }
+  mount(parent: HTMLElement) { document.getElementById("app")?.setAttribute("inert", ""); parent.append(this.root); window.addEventListener("keydown", this.onKey); }
 
   /** Vertical bar between the step list and the pane; dragging it sets the list's width (--steps-w). */
   private splitter() {
@@ -118,7 +122,7 @@ export class SetupWizard {
     if (i < 0 || i === this.step) return;
     this.step = i; this.focus = 0; this.zone = "steps"; this.enterStep(); this.render();
   }
-  destroy() { window.removeEventListener("keydown", this.onKey); this.stopStream(); this.stopCamPreviews(); this.root.remove(); }
+  destroy() { document.getElementById("app")?.removeAttribute("inert"); window.removeEventListener("keydown", this.onKey); this.stopStream(); this.stopCamPreviews(); this.root.remove(); }
 
   // ---- context handed to the step definitions
   private ctx(): StepCtx {
@@ -159,7 +163,11 @@ export class SetupWizard {
 
   private async scan() {
     this.state.scanning = true; this.render();
-    try { this.state.detected = await this.deps.listCameras(); } finally { this.state.scanning = false; }
+    try {
+      this.state.detected = await this.deps.listCameras();
+      this.state.scanMsg = this.state.detected.length ? `Found ${this.state.detected.length} webcam${this.state.detected.length === 1 ? "" : "s"}.`
+        : "The browser reports no webcam. Close other apps using it (Zoom, Teams, OBS), unplug and replug it, then restart Chrome and scan again.";
+    } finally { this.state.scanning = false; }
     this.render();
   }
   private async runChecks() {
@@ -245,14 +253,14 @@ export class SetupWizard {
   private ensureVideo() {
     const cam = this.cfg.cameras[this.state.boardCam];
     if (!cam || cam.kind !== "webcam") { this.stopStream(); return; }
-    if (this.streamFor === cam.deviceId && this.stream) return;
+    if (this.streamFor === cam.deviceId) return; // open, or still opening: never start a second open of the same camera
     this.stopStream();
     this.streamFor = cam.deviceId;
     void this.deps.openCamera(cam.deviceId).then((s) => {
       if (this.streamFor !== cam.deviceId) { s.getTracks().forEach((t) => t.stop()); return; }
       this.stream = s;
       this.video = document.createElement("video"); this.video.muted = true; this.video.srcObject = s; void this.video.play();
-    }).catch(() => { this.stream = null; });
+    }).catch(() => { this.stream = null; if (this.streamFor === cam.deviceId) this.streamFor = ""; });
   }
   private stopStream() { this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; this.video = null; this.streamFor = ""; }
 
@@ -264,7 +272,9 @@ export class SetupWizard {
     if (kind === "down") this.picker.down(x, y);
     else if (this.picker.active >= 0) {
       this.picker.move(x, y);
-      this.cfg.cameras[this.state.boardCam].corners = fmtCorners(this.picker.corners);
+      const cam = this.cfg.cameras[this.state.boardCam];
+      cam.corners = fmtCorners(this.picker.corners);
+      setAutoField(cam, "corners", false);
       this.renderList();
     }
   }
@@ -303,6 +313,7 @@ export class SetupWizard {
 
   // ---- rendering
   private render() {
+    this.paintBuild();
     // Built once: recreating the items on every edit would replay their entry animation.
     if (this.stepsEl.children.length !== STEPS.length) {
       this.stepsEl.replaceChildren();
@@ -315,6 +326,14 @@ export class SetupWizard {
       });
     }
     Array.from(this.stepsEl.children).forEach((li, i) => {
+      if (i === this.step && !li.classList.contains("cur")) {
+        const item = li as HTMLElement;
+        // Move only the step strip, never its vertically scrolling ancestors.
+        const left = item.offsetLeft - this.stepsEl.offsetLeft;
+        if (left < this.stepsEl.scrollLeft) this.stepsEl.scrollLeft = left;
+        else if (left + item.offsetWidth > this.stepsEl.scrollLeft + this.stepsEl.clientWidth)
+          this.stepsEl.scrollLeft = left + item.offsetWidth - this.stepsEl.clientWidth;
+      }
       li.classList.toggle("cur", i === this.step);
       li.classList.toggle("sel", i === this.step && this.zone === "steps");
     });
@@ -341,7 +360,7 @@ export class SetupWizard {
 
   private selectCamera(i: number) {
     if (i === this.state.boardCam || !this.cfg.cameras[i]) return;
-    this.state.boardCam = i; this.picker = null; this.state.frame = null; this.measuredAt = -Infinity; this.state.autoMsg = "";
+    this.state.boardCam = i; this.picker = null; this.state.frame = null; this.measuredAt = -Infinity; this.state.autoMsg = ""; this.cornerJob++;
     this.deps.sfx.play("tick"); this.ensureVideo(); this.render();
   }
 
@@ -377,8 +396,9 @@ export class SetupWizard {
     return f;
   }
 
-  /** Fills one field of the board camera: channel and trust from its picture, the field of view from the board corners. Says what it did. */
+  /** Fills one field of the board camera. Corners come from the picture (shape, printed coordinates, AI); the rest are measured as before. */
   private detect(field: AutoField) {
+    if (field === "corners") { this.detectCorners(); return; }
     const cam = this.cfg.cameras[this.state.boardCam], img = this.state.frame, pts = parseCorners(cam.corners);
     let msg: string, ok = true;
     if (field === "fov") {
@@ -398,11 +418,26 @@ export class SetupWizard {
     this.state.autoMsg = msg; this.deps.sfx.play(ok ? "ok" : "deny"); this.render();
   }
 
+  /** Places a8, h8, h1 and a1 from the checkerboard, from printed coordinates, and from AI when a key is set. */
+  private detectCorners() {
+    const cam = this.cfg.cameras[this.state.boardCam], img = this.state.frame;
+    if (!img) { this.state.autoMsg = "No live picture to measure: check that this camera is online and has a signal."; this.deps.sfx.play("deny"); this.render(); return; }
+    const key = effectiveKey(this.cfg.ai.apiKey, "openai").trim(), job = ++this.cornerJob;
+    this.state.autoMsg = key ? "Detecting corners from the checkerboard, printed coordinates, and AI…" : "Detecting corners from the checkerboard and printed coordinates…";
+    this.deps.sfx.play("tick"); this.renderList();
+    void detectBoardCorners(img, { apiKey: key, model: this.cfg.ai.model }).then((r) => {
+      if (job !== this.cornerJob || !this.root.isConnected || this.cfg.cameras[this.state.boardCam] !== cam) return;
+      if (!r.corners) { this.state.autoMsg = r.detail; this.deps.sfx.play("deny"); }
+      else { cam.corners = fmtCorners(r.corners); setAutoField(cam, "corners", true); this.picker = null; this.state.autoMsg = r.detail; this.deps.sfx.play("ok"); }
+      this.render();
+    });
+  }
+
   private autoButton(a: AutoAction): HTMLButtonElement {
     const b = el("button", "halo-auto"); b.type = "button"; b.disabled = !!a.disabled;
     b.innerHTML = `${icon("wand", 14)}<span>${a.label}</span>`;
     if (a.disabled && a.hint) { b.dataset.tip = "Unavailable"; b.dataset.tipBody = a.hint; }
-    else { b.dataset.tip = a.label; b.dataset.tipBody = "Fills this value from the camera's picture or its board corners."; }
+    else { b.dataset.tip = a.label; b.dataset.tipBody = a.about ?? "Fills this value from the camera's picture or its board corners."; }
     b.onclick = (ev) => { ev.stopPropagation(); if (!a.disabled) a.run(); };
     return b;
   }
@@ -497,7 +532,7 @@ export class SetupWizard {
         wrap.append(ab);
       }
       const rm = el("button", "sys-btn"); rm.type = "button"; rm.setAttribute("aria-label", `Remove camera ${cam.id}`);
-      rm.dataset.tip = "Remove camera"; rm.dataset.tipBody = "Takes this camera out of the setup."; rm.dataset.tipTag = "destructive"; rm.dataset.tipColor = "#ff7070"; rm.innerHTML = icon("trash", 16);
+      rm.dataset.tip = "Remove camera"; rm.dataset.tipBody = "Takes this camera out of the settings."; rm.dataset.tipTag = "destructive"; rm.dataset.tipColor = "#ff7070"; rm.innerHTML = icon("trash", 16);
       rm.onclick = (e) => {
         e.stopPropagation(); const i = this.cfg.cameras.indexOf(cam);
         this.dropPreview(cam.id); if (i >= 0) this.cfg.cameras.splice(i, 1);
@@ -549,9 +584,10 @@ export class SetupWizard {
   /** Latest ci.yml run on main: undefined while asking, null when GitHub can't say. */
   private ci: CiRun | null | undefined;
 
-  /** Build time (relative) and commit, next to the CI state on main, so you can tell whether this copy is the latest. Styled like the top bar's chips. */
-  private buildChips(): HTMLElement {
-    const row = el("div", "halo-build"); row.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px";
+  /** Build time and CI, in the header so they are not mixed into "all checks passed". */
+  private buildRow!: HTMLElement;
+  private paintBuild() {
+    const row = this.buildRow; if (!row) return; row.replaceChildren();
     for (const v of [buildBadge(BUILD, this.ci), ciBadge(this.ci)]) {
       const chip = document.createElement(v.href ? "a" : "span");
       chip.className = `chip ${v.tone}`.trim(); chip.textContent = v.text;
@@ -559,7 +595,6 @@ export class SetupWizard {
       if (v.href) { const a = chip as HTMLAnchorElement; a.href = v.href; a.target = "_blank"; a.rel = "noopener noreferrer"; }
       row.append(chip);
     }
-    return row;
   }
 
   /** The system check as a table: one row per subsystem, each expanding to the facts behind it. */
@@ -618,10 +653,7 @@ export class SetupWizard {
       tg.onclick = () => { this.sysAllOpen = !this.sysAllOpen; this.deps.sfx.play("tick"); this.renderSystem(); };
       bar.append(tg);
     }
-    const re = el("button", "sys-act"); re.type = "button"; re.dataset.tip = "Re-run checks"; re.dataset.tipBody = "Test cameras, graphics, sound and the engine again, for example after plugging something in."; re.innerHTML = `${icon("refresh", 14)}<span>Re-run checks</span>`;
-    re.onclick = () => { re.disabled = true; re.classList.add("busy"); re.innerHTML = `${spinnerHTML("rook", 14)}<span>Re-running…</span>`; void this.runChecks(); };
-    bar.append(re);
-    const parts: HTMLElement[] = [this.buildChips(), bar];
+    const parts: HTMLElement[] = [bar];
     if (shown.length) parts.push(t);
     if (bad && passed) {
       const fold = el("button", "sys-fold"); fold.type = "button"; fold.setAttribute("aria-expanded", String(this.sysPassedOpen));
@@ -669,6 +701,7 @@ export class SetupWizard {
         li.classList.add(open ? "open" : "closed"); li.setAttribute("aria-expanded", String(open));
         const ch = el("span", "halo-chev"); ch.innerHTML = icon("chevron", 14);
         li.append(el("span", "halo-value", valueText(it)), ch);
+        if (it.auto) li.append(this.autoButton(it.auto));
       } else if (it.kind === "text") {
         const inp = el("input"); inp.value = it.get();
         if (it.secret) { inp.type = "password"; inp.autocomplete = "off"; inp.spellcheck = false; inp.placeholder = "Paste your key"; } inp.onchange = () => { it.set(inp.value); this.deps.sfx.play("ok"); };
@@ -687,7 +720,15 @@ export class SetupWizard {
           rng.oninput = () => { it.set(Number(rng.value)); txt.textContent = valueText(it); it.visual?.update(Number(rng.value)); this.deps.sfx.play("tick"); };
           rng.onchange = () => this.afterChange();
           li.append(rng, num);
-          if (it.visual) { li.classList.add("has-visual"); li.append(it.visual.el); }
+          if (it.visual) {
+            // dragging the graph moves the slider: snap to its step, clamp to its range, and run the normal input/change path
+            it.visual.onPick = (raw, final) => {
+              const v = Math.min(it.max, Math.max(it.min, Math.round(raw / it.step) * it.step));
+              if (v !== Number(rng.value)) { rng.value = String(v); rng.oninput?.(new InputEvent("input")); }
+              if (final) rng.onchange?.(new Event("change"));
+            };
+            li.classList.add("has-visual"); li.append(it.visual.el);
+          }
         } else if (it.kind === "choice") {
           // a dropdown, so any option is one pick away (←/→ on the focused row still steps through them)
           const sel = el("select", "halo-select"); sel.setAttribute("aria-label", it.label);

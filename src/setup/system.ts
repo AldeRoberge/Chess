@@ -1,4 +1,5 @@
 import { REVISION } from "three";
+import { openStream } from "./devices";
 
 export interface EnvRow { label: string; value: string }
 /** Per-check facts shown in the system table: a one-line summary and the rows behind its dropdown. */
@@ -136,7 +137,7 @@ export async function detectEnv(): Promise<Env> {
 /** Run a check's fix/test button. The caller re-runs the checks afterwards. */
 export async function runCheckAction(id: string): Promise<void> {
   if (id === "camera.grant") {
-    const s = await navigator.mediaDevices.getUserMedia({ video: true });
+    const s = await openStream({ video: true });
     s.getTracks().forEach((t) => t.stop());
   } else if (id === "speech.test") {
     const u = new SpeechSynthesisUtterance("Bonjour, la partie peut commencer."); u.lang = "fr-CA";

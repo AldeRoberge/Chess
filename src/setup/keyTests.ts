@@ -1,5 +1,6 @@
 import { fetchOpenAiModelIds } from "../narrator/openaiModels";
 import { previewEleven, type VoiceSettings } from "../narrator/voice";
+import { effectiveKey, vendorFetch } from "../net/vendorFetch";
 
 /** Outcome of a "Test" button in setup: shown as a coloured line under the key. */
 export interface TestResult { tone: "ok" | "warn" | "fail"; text: string }
@@ -17,8 +18,8 @@ const failure = (e: unknown, service: string): TestResult => {
 };
 
 /** Lists the account's models: proves the key works without spending anything. */
-export async function testOpenAiKey(key: string, doFetch: typeof fetch = fetch): Promise<TestResult> {
-  if (!key.trim()) return { tone: "warn", text: "Paste your API key first." };
+export async function testOpenAiKey(key: string, doFetch: typeof fetch = vendorFetch): Promise<TestResult> {
+  if (!effectiveKey(key, "openai")) return { tone: "warn", text: "Paste your API key first." };
   try {
     const ids = await fetchOpenAiModelIds(key, doFetch);
     return { tone: "ok", text: `Key works: ${ids.length} models available.` };
@@ -27,6 +28,6 @@ export async function testOpenAiKey(key: string, doFetch: typeof fetch = fetch):
 
 /** Speaks a short line for real, so a bad key, voice id or empty quota shows up here and not mid-game. */
 export async function testElevenLabs(text: string, who: "A" | "B", s: VoiceSettings): Promise<TestResult> {
-  if (!s.apiKey.trim()) return { tone: "warn", text: "Paste your API key first." };
+  if (!effectiveKey(s.apiKey, "elevenlabs")) return { tone: "warn", text: "Paste your API key first." };
   try { await previewEleven(text, who, s); return { tone: "ok", text: "Key works: the line played with ElevenLabs." }; } catch (e) { return failure(e, "ElevenLabs"); }
 }

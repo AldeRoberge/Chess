@@ -74,12 +74,53 @@ function plot(v: number): string {
 }
 
 /** The strength visual: call update(v) when the slider moves; the element can be appended anywhere. */
-export function eloVisual(value: number): { el: HTMLElement; update(v: number): void } {
+export interface EloVisual {
+  el: HTMLElement;
+  update(v: number): void;
+  /** Set by the owner: called with the Elo under the pointer while the graph is dragged (final = pointer released). */
+  onPick?: (elo: number, final: boolean) => void;
+}
+
+export function eloVisual(value: number): EloVisual {
   const el = document.createElement("div");
   el.className = "elo-visual";
   const render = (v: number) => {
     el.innerHTML = `${plot(v)}<p class="elo-read"><b>${v} Elo</b> is stronger than about ${percentile(v)}% of rated players. Illustrative curve; top ratings approximate.</p>`;
   };
   render(value);
-  return { el, update: render };
+  const vis: EloVisual = { el, update: render };
+  // grab the graph anywhere and drag: the marker follows the pointer along the axis. Listeners live on the
+  // persistent wrapper because every update replaces the svg inside it.
+  let dragging = false;
+  const eloAt = (clientX: number): number | null => {
+    const svg = el.querySelector("svg");
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    if (r.width <= 0) return null;
+    const vx = ((clientX - r.left) / r.width) * W;
+    return E0 + ((vx - PAD) / (W - 2 * PAD)) * (E1 - E0);
+  };
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !(e.target as Element).closest("svg") || !vis.onPick) return;
+    const v = eloAt(e.clientX);
+    if (v === null) return;
+    dragging = true;
+    try { el.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
+    e.preventDefault();
+    vis.onPick(v, false);
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const v = eloAt(e.clientX);
+    if (v !== null) vis.onPick?.(v, false);
+  });
+  const end = (e: PointerEvent) => {
+    if (!dragging) return;
+    dragging = false;
+    const v = eloAt(e.clientX);
+    if (v !== null) vis.onPick?.(v, true);
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", () => { dragging = false; });
+  return vis;
 }

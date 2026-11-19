@@ -27,7 +27,7 @@ describe("viewMenu", () => {
   it("puts extra rows first and adds projector frusta only for the world view", () => {
     const extra: CtxItem[] = [{ kind: "action", label: "Extra", run: () => {} }];
     expect(labels(viewMenu(extra))[0]).toBe("Extra");
-    const display = (viewMenu({}, { world: true }).find((i) => (i as Row).label === "Display") as unknown as Sub).items();
+    const display = (viewMenu([], { world: true }).find((i) => (i as Row).label === "Display") as unknown as Sub).items();
     expect(labels(display)).toContain("Projector frusta");
     const plain = (viewMenu().find((i) => (i as Row).label === "Display") as unknown as Sub).items();
     expect(labels(plain)).not.toContain("Projector frusta");
@@ -58,5 +58,7 @@ describe("viewMenu", () => {
     const coords = displayItems()[0] as unknown as { get: () => boolean; set: (v: boolean) => void };
     coords.set(false);
     expect(coords.get()).toBe(false);
+    const flip = displayItems().find((i) => (i as { label: string }).label === "Flip board") as unknown as { get: () => boolean; set: (v: boolean) => void };
+    flip.set(true); expect(flip.get()).toBe(true);
   });
 });

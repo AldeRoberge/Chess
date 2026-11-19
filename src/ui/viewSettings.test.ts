@@ -10,8 +10,9 @@ describe("view settings", () => {
     setRender({ fps: 30 }); expect(viewSettings().render.quality).toBe("low");
   });
   it("persists across loads and resets to defaults", () => {
-    setDisplay({ coords: false }); expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).view2.display.coords).toBe(false);
-    resetViewSettings(); expect(viewSettings().display.coords).toBe(true);
+    setDisplay({ coords: false, flip: true }); expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).view2.display.coords).toBe(false);
+    expect(viewSettings().display.flip).toBe(true);
+    resetViewSettings(); expect(viewSettings().display.coords).toBe(true); expect(viewSettings().display.flip).toBe(false);
   });
   it("gates frames by the cap and clamps the pixel ratio", () => {
     expect(dueFrame(100, 0, 0)).toBe(true); expect(dueFrame(110, 100, 30)).toBe(false); expect(dueFrame(140, 100, 30)).toBe(true);

@@ -5,6 +5,7 @@ import { CHANNEL_NAME, type Channel } from "../setup/autodetect";
 import type { CameraDevice } from "../setup/devices";
 import type { Check } from "../setup/system";
 import { testElevenLabs, testOpenAiKey, type TestResult } from "../setup/keyTests";
+import { effectiveKey, loadServerKeys, saveServerKeys, serverHas, type Vendor } from "../net/vendorFetch";
 import { OPENAI_PRICES } from "../narrator/openaiModels";
 import { elevenVoiceLabel, fetchElevenVoices, type ElevenVoice, type VoiceSettings } from "../narrator/voice";
 import { fmtCorners, parseCorners } from "../plugins/shared";
@@ -18,6 +19,7 @@ export interface WizardState {
   checks: Check[] | null;
   detected: CameraDevice[];
   scanning: boolean;
+  scanMsg?: string;
   boardCam: number; // camera being calibrated
   scenePreview: SceneState;
   tests: Record<string, TestResult>; // latest "Test key" outcome per service id
@@ -76,7 +78,7 @@ const narratorSlots = (c: StepCtx): Item[] => {
     out.push(
       { kind: "choice", label: `Slot ${i + 1} · ${role}`, icon: "voice", options: NAMES, get: names[i], set: setNames[i] },
       { kind: "action", icon: "sound", label: `Test slot ${i + 1}`, run: () => c.speak(SLOT_TEST[i], i === 0 ? "A" : "B") },
-      { kind: "action", icon: "arrow", label: i === 0 ? "Move slot 1 down" : "Move slot 2 up", disabled: n.voices < 2, hint: n.voices < 2 ? "Add a second commentator to reorder." : undefined, run: swap },
+      { kind: "action", icon: i === 0 ? "down" : "up", label: i === 0 ? "Move slot 1 down" : "Move slot 2 up", disabled: n.voices < 2, hint: n.voices < 2 ? "Add a second commentator to reorder." : undefined, run: swap },
       { kind: "action", icon: "trash", danger: true, label: `Remove slot ${i + 1}`, disabled: n.voices < 2, hint: n.voices < 2 ? "At least one commentator is needed." : undefined,
         run: () => { if (i === 0) n.nameA = n.nameB; n.voices = 1; c.refresh(); } },
     );
@@ -110,12 +112,17 @@ const cornerItems = (c: StepCtx): Item[] => {
     const sliders = (["x", "y"] as const).map((axis): Item => ({
       kind: "slider", label: axis === "x" ? "Across (x)" : "Down (y)", min: 0, max: axis === "x" ? 480 : 360, step: 2,
       get: () => now()[i][axis],
-      set: (v) => { const q = [...now()]; q[i] = { ...q[i], [axis]: v }; cam.corners = fmtCorners(q); },
+      set: (v) => { const q = [...now()]; q[i] = { ...q[i], [axis]: v }; cam.corners = fmtCorners(q); setAutoField(cam, "corners", false); },
     }));
     return { kind: "group", label: name, icon: CORNER_ICON[i], summary: `${now()[i].x}, ${now()[i].y}`, ...flag(`corner.${name}`, true), children: sliders };
   });
-  return [{ kind: "group", label: "Corners", icon: "board", summary: `${pts.length} corners`, ...flag("corners", false), children: [
-    { kind: "action", icon: "refresh", label: "Reset corners", run: () => { cam.corners = fmtCorners(rigCorners(RIGS[cam.rig])); c.refresh(); } },
+  const picture = !!c.state.frame;
+  return [{ kind: "group", label: "Corners", icon: "board", summary: (cam.autoFields ?? []).includes("corners") ? "auto-detected" : `${pts.length} corners`, ...flag("corners", false), auto: {
+    label: "Auto detect", disabled: !picture, hint: "Needs a live picture from this camera: check that it is online and has a signal.",
+    about: "Finds a8, h8, h1 and a1 from the checkerboard, from printed a–h and 1–8 labels, and from AI when an OpenAI key is set.",
+    run: () => c.detect("corners"),
+  }, children: [
+    { kind: "action", icon: "refresh", label: "Reset corners", run: () => { cam.corners = fmtCorners(rigCorners(RIGS[cam.rig])); setAutoField(cam, "corners", false); c.refresh(); } },
     ...corners,
   ] }];
 };
@@ -129,12 +136,50 @@ const ELEVEN_VOICES_URL = "https://elevenlabs.io/app/voice-library";
 const link = (c: StepCtx, label: string, url: string): Item => ({ kind: "action", icon: "arrow", label, hint: url, run: () => c.open(url) });
 const testLine = (c: StepCtx, id: string): Item[] => { const r = c.state.tests[id]; return r ? [{ kind: "info", label: "Key test", value: r.text, tone: r.tone }] : []; };
 
+/** Keys kept on the site's Cloudflare worker: browsers never see them, and every device just works. */
+const server = { pass: "", msg: undefined as TestResult | undefined, busy: false };
+/** Re-render once when the worker's answer arrives and changes what this step showed. */
+function watchServerKeys(c: StepCtx) {
+  const before = { openai: serverHas("openai"), elevenlabs: serverHas("elevenlabs") };
+  void loadServerKeys().then(() => {
+    if (serverHas("openai") !== before.openai || serverHas("elevenlabs") !== before.elevenlabs) c.refresh();
+  });
+}
+function serverKeyItems(c: StepCtx, vendor: Vendor, label: string, local: () => string, clear: () => void): Item[] {
+  const has = serverHas(vendor);
+  if (has) return [{ kind: "info", label: `${label} on server`, value: "Using the key stored on the Cloudflare worker. This browser does not need one.", tone: "ok" }];
+  const out: Item[] = [{ kind: "info", label: `${label} on server`, value: "Not stored. Save it below to stop pasting it on each device.", tone: "warn" }];
+  out.push(
+    { kind: "text", label: "Server passphrase", secret: true, get: () => server.pass, set: (v) => { server.pass = v; }, hint: "The ADMIN_PASSPHRASE secret of the worker. Only needed to save or remove a key; it is not stored." },
+    { kind: "action", icon: "refresh", label: server.busy ? "Saving…" : `Save ${label} key to server`, disabled: server.busy || !local().trim(), run: () => {
+      server.busy = true; server.msg = undefined; c.refresh();
+      saveServerKeys(server.pass, { [vendor]: local().trim() }).then(() => { clear(); server.msg = { tone: "ok", text: `${label} key saved on the server and removed from this browser.` }; })
+        .catch((e) => { server.msg = { tone: "fail", text: `Not saved: ${e instanceof Error ? e.message : e}` }; })
+        .finally(() => { server.busy = false; c.refresh(); });
+    } },
+  );
+  if (server.msg) out.push({ kind: "info", label: "Server", value: server.msg.text, tone: server.msg.tone });
+  return out;
+}
+
 const aiItems = (c: StepCtx): Item[] => {
+  watchServerKeys(c);
   const ai = c.cfg.ai;
+  const onServer = serverHas("openai");
   const out: Item[] = [
     { kind: "choice", label: "Commentary", options: [{ value: "builtin", label: "Built-in (free, offline)" }, { value: "openai", label: "AI by OpenAI" }], get: () => ai.engine, set: (v) => { ai.engine = v as typeof ai.engine; },
       hint: ai.engine === "openai" ? "OpenAI writes fresh commentary for each move. If it is slow or fails, the built-in line plays instead, so the game never waits." : "Ready-made lines. Nothing to set up: no account, no key, no cost." },
   ];
+  if (ai.engine === "openai" && onServer) {
+    out.push(
+      { kind: "choice", label: "Model", options: Object.keys(OPENAI_PRICES).map((id) => ({ value: id, label: `${id} · $${OPENAI_PRICES[id].input} in / $${OPENAI_PRICES[id].output} out per 1M` })), get: () => ai.model, set: (v) => { ai.model = v; },
+        hint: "Small models are fast and cheap, which suits live commentary. Prices are per million tokens." },
+      { kind: "action", icon: "refresh", label: "Test key", run: () => c.test("openai", () => testOpenAiKey(ai.apiKey)) },
+      ...testLine(c, "openai"),
+      ...serverKeyItems(c, "openai", "OpenAI", () => ai.apiKey, () => { ai.apiKey = ""; c.refresh(); }),
+    );
+    return out;
+  }
   out.push(
     howTo(1, "Get an OpenAI account", "Sign in or sign up at platform.openai.com. This is the developer platform, separate from a ChatGPT subscription."),
     howTo(2, "Add a little credit", "Open Billing and add a few dollars. The API is pay as you go, and short live commentary costs very little."),
@@ -150,6 +195,7 @@ const aiItems = (c: StepCtx): Item[] => {
       hint: "Small models are fast and cheap, which suits live commentary. Prices are per million tokens." },
     { kind: "action", icon: "refresh", label: "Test key", run: () => c.test("openai", () => testOpenAiKey(ai.apiKey)) },
     ...testLine(c, "openai"),
+    ...serverKeyItems(c, "openai", "OpenAI", () => ai.apiKey, () => { ai.apiKey = ""; c.refresh(); }),
   );
   return out;
 };
@@ -157,8 +203,8 @@ const aiItems = (c: StepCtx): Item[] => {
 /** The ElevenLabs voices of the key last loaded (kept across re-renders of the step). */
 const voiceList: { key: string; voices: ElevenVoice[]; busy: boolean; error: string } = { key: "", voices: [], busy: false, error: "" };
 function loadVoices(c: StepCtx) {
-  const key = c.cfg.voice.apiKey.trim();
-  if (!key || voiceList.busy) return;
+  const key = effectiveKey(c.cfg.voice.apiKey, "elevenlabs").trim();
+  if (!key || voiceList.busy || voiceList.key === key) return;
   voiceList.busy = true; voiceList.error = "";
   fetchElevenVoices(key).then((vs) => { voiceList.key = key; voiceList.voices = vs; if (!vs.length) voiceList.error = "This account has no voices."; })
     .catch((e) => { voiceList.error = /401|403/.test(String(e)) ? "ElevenLabs refused the key (the key may lack the voices_read permission). Type voice IDs instead." : "Could not load voices. Check the key and connection."; })
@@ -168,10 +214,12 @@ function loadVoices(c: StepCtx) {
 
 /** Voice id to name for the loaded account voices, or undefined until they are loaded for the current key. */
 const voiceNamesFor = (c: StepCtx): Record<string, string> | undefined =>
-  voiceList.key === c.cfg.voice.apiKey.trim() && voiceList.voices.length ? Object.fromEntries(voiceList.voices.map((x) => [x.id, x.name])) : undefined;
+  voiceList.key === effectiveKey(c.cfg.voice.apiKey, "elevenlabs").trim() && voiceList.voices.length ? Object.fromEntries(voiceList.voices.map((x) => [x.id, x.name])) : undefined;
 
 const voiceItems = (c: StepCtx): Item[] => {
+  watchServerKeys(c);
   const v = c.cfg.voice;
+  const onServer = serverHas("elevenlabs");
   const out: Item[] = [
     { kind: "choice", label: "Voice engine", options: [{ value: "browser", label: "System voices (free)" }, { value: "elevenlabs", label: "ElevenLabs (natural)" }], get: () => v.engine, set: (x) => { v.engine = x as typeof v.engine; },
       hint: v.engine === "elevenlabs" ? "Lifelike voices. If the key fails or you are offline, the system voice speaks instead." : "Uses the voices installed on this computer. Free and works offline, but they sound more robotic." },
@@ -181,7 +229,11 @@ const voiceItems = (c: StepCtx): Item[] => {
     return out;
   }
   const say = (who: "A" | "B", text: string) => c.test("elevenlabs", () => testElevenLabs(text, who, c.voiceSettings()));
-  out.push(
+  if (onServer) {
+    if (voiceList.key !== effectiveKey(v.apiKey, "elevenlabs").trim()) loadVoices(c);
+    out.push(...serverKeyItems(c, "elevenlabs", "ElevenLabs", () => v.apiKey, () => { v.apiKey = ""; c.refresh(); }));
+    // voice pickers and tests follow below
+  } else out.push(
     howTo(1, "Get an ElevenLabs account", "Sign up at elevenlabs.io. The free plan includes some monthly credits, and each spoken line uses a few."),
     howTo(2, "Create an API key", "Open your profile (bottom left) then API Keys, press Create API Key and name it. Switching on Text to Speech access is enough."),
     howTo(3, "Copy and paste it", "Copy the key right away and paste it below. It is kept in this browser and only ever sent to ElevenLabs."),
@@ -191,8 +243,9 @@ const voiceItems = (c: StepCtx): Item[] => {
     { kind: "text", label: "ElevenLabs API key", secret: true, get: () => v.apiKey, set: (x) => { v.apiKey = x.trim(); delete c.state.tests.elevenlabs; loadVoices(c); c.refresh(); }, hint: "Paste the key you just copied, then press Enter." },
     { kind: "action", icon: "refresh", label: voiceList.busy ? "Loading voices…" : "Load my voices", disabled: voiceList.busy, run: () => loadVoices(c) },
     ...(voiceList.error ? [{ kind: "info", label: "Voices", value: voiceList.error, tone: "fail" } as Item] : []),
+    ...serverKeyItems(c, "elevenlabs", "ElevenLabs", () => v.apiKey, () => { v.apiKey = ""; c.refresh(); }),
   );
-  if (voiceList.key === v.apiKey && voiceList.voices.length) {
+  if (voiceList.key === effectiveKey(v.apiKey, "elevenlabs").trim() && voiceList.voices.length) {
     // include a currently set ID that is not in the account's list, so the dropdown never shows a blank
     const opts = (cur: string) => {
       const o = voiceList.voices.map((x) => ({ value: x.id, label: elevenVoiceLabel(x) }));
@@ -218,7 +271,7 @@ const voiceItems = (c: StepCtx): Item[] => {
 };
 
 export const STEPS: Step[] = [
-  { id: "briefing", title: "System check", blurb: "Checking that this device can run the experience. Setup then takes about two minutes: cameras, board, scenes, narration, opponent.",
+  { id: "briefing", title: "System check", blurb: "Checking that this device can run the experience. Settings then take about two minutes: cameras, board, scenes, narration, opponent.",
     items: (c) => [
       ...(c.state.checks ? [{ kind: "action", icon: "refresh", label: "Re-run system check", run: () => c.runChecks() } as Item] : [{ kind: "info", label: "Running system check…" } as Item]),
     ] },
@@ -228,7 +281,8 @@ export const STEPS: Step[] = [
       const out: Item[] = [];
       const full = c.cfg.cameras.length >= MAX_CAMERAS;
       const fullWhy = `All ${MAX_CAMERAS} camera slots are used. Remove a camera from the table above to add another.`;
-      out.push({ kind: "action", icon: "scan", label: c.state.scanning ? "Scanning…" : "Scan for webcams", disabled: c.state.scanning, hint: c.state.scanning ? "A scan is already running. It finishes in a few seconds." : undefined, run: () => c.scan() });
+      out.push({ kind: "action", icon: "scan", label: c.state.scanning ? "Scanning…" : "Scan for webcams", disabled: c.state.scanning, hint: c.state.scanning ? "Asking the browser for webcams. Gives up after 4 seconds." : undefined, run: () => c.scan() });
+      if (!c.state.scanning && c.state.scanMsg) out.push({ kind: "info", label: "Last scan", value: c.state.scanMsg, tone: c.state.detected.length ? undefined : "warn" } as Item);
       for (const d of c.state.detected.filter((d) => !c.cfg.cameras.some((x) => x.deviceId === d.deviceId))) {
         out.push({ kind: "action", icon: "plus", label: `Add webcam · ${d.label}`, disabled: full, hint: full ? fullWhy : undefined, run: () => { c.cfg.cameras.push(webcamSetup(d.deviceId, d.label, nextCameraId(c.cfg))); c.refresh(); } });
       }
@@ -239,7 +293,7 @@ export const STEPS: Step[] = [
       } });
       return out;
     } },
-  { id: "board", title: "Board", blurb: "Pick a camera from the tabs, then drag the four green handles onto the board corners: a8, h8, h1, a1 (black's left rook first, clockwise from white's view).",
+  { id: "board", title: "Board", blurb: "Pick a camera from the tabs, then drag the four green handles onto a8, h8, h1 and a1, or press Auto detect on Corners. That uses the checkerboard, printed a–h and 1–8 labels, and AI when an OpenAI key is set.",
     items: (c) => {
       if (!c.cfg.cameras.length) return [{ kind: "info", label: "No cameras", value: "Add one in the previous step.", tone: "warn" }];
       // the camera itself is chosen on the tabs above this list; the rows below are that camera's settings
@@ -271,8 +325,8 @@ export const STEPS: Step[] = [
       { kind: "toggle", label: "Speak aloud", icon: "sound", get: () => c.cfg.narrator.speak, set: (v) => { c.cfg.narrator.speak = v; } },
       { kind: "slider", label: "Volume", icon: "sound", min: 0, max: 1, step: 0.1, get: () => c.cfg.narrator.volume, set: (v) => { c.cfg.narrator.volume = v; }, fmt: (v) => `${Math.round(v * 100)}%` },
     ] },
-  { id: "ai", title: "AI commentary", blurb: "Optional: let OpenAI write the commentary live instead of the built-in lines. You need an API key; the steps below show how to get one.", items: aiItems },
-  { id: "voice", title: "Voice engine", blurb: "Choose who speaks the commentary: the voices already on this computer, or lifelike ElevenLabs voices (needs an API key).", items: voiceItems },
+  { id: "ai", title: "AI commentary", blurb: "Optional: OpenAI writes the commentary live. A key on the Cloudflare worker is used on its own; paste one here only for this browser.", items: aiItems },
+  { id: "voice", title: "Voice engine", blurb: "System voices are free. ElevenLabs sounds more natural, and a key on the Cloudflare worker is used on its own.", items: voiceItems },
   { id: "opponent", title: "Opponent", blurb: "Who does a player face? Choose how the opponent is picked for every game. The computer opponent is Stockfish, a chess engine.",
     items: (c) => [
       { kind: "choice", label: "Opponent for each game", options: [{ value: "menu", label: "Ask at the table" }, { value: "engine", label: "Always the computer" }, { value: "human", label: "Always another person" }], get: () => c.cfg.opponent.mode, set: (v) => { c.cfg.opponent.mode = v as "menu"; },
@@ -281,7 +335,7 @@ export const STEPS: Step[] = [
         visual: eloVisual(c.cfg.opponent.elo),
         hint: c.cfg.opponent.mode === "human" ? "Not used while every game is two people." : "Elo is the chess rating the computer plays at: higher is harder to beat." },
     ] },
-  { id: "room", title: "Room", blurb: "Projectors and lights. Scan your room and aim each projector later from the 3D / Mapping tab.",
+  { id: "room", title: "Room", blurb: "Projectors and lights. Scan your room and aim each projector later from the World tab.",
     items: (c) => [
       { kind: "slider", label: "Projectors", min: 0, max: 3, step: 1, get: () => c.cfg.projectors.count, set: (v) => { c.cfg.projectors.count = v; } },
       { kind: "toggle", label: "People tracking", get: () => c.cfg.tracking.pose, set: (v) => { c.cfg.tracking.pose = v; }, hint: "Tracks players in 3D with the cameras (MediaPipe pose, GPU). Replaces the virtual player." },
@@ -298,8 +352,9 @@ export const STEPS: Step[] = [
       if (r) out.push({ kind: "info", label: `${r} is active`, value: "It recolours the page and can hide the theme. Turn it off for this site.", tone: "warn" });
       return out;
     } },
-  { id: "launch", title: "Launch", blurb: "Review, then start. You can reopen this setup any time from the top bar.",
+  { id: "launch", title: "Launch", blurb: "Review, then start. You can reopen settings any time from the top bar.",
     items: (c) => {
+      watchServerKeys(c);
       const issues = validateSetup(c.cfg, voiceNamesFor(c));
       return [
         ...issues.map((i): Item => ({ kind: "info", label: i.level === "error" ? "Error" : "Notice", value: i.message, tone: i.level === "error" ? "fail" : "warn" })),

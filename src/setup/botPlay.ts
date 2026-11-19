@@ -29,7 +29,9 @@ export function buildBotPlay(registry: Registry, o: BotPlayOptions, base: SetupC
   for (const n of g.nodes.values()) {
     if (n.type === "game.engine") { n.params.color = bot; n.params.virtualHand = !webcams; }
     if (n.type === "sim.person") n.params.seated = true;
+    if (n.type === "experience.director") n.params.introMs = 1000; // shortest the intro slider allows; the 6s kiosk intro is too long for a bot game
     if (n.type === "narration.narrator") n.params.setupChatter = false; // you press Play often: skip the seat / opponent / intro lines
+    if (n.type === "narration.narrator" || n.type === "narration.ai" || n.type === "narration.speech") n.params.language = "en"; // the chrome is English
   }
   const graph = g.toJSON();
   organize(graph); // role bands with titled sections, same as the Organize button: the raw build coordinates overlap

@@ -6,17 +6,21 @@ import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
 import type { GrayFrame } from "../vision/types";
 import { drawFrame, withDetail } from "./shared";
 import { frameHover } from "./hover";
+import { openStream } from "../setup/devices";
 
-interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number }
+interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string }
+/** Capture sizes. The picture is kept at this size (or the camera's own size when that is smaller). The board reader averages it down to 480×360 to sample the squares. */
+const RESOLUTIONS: Record<string, [number, number]> = { "640x480": [640, 480], "960x720": [960, 720], "1280x960": [1280, 960] };
 
 const webcam: NodeSpec<WebcamState> = {
-  type: "source.webcam", title: "WEBCAM / IR", category: "Source",
+  type: "source.webcam", title: "Webcam", category: "Source",
   inputs: [], outputs: [{ id: "frame", type: "frame" }],
   params: [
     { id: "online", kind: "bool", label: "Online", value: true },
     { id: "device", kind: "text", label: "Device", value: "" },
     { id: "channel", kind: "select", label: "Channel", options: ["luma", "red", "green", "blue"], value: "luma" },
-    { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 12 },
+    { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 4 },
+    { id: "resolution", kind: "select", label: "Capture resolution", options: Object.keys(RESOLUTIONS), value: "1280x960" },
     // Simulated faults, to test how the pipeline copes with a bad camera. All off by default.
     // Shown as a list: pick a fault from the "Add…" dropdown and it appears with its own sliders.
     { id: "ir", kind: "bool", optional: true, label: "Fake IR", value: false },
@@ -32,10 +36,12 @@ const webcam: NodeSpec<WebcamState> = {
     { id: "freezeMs", kind: "number", group: "freeze", label: "Freeze length (ms)", min: 100, max: 5000, step: 100, value: 1500 },
   ],
   previewSize: [160, 120],
-  init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "", frozenUntil: 0 }),
+  init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "", frozenUntil: 0, res: "" }),
   process(_i, { params, state, now, setFidelity, span }) {
     const stop = () => { state.stream?.getTracks().forEach((t) => t.stop()); state.stream = null; state.video = null; state.frame = null; };
     if (!params.online) { if (state.stream) stop(); setFidelity(null); return { frame: null }; }
+    const [capW, capH] = RESOLUTIONS[String(params.resolution)] ?? RESOLUTIONS["640x480"];
+    if (state.stream && state.res !== String(params.resolution)) stop(); // a new capture size reopens the camera
     if (!state.stream && !state.starting && navigator.mediaDevices) {
       state.starting = true;
       void (async () => {
@@ -43,9 +49,9 @@ const webcam: NodeSpec<WebcamState> = {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const want = String(params.device);
           const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: 640, height: 480 } });
+          const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: capW, height: capH } });
           const v = document.createElement("video"); v.srcObject = stream; v.muted = true; await v.play();
-          state.stream = stream; state.video = v; state.canvas = document.createElement("canvas"); state.canvas.width = 480; state.canvas.height = 360; state.err = "";
+          state.stream = stream; state.video = v; state.res = String(params.resolution); state.canvas = document.createElement("canvas"); state.err = "";
           stream.getVideoTracks()[0].onended = () => stop(); // unplugged -> camera simply goes offline
         } catch (e) { state.err = String(e); }
         state.starting = false;
@@ -57,9 +63,16 @@ const webcam: NodeSpec<WebcamState> = {
       else if (params.freeze && Math.random() * 100 < Number(params.freezePct)) { state.frozenUntil = now + Number(params.freezeMs); }
       else if (params.drop && Math.random() * 100 < Number(params.dropPct)) { /* dropped: this frame never arrives, the last one stays */ }
       else {
-        const ctx = state.canvas!.getContext("2d", { willReadFrequently: true })!;
-        const px = span("grab frame (read pixels)", () => { ctx.drawImage(state.video!, 0, 0, 480, 360); return ctx.getImageData(0, 0, 480, 360).data; });
-        const g = new Uint8ClampedArray(480 * 360);
+        const video = state.video!, canvas = state.canvas!;
+        // Keep the camera's real pixels. Only shrink when the camera is larger than the chosen capture size, and do not stretch a smaller one up.
+        const vw = video.videoWidth || capW, vh = video.videoHeight || capH;
+        let tw = vw, th = vh;
+        if (vw > capW || vh > capH) { const sc = Math.min(capW / vw, capH / vh); tw = Math.max(1, Math.round(vw * sc)); th = Math.max(1, Math.round(vh * sc)); }
+        if (canvas.width !== tw || canvas.height !== th) { canvas.width = tw; canvas.height = th; }
+        const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+        ctx.imageSmoothingEnabled = tw !== vw || th !== vh;
+        const px = span("grab frame (read pixels)", () => { ctx.drawImage(video, 0, 0, tw, th); return ctx.getImageData(0, 0, tw, th).data; });
+        const g = new Uint8ClampedArray(tw * th);
         // Fake IR reads the red plane (how IR often lands in a colour camera) and beats the channel menu; black and white forces brightness.
         const ch = params.ir ? "red" : params.bw ? "luma" : String(params.channel);
         const n = g.length; // channel chosen once, not per pixel
@@ -72,7 +85,7 @@ const webcam: NodeSpec<WebcamState> = {
         // Exposure: a gain on the picture; the Uint8ClampedArray store clips highlights (over) or shadows crush to black (under).
         const gain = params.over ? 1 + Number(params.overAmount) / 100 * 3 : params.under ? 1 - Number(params.underAmount) / 100 * 0.9 : 1;
         if (gain !== 1) span("apply exposure", () => { for (let i = 0; i < n; i++) g[i] = g[i] * gain; });
-        state.frame = { width: 480, height: 360, data: g, t: now };
+        state.frame = { width: tw, height: th, data: g, t: now };
       }
     }
     setFidelity(state.frame ? 1 : 0);
@@ -87,7 +100,7 @@ const webcam: NodeSpec<WebcamState> = {
 
 interface SynthState { frame: GrayFrame | null; last: number; seed: number; key: string; lum: Float32Array | null; inflight: boolean; epoch: number }
 const synthetic: NodeSpec<SynthState> = {
-  type: "source.synthetic", title: "VIRTUAL CAMERA (3D)", category: "Source",
+  type: "source.synthetic", title: "Virtual camera (3D)", category: "Source",
   inputs: [{ id: "world", type: "world", label: "Virtual world" }], outputs: [{ id: "frame", type: "frame" }],
   params: [
     { id: "online", kind: "bool", label: "Online", value: true },

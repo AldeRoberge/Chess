@@ -97,5 +97,24 @@ describe("Director flow", () => {
   it("ignores unrelated game events", () => {
     const d = inGame(), r = run(d, 6300, 6400, [seat], [], [{ type: "move", t: 0 }]);
     expect(r.last.phase).toBe("game");
+    expect(r.ev.filter((e) => e.type === "mode")).toHaveLength(0);
+  });
+  it("the first move on the board opens the game even when nobody is seated", () => {
+    const d = new Director();
+    const r = run(d, 0, 0, [], [], [{ type: "move", t: 0, data: { san: "e4" } }]);
+    expect(r.last.phase).toBe("game");
+    expect(r.last.mode).toBe("engine");
+    expect(r.ev.find((e) => e.type === "mode")!.data).toEqual({ mode: "engine", elo: 1000 });
+  });
+  it("a move during the intro starts a preset opponent at once", () => {
+    const d = new Director({ ...defaultDirectorConfig(), preset: "engine", presetElo: 1500 });
+    run(d, 0, 0, [seat]);
+    const r = run(d, 100, 100, [seat], [], [{ type: "move", t: 100 }]);
+    expect(r.last).toMatchObject({ phase: "game", mode: "engine", elo: 1500 });
+  });
+  it("a human preset stays a human game when the first move opens it", () => {
+    const d = new Director({ ...defaultDirectorConfig(), preset: "human" });
+    const r = run(d, 0, 0, [], [], [{ type: "move", t: 0 }]);
+    expect(r.last).toMatchObject({ phase: "game", mode: "human" });
   });
 });

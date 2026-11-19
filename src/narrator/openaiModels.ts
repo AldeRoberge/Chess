@@ -1,4 +1,5 @@
 import type { ModelInfo } from "../core/types";
+import { vendorFetch } from "../net/vendorFetch";
 
 /** Text-token prices in USD per 1M tokens, copied from OpenAI's model pages (checked 2026-11-18). Models not listed here show no price. */
 export const OPENAI_PRICES: Record<string, { input: number; output: number }> = {
@@ -21,7 +22,7 @@ export function chatModelsFrom(ids: string[]): ModelInfo[] {
 }
 
 /** Fetches the account's model ids; rejects on HTTP errors so the caller keeps its current list. */
-export async function fetchOpenAiModelIds(apiKey: string, doFetch: typeof fetch = fetch): Promise<string[]> {
+export async function fetchOpenAiModelIds(apiKey: string, doFetch: typeof fetch = vendorFetch): Promise<string[]> {
   const r = await doFetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${apiKey.trim()}` } });
   if (!r.ok) throw new Error(`OpenAI ${r.status}`);
   const j = await r.json();

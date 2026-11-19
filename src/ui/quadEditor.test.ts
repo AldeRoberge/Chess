@@ -44,6 +44,21 @@ describe("openQuadEditor", () => {
     expect(changes.length).toBe(3);
   });
 
+  it("Auto detect fills the corners from a board in the picture, and says so when it finds none", () => {
+    const w = 320, h = 240, data = new Uint8ClampedArray(w * h).fill(120);
+    for (let y = 0; y < 160; y++) for (let x = 0; x < 160; x++) data[(40 + y) * w + 80 + x] = (Math.floor(x / 20) + Math.floor(y / 20)) % 2 ? 235 : 20;
+    const board = { width: w, height: h, data, t: 0 } as GrayFrame;
+    const a = open({ frame: () => board }), btn = [...document.querySelectorAll<HTMLButtonElement>(".qe-btn")].find((b) => b.textContent === "Auto detect")!;
+    btn.click(); expect(a.changes.length).toBe(1); expect(a.changes[0].split(";").length).toBe(4);
+    document.body.innerHTML = "";
+    const b = open({ frame: () => ({ width: 320, height: 240, data: new Uint8ClampedArray(320 * 240).fill(90), t: 0 }) as GrayFrame });
+    const bb = [...document.querySelectorAll<HTMLButtonElement>(".qe-btn")].find((x) => x.textContent === "Auto detect")!;
+    bb.click(); expect(b.changes.length).toBe(0); expect(bb.textContent).toBe("No board found");
+    document.body.innerHTML = "";
+    open({ frame: () => null }); const nb = [...document.querySelectorAll<HTMLButtonElement>(".qe-btn")].find((x) => x.textContent === "Auto detect")!;
+    nb.click(); expect(nb.textContent).toBe("No camera frame");
+  });
+
   it("falls back to a 320x240 canvas without a frame and skips the grid when grid <= 1", () => {
     const { cv } = open({ frame: () => null, grid: 1 });
     expect(cv.height).toBe(540); raf.shift()!(0);
@@ -59,18 +74,29 @@ describe("openQuadEditor", () => {
   });
 
   it("closes only once even if a detached button is clicked again", () => {
-    const o = open(); const ok = document.querySelector(".qe-btn.primary") as HTMLElement, cancel = document.querySelector(".qe-btn:nth-child(2)") as HTMLElement;
+    const o = open(); const ok = document.querySelector(".qe-btn.primary") as HTMLElement, cancel = document.querySelector(".qe-btn:nth-child(3)") as HTMLElement;
     ok.click(); cancel.click(); expect(o.done()).toBe(1);
   });
   it("Escape, Cancel and a backdrop click restore the starting value; Done button keeps; Reset reverts the corners", () => {
     let o = open({ value: "10,10;90,10;90,40;10,40" });
     key("Escape"); expect(o.changes.at(-1)).toBe("10,10;90,10;90,40;10,40"); expect(o.done()).toBe(1);
-    o = open(); (document.querySelector(".qe-btn:nth-child(2)") as HTMLElement).click(); expect(o.done()).toBe(1);
+    o = open(); (document.querySelector(".qe-btn:nth-child(3)") as HTMLElement).click(); expect(o.done()).toBe(1);
     o = open(); const back = document.querySelector(".qe-back")!; back.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })); expect(o.done()).toBe(1);
     o = open({ value: "10,10;90,10;90,40;10,40" }); key("ArrowLeft");
-    (document.querySelector(".qe-btn") as HTMLElement).click(); expect(o.changes.at(-1)).toBe("10,10;90,10;90,40;10,40");
+    (document.querySelector(".qe-btn:nth-child(2)") as HTMLElement).click(); expect(o.changes.at(-1)).toBe("10,10;90,10;90,40;10,40");
     (document.querySelector(".qe-btn.primary") as HTMLElement).click(); expect(o.done()).toBe(1);
     o = open(); document.querySelector(".qe")!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })); expect(o.done()).toBe(0);
-    (document.querySelector(".qe-btn") as HTMLElement).click(); expect(o.changes.length).toBe(1);
+    (document.querySelector(".qe-btn:nth-child(2)") as HTMLElement).click(); expect(o.changes.length).toBe(1);
+  });
+  it("Negative grid toggles between inverted and green lines", () => {
+    open(); const b = [...document.querySelectorAll<HTMLElement>(".qe-btn")].find((x) => x.textContent!.startsWith("Negative grid"))!;
+    expect(b.textContent).toBe("Negative grid: on"); b.click(); expect(b.textContent).toBe("Negative grid: off"); b.click(); expect(b.textContent).toBe("Negative grid: on");
+  });
+  it("shows how well the grid fits: orange fill while off, a readable message, hidden for a plain box, and a note without a picture", () => {
+    open(); raf.splice(0).forEach((f) => f(0));
+    const fill = document.querySelector<HTMLElement>(".qe-meter-bar i")!, text = document.querySelector(".qe-meter span")!;
+    expect(fill.style.background).toMatch(/hsl|rgb/); expect(text.textContent).toMatch(/Can't see|Not lined|closer|Nicely/); expect(document.querySelector<HTMLElement>(".qe-meter")!.hidden).toBe(false);
+    document.body.innerHTML = ""; open({ frame: () => null }); raf.splice(0).forEach((f) => f(0)); expect(document.querySelector(".qe-meter span")!.textContent).toMatch(/No camera picture/);
+    document.body.innerHTML = ""; open({ grid: 1 }); raf.splice(0).forEach((f) => f(0)); expect(document.querySelector<HTMLElement>(".qe-meter")!.hidden).toBe(true);
   });
 });

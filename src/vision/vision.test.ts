@@ -8,7 +8,7 @@ import { BoardSampler, defaultSamplerConfig } from "./sampler";
 import { Stabilizer } from "./stabilizer";
 import { rng, startGrid } from "./synthetic";
 import { BONES, JOINT_NAMES, cameraMatrix, project, rayToPlane, triangulate } from "./triangulate";
-import { clamp, logit, sigmoid, sqIndex, sqName, type BoardBelief, type SquareObs } from "./types";
+import { clamp, logit, sigmoid, sqIndex, sqName, type BoardBelief, type GrayFrame, type SquareObs } from "./types";
 
 const sq = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
@@ -67,7 +67,7 @@ describe("BoardSampler", () => {
 
   it("default config exposes sane tunables", () => {
     const d = defaultSamplerConfig();
-    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(4);
+    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(8);
   });
   it("is uncalibrated until it has seen the start position, and then reads every piece's colour", () => {
     const t = new VirtualTable(), s = new BoardSampler("A", cfg());
@@ -91,6 +91,42 @@ describe("BoardSampler", () => {
     const o = s.read(shoot(full, "A", 100, 6, 4));
     expect(o.occ[0]).toBeGreaterThan(0.9); expect(o.occ[27]).toBeLessThan(0.1);
   });
+  it("does not invent a piece from a soft shadow on an empty square", () => {
+    const t = new VirtualTable(), s = new BoardSampler("A", cfg());
+    s.calibrateFromStart(shoot(t, "A", 0, 4, 2));
+    const f = shoot(t, "A", 1, 4, 2), H = boardToImage(s.cfg.corners), sq = 3 * 8 + 3; // d5, empty at the start
+    const c = applyH(H, 3.5, 3.5), rad = Math.hypot(applyH(H, 4, 3.5).x - c.x, applyH(H, 4, 3.5).y - c.y) * 1.1;
+    const data = new Uint8ClampedArray(f.data);
+    for (let y = 0; y < f.height; y++) for (let x = 0; x < f.width; x++) { const d = Math.hypot(x - c.x, y - c.y); if (d < rad) data[y * f.width + x] *= 1 - 0.4 * (1 - d / rad); }
+    const o = s.read({ ...f, data });
+    expect(o.occ[sq]).toBeLessThan(0.5);
+  });
+  it("does not keep a square occupied after the piece leaves just because a lamp makes the wood bright and flat", () => {
+    const t = new VirtualTable(), s = new BoardSampler("A", cfg());
+    s.calibrateFromStart(shoot(t, "A", 0, 4, 2));
+    t.game.move("e4");
+    const f = shoot(t, "A", 1, 4, 2);
+    const H = boardToImage(s.cfg.corners), e2 = sqIndex("e2"), e4 = sqIndex("e4");
+    const c = applyH(H, 4.5, 6.5), rad = Math.hypot(applyH(H, 5.2, 6.5).x - c.x, applyH(H, 5.2, 6.5).y - c.y);
+    const data = new Uint8ClampedArray(f.data);
+    for (let y = 0; y < f.height; y++) for (let x = 0; x < f.width; x++) {
+      if (Math.hypot(x - c.x, y - c.y) < rad) data[y * f.width + x] = Math.min(255, data[y * f.width + x] + 70);
+    }
+    const o = s.read({ ...f, data });
+    expect(o.occ[e2]).toBeLessThan(0.5);
+    expect(o.occ[e4]).toBeGreaterThan(0.5);
+  });
+  it("reads a king that has stepped off its home square, and still sees the pawns beside it", () => {
+    const start = new VirtualTable(), moved = new VirtualTable();
+    moved.game.load("rnbqkbnr/pppppppp/8/8/4P3/8/PPPPKPPP/RNBQ1BNR w KQkq - 0 2");
+    const s = new BoardSampler("C", { ...defaultSamplerConfig(), corners: rigCorners(RIGS.C), threshold: 0.1 });
+    s.calibrateFromStart(shoot(start, "C", 0, 0, 2));
+    const o = s.read(shoot(moved, "C", 1, 0, 3));
+    expect(o.occ[sqIndex("e1")]).toBeLessThan(0.5);
+    expect(o.occ[sqIndex("e2")]).toBeGreaterThan(0.5);
+    expect(o.white[sqIndex("e2")]).toBeGreaterThan(0.5);
+    for (const name of ["b2", "d2", "f2", "g2", "e4"]) expect(o.occ[sqIndex(name)]).toBeGreaterThan(0.5);
+  });
   it("flags squares that changed sharply since the last frame as a hand / occlusion", () => {
     const t = new VirtualTable(), s = new BoardSampler("A", cfg());
     s.calibrateFromStart(shoot(t));
@@ -105,6 +141,21 @@ describe("BoardSampler", () => {
     s.calibrateFromStart(flatFrame(120));
     expect(s.read(flatFrame(255)).quality).toBe(0);
     expect(s.read(flatFrame(0)).quality).toBe(0);
+  });
+  it("keeps readable pieces through fusion and stabilization when half the board is washed out", () => {
+    const corners = defaultSamplerConfig().corners;
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    const bg = (sq: number) => sq % 8 < 4 ? 255 : 50;
+    s.calibrateEmpty(boardPaint(corners, (sq) => bg(sq)));
+    const piece = sqIndex("g2");
+    const frame = boardPaint(corners, (sq, u, v) => sq === piece && Math.hypot(u - 6.5, v - 6.5) < 0.35 ? 190 : bg(sq));
+    const o = s.read(frame);
+    expect(o.quality).toBeGreaterThan(0);
+    expect(o.occ[piece]).toBeGreaterThan(0.7);
+    const fusion = new Fusion(), stab = new Stabilizer();
+    let result: BoardBelief;
+    for (let t = 0; t < 30; t++) result = stab.step(fusion.fuse([{ ...o, t }], t));
+    expect(result!.occ[piece]).toBe(1);
   });
   it("treats board points that fall outside the image as unknown", () => {
     const s = new BoardSampler("A", { ...cfg(), corners: [{ x: -900, y: -900 }, { x: -800, y: -900 }, { x: -800, y: -800 }, { x: -900, y: -800 }] });
@@ -121,7 +172,9 @@ describe("BoardSampler", () => {
     for (let i = 0; i < 20; i++) s.read(flatFrame(104, 480, 360, i));
     expect(s.ref[27]).toBeGreaterThan(before);
     const beforeOcc = s.ref[27];
-    for (let i = 0; i < 5; i++) s.read(flatFrame(230, 480, 360, 100 + i)); // strong change = piece, no adaptation
+    const piece = flatFrame(180, 480, 360, 100);
+    for (let i = 0; i < piece.data.length; i += 2) piece.data[i] = 30; // a real piece has shading; a flat lamp must not count
+    for (let i = 0; i < 5; i++) s.read({ ...piece, t: 100 + i });
     expect(s.ref[27]).toBeCloseTo(beforeOcc, 3);
   });
   it("re-derives its sampling grid when the corners are edited", () => {
@@ -131,11 +184,100 @@ describe("BoardSampler", () => {
     const b = s.measure(shoot(t, "B"));
     expect(a[0]).not.toBeNaN(); expect(b[63]).not.toBeNaN();
   });
+  it("leans the centre sample toward the far side of an oblique board", () => {
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners: [{ x: 100, y: 40 }, { x: 200, y: 40 }, { x: 230, y: 300 }, { x: 70, y: 300 }] });
+    expect(s.lean().v).toBeLessThan(0); // rank 1 edge is longer, so the piece body leans toward rank 8
+    expect(Math.abs(s.lean().u)).toBeLessThan(0.02);
+  });
+  it("reads a piece that barely differs from its own square, and does not call a glare spot a piece", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
+    const empty = (sq: number) => (light(sq) ? 190 : 48);
+    const whiteSq = sqIndex("e4"), blackSq = sqIndex("e5"), glareSq = sqIndex("c4"), calm = sqIndex("f5");
+    const paint = (over: (sq: number, u: number, v: number, bg: number) => number) => boardPaint(corners, (sq, u, v) => over(sq, u, v, empty(sq)));
+    const disk = (sq: number, u: number, v: number, bg: number, delta: number, radius: number, cap = 249) => {
+      const cx = (sq % 8) + 0.5, cy = Math.floor(sq / 8) + 0.5;
+      return Math.hypot(u - cx, v - cy) < radius ? Math.max(0, Math.min(cap, bg + delta)) : bg;
+    };
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateEmpty(paint((_sq, _u, _v, bg) => bg));
+    const frame = paint((sq, u, v, bg) => {
+      if (sq === whiteSq) return disk(sq, u, v, bg, 28, 0.3); // white on a light square: +28 is under the old 22% bar (42)
+      if (sq === blackSq) return disk(sq, u, v, bg, -16, 0.3); // black on a dark square
+      if (sq === glareSq) return disk(sq, u, v, bg, 80, 0.62, 255); // the whole square blown out
+      return bg;
+    });
+    const o = s.read(frame);
+    expect(o.occ[whiteSq]).toBeGreaterThan(0.7); expect(o.white[whiteSq]).toBeGreaterThan(0.6);
+    expect(o.occ[blackSq]).toBeGreaterThan(0.7); expect(o.white[blackSq]).toBeLessThan(0.4);
+    expect(o.occ[glareSq]).toBeLessThan(0.6); // undecided, not a confident white piece
+    expect(o.occ[calm]).toBeLessThan(0.15);
+  });
+  it("reads an empty square that is bright by nature as empty, not as undecided glare", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
+    const paint = () => boardPaint(corners, (sq) => (light(sq) ? 232 : 60));
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateEmpty(paint());
+    const o = s.read(paint());
+    for (const sq of [sqIndex("d4"), sqIndex("e4"), sqIndex("c4"), sqIndex("f5")]) expect(o.occ[sq]).toBeLessThan(0.15);
+  });
+  it("does not treat a lamp flicker as a hand, and does not vote a washed-out square empty", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
+    const empty = (sq: number) => (light(sq) ? 160 : 50);
+    const knight = sqIndex("g1");
+    const paint = (bright: boolean) => boardPaint(corners, (sq, _u, _v) => {
+      const bg = empty(sq);
+      return bright && sq === knight ? 230 : bg; // the lamp flattens the knight's square
+    });
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateEmpty(paint(false));
+    s.read(paint(false));
+    const o = s.read(paint(true));
+    expect(o.occ[knight]).toBeGreaterThan(0.4);
+    expect(o.occ[knight]).toBeLessThan(0.6);
+    expect(o.motion).toBe(0);
+  });
+  it("does not invent pieces on the near and far ranks just because the lamp falls off", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const tone = (sq: number, row: number) => (((sq % 8) + row) % 2 === 0 ? 80 + row * 16 : 30 + row * 8);
+    const frame = boardPaint(corners, (sq, _u, v) => tone(sq, Math.floor(v)));
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateFromStart(frame);
+    const o = s.read(frame);
+    const seen = Array.from(o.occ).filter((v) => v > 0.5);
+    expect(seen).toHaveLength(0);
+    expect(o.occ[sqIndex("a1")]).toBeLessThan(0.2);
+    expect(o.occ[sqIndex("h8")]).toBeLessThan(0.2);
+  });
 });
+
+/** Grey frame whose board squares are painted in board coordinates (u right, v down from rank 8). */
+function boardPaint(corners: { x: number; y: number }[], colour: (sq: number, u: number, v: number) => number): GrayFrame {
+  const w = 480, h = 360, data = new Uint8ClampedArray(w * h);
+  const H = invertH(boardToImage(corners));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const p = applyH(H, x + 0.5, y + 0.5);
+    const on = p.x >= 0 && p.y >= 0 && p.x < 8 && p.y < 8;
+    const sq = on ? Math.floor(p.y) * 8 + Math.floor(p.x) : 0;
+    data[y * w + x] = on ? colour(sq, p.x, p.y) : 28;
+  }
+  return { width: w, height: h, data, t: 1 };
+}
 
 const obs = (cam: string, occ: number, white: number, extra: Partial<SquareObs> = {}): SquareObs => ({ cam, t: 1000, quality: 1, weight: 1, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), motion: 0, handSquares: new Uint8Array(64), ...extra });
 
 describe("Fusion", () => {
+  it("keeps unusable and undecided camera readings unknown rather than confidently empty", () => {
+    for (const extra of [{ quality: 0 }, { weight: 0 }]) {
+      const b = new Fusion().fuse([obs("A", 0.99, 0.99, extra)], 1000);
+      expect(b.occ[0]).toBe(0.5); expect(b.conf[0]).toBe(0);
+      expect(b.fidelity).toBe(0); expect(b.cams).toBe(0);
+    }
+    const b = new Fusion().fuse([obs("A", 0.5, 0.5)], 1000);
+    expect(b.occ[0]).toBe(0.5); expect(b.conf[0]).toBe(0);
+  });
   it("reports zero fidelity and an undecided board with no cameras", () => {
     const b = new Fusion().fuse([], 1000);
     expect(b.fidelity).toBe(0); expect(b.cams).toBe(0); expect(b.occ[0]).toBe(0.5); expect(b.handOver).toBe(false);
@@ -155,6 +297,17 @@ describe("Fusion", () => {
   it("silences an occluded camera but still flags the hand", () => {
     const b = new Fusion().fuse([obs("A", 0.05, 0.5, { motion: 0.5 }), obs("B", 0.95, 0.9)], 1000);
     expect(b.handOver).toBe(true); expect(b.occ[0]).toBeGreaterThan(0.8);
+  });
+  it("does not freeze the board for a lamp that only flickers a couple of squares", () => {
+    const b = new Fusion().fuse([obs("A", 0.9, 0.9, { motion: 0.04 })], 1000, 500, 0.02);
+    expect(b.handOver).toBe(false);
+  });
+  it("preserves moderate multi-camera evidence without converting it into absence", () => {
+    // Moderate positive evidence must remain positive, regardless of camera count.
+    const b = new Fusion().fuse([obs("A", 0.62, 0.8), obs("B", 0.62, 0.8)], 1000);
+    expect(b.occ[0]).toBeGreaterThan(0.5);
+    expect(b.occ[0]).toBeLessThan(0.8);
+    expect(new Fusion().fuse([obs("A", 0.8, 0.8), obs("B", 0.62, 0.8)], 1000).occ[0]).toBeGreaterThan(0.7);
   });
   it("colour evidence only counts where a piece is believed present", () => {
     expect(new Fusion().fuse([obs("A", 0, 0.99)], 1000).white[0]).toBe(0.5); // no piece anywhere: colour unknown
@@ -180,6 +333,32 @@ describe("Fusion", () => {
 const belief = (over: Partial<BoardBelief> = {}, occ = 1, white = 1): BoardBelief => ({ t: 0, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), conf: new Float32Array(64).fill(1), fidelity: 0.9, handOver: false, settled: false, cams: 2, ...over });
 
 describe("Stabilizer", () => {
+  it("resolves sustained weak evidence but rejects flicker and unknown squares", () => {
+    const s = new Stabilizer();
+    let last: BoardBelief;
+    for (let t = 0; t <= 2000; t += 100) {
+      const b = belief({ t }, 0.5, 0.5);
+      b.occ[0] = 0.6;
+      b.occ[1] = t % 200 ? 0.6 : 0.4;
+      last = s.step(b);
+    }
+    expect(last!.occ[0]).toBe(1);
+    expect(last!.occ[1]).toBe(0);
+    expect(last!.occ[2]).toBe(0);
+    for (let t = 2100; t <= 4000; t += 100) last = s.step(belief({ t }, 0.4, 0.4));
+    expect(last!.occ[0]).toBe(0);
+    expect(last!.white[0]).toBe(0);
+  });
+
+  it("does not count time under a hand or offline as sustained evidence", () => {
+    const s = new Stabilizer();
+    s.step(belief({ t: 0 }, 0.6));
+    s.step(belief({ t: 1000, handOver: true }, 0.6));
+    expect(s.step(belief({ t: 1100 }, 0.6)).occ[0]).toBe(0);
+    s.step(belief({ t: 2000, cams: 0 }, 0.6));
+    expect(s.step(belief({ t: 2100 }, 0.6)).occ[0]).toBe(0);
+  });
+
   it("needs sustained evidence to turn a square on (hysteresis) and settles after a quiet period", () => {
     const s = new Stabilizer();
     let last = s.step(belief({ t: 0 }, 0.5, 0.5));
@@ -250,4 +429,23 @@ describe("triangulation", () => {
     expect(Math.hypot(g[0] - foot[0], g[2] - foot[2])).toBeLessThan(1e-6);
     expect(rayToPlane([0, 0, 0], new Array(12).fill(0), { x: 1, y: 1 })).toBeNull();
   });
+});
+
+it("retains moderate single-camera evidence until a piece stabilizes", () => {
+  const fusion = new Fusion(), stabilizer = new Stabilizer();
+  const observation: SquareObs = {
+    cam: "A", t: 0, quality: 1, weight: 1, motion: 0,
+    occ: new Float32Array(64).fill(0.01), white: new Float32Array(64).fill(0.95),
+    handSquares: new Uint8Array(64),
+  };
+  observation.occ[42] = 0.69; // faint knight on c3
+  let result: BoardBelief | undefined;
+  for (let i = 0; i < 40; i++) {
+    observation.t = i * 100;
+    const fused = fusion.fuse([observation], observation.t);
+    expect(fused.occ[42]).toBeGreaterThan(0.5);
+    result = stabilizer.step(fused);
+  }
+  expect(result!.occ[42]).toBe(1);
+  expect(result!.settled).toBe(true);
 });
