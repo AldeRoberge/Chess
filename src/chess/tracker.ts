@@ -46,6 +46,7 @@ export const defaultTrackerConfig = (): TrackerConfig => ({ maxCost: 0.8, margin
 
 const gridOf = (game: Chess): string[] =>
   game.board().flat().map((p) => (p ? p.color : ""));
+const START_GRID = gridOf(new Chess()).join(",");
 
 /**
  * Turns noisy settled occupancy into a *legal* game. Piece identity is never read from pixels:
@@ -70,6 +71,13 @@ export class PositionTracker {
     this.candN = 0;
     this.lastMove = null;
     this.moveFid = 1;
+  }
+
+  /** Picks up a stored game: replays its moves from the start so the history is kept. False (and a fresh game) if one is illegal. */
+  resume(moves: readonly string[]): boolean {
+    this.reset();
+    for (const m of moves) { try { this.game.move(m); } catch { this.reset(); return false; } }
+    return true;
   }
 
   private cost(grid: string[], obsGrid: string[], conf: Float32Array) {
@@ -193,6 +201,15 @@ export class PositionTracker {
       return this.base("pending", diff, events, b.fidelity);
     }
 
+    // The pieces are all back on their starting squares in the middle of a game: the players set up a new one.
+    if (this.game.history().length && obsGrid.join(",") === START_GRID && diff.every((i) => b.conf[i] >= this.cfg.minConf)) {
+      this.candN = this.cand === START_GRID ? this.candN + 1 : 1;
+      this.cand = START_GRID;
+      if (this.candN < this.cfg.confirm) return this.base("pending", diff, events, b.fidelity);
+      this.reset();
+      events.push({ type: "new-game", t: b.t });
+      return this.base("synced", [], events, b.fidelity);
+    }
     this.cand = ""; this.candN = 0;
     // No legal move explained the picture. Extra squares the cameras are unsure about are a lamp or a shadow:
     // they are not a move, and they must not keep a move that already counted from standing.

@@ -2,6 +2,8 @@ import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import type { NodeSpec, Plugin } from "../core/types";
 import { PositionTracker, type TrackResult } from "../chess/tracker";
+import { clearSavedGame, newGameGeneration } from "../chess/savedGame";
+import { persistGame, resumeSaved } from "./game";
 import type { DirectorOut, PointerSample } from "../experience/director";
 import { DragDrop, type DragState } from "../experience/dragdrop";
 import { virtualTable } from "../sim/virtualTable";
@@ -122,7 +124,7 @@ const touch: NodeSpec<TouchState> = {
 
 /* ───────── Virtual position ───────── */
 
-interface VirtState { tracker: PositionTracker; res: TrackResult | null; pending: { at: number; ev: ExperienceEvent }[]; prevPhase: string }
+interface VirtState { tracker: PositionTracker; res: TrackResult | null; pending: { at: number; ev: ExperienceEvent }[]; prevPhase: string; gen: number; resumed: ExperienceEvent | null }
 const virtual: NodeSpec<VirtState> = {
   type: "game.virtual", title: "Virtual Position", category: "Game",
   desc: "The game for a table with no pieces on it: it holds the position itself and moves only when told to, by a finger dropping a piece or by the engine. Illegal moves are refused.",
@@ -133,14 +135,15 @@ const virtual: NodeSpec<VirtState> = {
     { id: "resync", kind: "bool", label: "Reset to start position", value: false, action: true },
   ],
   previewSize: [140, 40],
-  init: () => ({ tracker: new PositionTracker(), res: null, pending: [], prevPhase: "idle" }),
+  init: () => { const tracker = new PositionTracker(); return { tracker, res: null, pending: [], prevPhase: "idle", gen: newGameGeneration(), resumed: resumeSaved(tracker) }; },
   process({ drops, engine, director, control }, { params, state, now, setFidelity }) {
     const t = state.tracker, events: ExperienceEvent[] = [];
     const phase = (director as DirectorOut | undefined)?.phase ?? "idle";
     const restart = ((control as ExperienceEvent[] | undefined) ?? []).some((e) => e.type === "scenario-start");
-    const fresh = restart || !!params.resync || (phase === "idle" && state.prevPhase !== "idle");
-    if (fresh) { t.reset(); state.pending = []; params.resync = false; }
+    const fresh = restart || !!params.resync || state.gen !== newGameGeneration() || (phase === "idle" && state.prevPhase !== "idle");
+    if (fresh) { t.reset(); state.pending = []; params.resync = false; clearSavedGame(); state.resumed = null; state.gen = newGameGeneration(); }
     state.prevPhase = phase;
+    if (state.resumed) { events.push({ ...state.resumed, t: now }); state.resumed = null; } // a stored game was picked up: the director goes straight back into it
     let moved: TrackResult | null = null;
     const apply = (from: string, to: string, promotion: string | undefined) => {
       const r = t.play(from, to, promotion, now);
@@ -154,6 +157,7 @@ const virtual: NodeSpec<VirtState> = {
     const res: TrackResult = moved ?? t.snapshot();
     state.res = res;
     bus.game = res; pushLog(bus.events, events);
+    persistGame(res, director as DirectorOut | undefined);
     setFidelity(1);
     return { game: res, events };
   },
