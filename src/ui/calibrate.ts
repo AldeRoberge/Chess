@@ -34,7 +34,7 @@ export class Calibrate {
     }
     const v = this.view;
     if (!v || c.session !== v.session || c.step !== v.step) return { ok: false, text: "The calibration step changed. Refresh and try again." };
-    if (c.action === "stop") { clearInterval(this.timer); calibrationRuntime.active = false; this.view = null; return { ok: true, text: "Calibration closed." }; }
+    if (c.action === "stop") { clearInterval(this.timer); calibrationRuntime.active = false; this.samples = []; this.view = null; return { ok: true, text: "Calibration closed." }; }
     if (c.action === "retry") {
       if (["capturing", "searching", "applied"].includes(v.phase) || !this.samples.length) return { ok: false, text: "No configuration to repeat right now." };
       const previous = this.samples.pop()!; v.step = previous.step; v.samples = this.samples.length;
@@ -48,13 +48,14 @@ export class Calibrate {
       if (!best || v.validation.accuracy < 0.9 || v.validation.consistency < 0.95) return { ok: false, text: "Validation is too weak to apply. Check corners and lighting, then restart Calibrate." };
       const cameras = this.cameras();
       if (cameras.length !== this.samples[0].cameras.length || cameras.some(c => !this.samples[0].cameras.some(b => b.id === c.id && JSON.stringify(b.corners) === JSON.stringify(c.sampler.cfg.corners)))) return { ok: false, text: "Camera setup changed. Restart calibration." };
+      const { legalMargin, ...readerSettings } = best.settings;
       for (const camera of cameras) {
-        Object.assign(this.graph.nodes.get(camera.id)!.params, best.settings);
-        camera.sampler.cfg = { ...camera.sampler.cfg, ...best.settings };
+        Object.assign(this.graph.nodes.get(camera.id)!.params, readerSettings);
+        camera.sampler.cfg = { ...camera.sampler.cfg, ...readerSettings };
         camera.sampler.calibrateFromStart(this.samples[0].cameras.find(c => c.id === camera.id)!.frames[0]);
         camera.state.autoDone = true; camera.state.readOf = null;
       }
-      for (const node of this.graph.nodes.values()) if (node.type === "game.tracker") node.params.margin = best.settings.legalMargin;
+      for (const node of this.graph.nodes.values()) if (node.type === "game.tracker") node.params.margin = legalMargin;
       this.persist(); v.phase = "applied"; v.message = "Settings saved to the workflow. Restore the board to your game position before continuing play.";
       return { ok: true, text: v.message };
     }

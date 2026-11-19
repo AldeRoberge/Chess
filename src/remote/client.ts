@@ -229,7 +229,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       const head = el("thead"), hr = el("tr"); for (const x of ["No.", "White", "Black"]) hr.append(el("th", "", x)); head.append(hr);
       for (const r of rows) { const tr = el("tr"); tr.append(el("th", "", String(r.n)), cell(r.white, r.n * 2 - 1), cell(r.black, r.n * 2)); body.append(tr); }
       t.append(head, body); paper.append(t); panel.append(paper);
-      const cur = body.querySelector(".on") ?? body.lastElementChild; cur?.scrollIntoView?.({ block: "nearest" });
+      // Background snapshots must not move the page away from where the reader scrolled.
     } else if (tab === "camera") {
       const cams = st?.cameras ?? [];
       if (!cams.length) { panel.append(el("p", "rm-empty", "No cameras are set up on the computer yet.")); return; }
