@@ -36,6 +36,20 @@ export function evaluate(f: GrayFrame, c: Pt[], guide?: GridGuide | null): Eval 
   return { cost: a.fine + a.error * 0.8 + a.warp * 0.85 + drift * 0.7 + (1 - clamp(a.contrast / 40, 0, 1)) * 0.15 + a.outside * 0.3, q: a.q, error: a.error, flipped: a.flipped, contrast: a.contrast };
 }
 
+/** Fit above which a layout is trusted without trying others. */
+const SURE = 0.85;
+
+/** How much of the start position's pieces show up where the grid says they should be (0..1). Zero when it cannot be read or the position is not the start. */
+function pieceScore(f: GrayFrame, c: Pt[], _q: number): number {
+  try { const l = iconLevels(f, c, 1); return l.length ? l.reduce((s, v) => s + v, 0) / l.length : 0; } catch { return 0; }
+}
+
+/** Grid fit, nudged by the pieces: they can only confirm a fit, never sink one (the position may not be the start). */
+const blend = (ev: Eval, pieces: number) => clamp(ev.q * (0.85 + 0.15 * pieces), 0, 1);
+
+/** High confidence: the grid fits and is the right way round, or fits well and the pieces agree. */
+const isSure = (ev: Eval, pieces: number) => !ev.flipped && (ev.q >= SURE || (ev.q >= GOOD && pieces >= 0.6));
+
 /** Traces the square edges once and, when they agree, moves the corners onto the perspective they describe. */
 function withGuide(f: GrayFrame, pts: Pt[]): { corners: Pt[]; guide: GridGuide | null } {
   return traceSquareGuide(f, pts) ?? { corners: pts, guide: null };
@@ -203,45 +217,63 @@ export class AutoAligner implements AlignStatus {
     this.phase = "find"; this.label = "Looking for the board…"; yield;
     const cands = candidateLayouts(f, this.start, this.prior);
     if (!cands.length) { this.phase = "failed"; this.label = "No board found. Drag the corners onto it."; return; }
-    const N = cands.length, done: { pts: Pt[]; ev: Eval; guide: GridGuide | null }[] = [];
+    const N = cands.length, done: { pts: Pt[]; ev: Eval; guide: GridGuide | null; pieces: number }[] = [];
     this.phase = "try";
-    for (let i = 0; i < N; i++) {
+    let sure = false;
+    for (let i = 0; i < N && !sure; i++) {
       this.label = `Trying layout ${i + 1} of ${N}`; this.progress = 0.05 + 0.6 * (i / N); this.set(cands[i]); yield;
       const sq = sideOf(cands[i]) / 8;
-      const coarse = yield* climb(f, cands[i], [sq * 0.4, sq * 0.2, sq * 0.1, sq * 0.05], 20, (p) => this.set(p));
+      // a candidate that already fits well only needs fine steps; do not throw it around
+      const head = evaluate(f, cands[i]);
+      const coarse = yield* climb(f, cands[i], head.q >= SURE && !head.flipped ? [sq * 0.1, sq * 0.05] : [sq * 0.4, sq * 0.2, sq * 0.1, sq * 0.05], 20, (p) => this.set(p));
       this.progress = 0.05 + 0.6 * ((i + 0.7) / N);
       const turned = pickRotation(f, coarse.pts, this.start);
       this.label = "Lining up with the square edges…"; this.set(turned); yield;
       const guided = withGuide(f, turned);
       this.set(guided.corners); yield;
       const fine = yield* climb(f, guided.corners, [2, 1, 0.5], 8, (p) => this.set(p), guided.guide);
-      done.push({ pts: fine.pts, ev: fine.ev, guide: guided.guide }); this.confidence = fine.ev.q; this.set(fine.pts);
+      const pieces = pieceScore(f, fine.pts, fine.ev.q);
+      done.push({ pts: fine.pts, ev: fine.ev, guide: guided.guide, pieces }); this.confidence = blend(fine.ev, pieces); this.set(fine.pts);
+      // high confidence: stop exploring and just polish this one
+      if (isSure(fine.ev, pieces)) sure = true;
     }
+    // the start position's pieces break ties between layouts that fit the squares about equally
+    const adj = (d: { ev: Eval; pieces: number }) => d.ev.cost - d.pieces * 0.1;
     // keep the layouts that agree with the best one; the rest found something else (a table edge, a shadow)
-    const best = done.reduce((a, b) => (b.ev.cost < a.ev.cost ? b : a)), sq = sideOf(best.pts) / 8;
-    const keep = done.filter((d) => d.pts.reduce((s, p, i) => s + dist(p, best.pts[i]), 0) / 4 < sq * 0.6);
+    const best = done.reduce((a, b) => (adj(b) < adj(a) ? b : a)), sq = sideOf(best.pts) / 8;
+    const keep = sure ? [best] : done.filter((d) => d.pts.reduce((s, p, i) => s + dist(p, best.pts[i]), 0) / 4 < sq * 0.6);
     const w = keep.map((d) => Math.exp(-(d.ev.cost - best.ev.cost) / 0.03)), wsum = w.reduce((a, b) => a + b, 0);
     const target = best.pts.map((_, i) => ({ x: keep.reduce((s, d, k) => s + d.pts[i].x * w[k], 0) / wsum, y: keep.reduce((s, d, k) => s + d.pts[i].y * w[k], 0) / wsum }));
-    // merge slowly: walk from the best layout to the average in small steps, re-fitting at every one
-    this.phase = "merge"; const M = 8;
+    // merge slowly: walk from the best layout to the average in small steps, re-fitting at every one. One layout has nothing to merge.
+    this.phase = "merge"; const M = keep.length < 2 ? 0 : 8;
     let cur = best.pts, top = best;
     for (let m = 1; m <= M; m++) {
       this.label = `Merging ${keep.length} layouts (${m}/${M})`; this.progress = 0.7 + 0.2 * (m / M);
       const mix = best.pts.map((p, i) => ({ x: p.x + (target[i].x - p.x) * (m / M), y: p.y + (target[i].y - p.y) * (m / M) }));
       const r = yield* climb(f, mix, [0.8, 0.4], 3, undefined, best.guide);
-      cur = r.pts; if (evaluate(f, r.pts).cost < evaluate(f, top.pts).cost) top = { pts: r.pts, ev: r.ev, guide: best.guide };
+      cur = r.pts; if (evaluate(f, r.pts).cost < evaluate(f, top.pts).cost) top = { pts: r.pts, ev: r.ev, guide: best.guide, pieces: best.pieces };
       this.set(cur); this.confidence = r.ev.q;
       const until = this.now() + this.paceMs; while (this.now() < until) yield;
     }
     this.phase = "polish"; this.label = "Lining up with the square edges…"; this.progress = 0.92; this.set(top.pts); yield;
-    const polished = withGuide(f, top.pts);
-    this.set(polished.corners); yield;
-    const fin = yield* climb(f, polished.corners, [0.5, 0.25, 0.12], 12, (p) => this.set(p), polished.guide);
-    const result = evaluate(f, fin.pts).cost <= evaluate(f, top.pts).cost ? fin : top;
+    // work toward more confidence: re-trace and refine while it keeps paying off, stop when it is stuck
+    let result: { pts: Pt[]; ev: Eval } = { pts: top.pts, ev: evaluate(f, top.pts) };
+    let stuck = 0;
+    for (let round = 0; round < 5 && stuck < 2; round++) {
+      const polished = withGuide(f, result.pts);
+      this.set(polished.corners); yield;
+      const fin = yield* climb(f, polished.corners, round === 0 ? [0.5, 0.25, 0.12] : [0.25, 0.12, 0.06], 12, (p) => this.set(p), polished.guide);
+      const fe = evaluate(f, fin.pts);
+      if (fe.cost < result.ev.cost - 0.002) { result = { pts: fin.pts, ev: fe }; stuck = 0; this.set(result.pts); this.confidence = blend(fe, pieceScore(f, fin.pts, fe.q)); }
+      else stuck++;
+      this.progress = 0.92 + 0.07 * ((round + 1) / 5);
+      if (stuck === 0 && fe.q >= 0.95 && !fe.flipped) break; // as good as it gets
+    }
     this.set(result.pts);
-    // sure only when the grid fits, the colours are right, and the ten attempts landed in the same place
-    const agree = keep.length < 2 ? 0.7 : clamp(1 - spreadOf(keep.map((d) => d.pts), result.pts) / 0.5, 0, 1);
-    this.confidence = result.ev.q * (0.5 + 0.5 * agree) * (result.ev.flipped ? 0.4 : 1);
+    // sure when the grid fits, the colours are right and the pieces sit where the start position says; when several layouts were merged, they must also agree
+    const pieces = pieceScore(f, result.pts, result.ev.q);
+    const agree = keep.length < 2 ? 1 : clamp(1 - spreadOf(keep.map((d) => d.pts), result.pts) / 0.5, 0, 1);
+    this.confidence = blend(result.ev, pieces) * (0.7 + 0.3 * agree) * (result.ev.flipped ? 0.4 : 1);
     this.progress = 1; this.phase = "done";
     this.label = this.confidence >= GOOD ? "Aligned" : result.ev.contrast < 4 ? "Done, but the squares are hard to see" : "Done, but not a perfect fit";
   }
