@@ -9,6 +9,9 @@
   // API keys: `npx wrangler secret put OPENAI_API_KEY` and `npx wrangler secret put ELEVENLABS_API_KEY`.
   // The site uses those and does not ask the browser. A key saved from the setup page (KV) overrides the secret.
   "kv_namespaces": [{ "binding": "KEYS", "id": "65c8ca1e4de34806aa50fe352d3e6672" }],
+  // The phone bridge: the computer running the game publishes here, and a phone on this site reads it.
+  "durable_objects": { "bindings": [{ "name": "BRIDGE", "class_name": "GameBridge" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameBridge"] }],
   "vars": { "ALLOWED_ORIGINS": "alderoberge.com", "RATE_PER_MIN": "30", "DAILY_LIMIT": "3000" },
   // Only /chess on alderoberge.com. The rest of the domain stays on Firebase Hosting.
   "routes": [
@@ -19,7 +22,7 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/chess/api/*"],
+    "run_worker_first": ["/chess/api/*", "/chess/remote/*"],
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none"
   }
