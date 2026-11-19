@@ -1,15 +1,21 @@
 import { KNIGHT_SVG } from "./brandIcon";
 import { mixer } from "../scene/mixer";
-
-declare const __APP_VERSION__: string;
+import { ago } from "../setup/backups";
+import { BUILD } from "../setup/buildInfo";
 
 export const SPLASH_KEY = "chess.splashSeen";
 /** Set just before Vite full-reloads this tab, so the reload itself does not play the splash again. */
 export const HMR_KEY = "chess.hotReload";
-/** Whole splash length in ms: the knight appears, tilts, winks (dink), straightens, then everything fades out. */
-export const SPLASH_MS = 3200;
-/** Shorter version for subsequent runs. */
-export const SPLASH_FAST_MS = 1300;
+/** Whole splash length in ms: the knight appears, tilts, winks (dink), straightens, then everything fades out. The fade in theme.css starts half a second before this. */
+export const SPLASH_MS = 6400;
+/** Shorter version for subsequent runs. The fast fade in theme.css starts 0.3s before this. */
+export const SPLASH_FAST_MS = 4000;
+
+/** How long ago this bundle was built, as shown on the splash. */
+export function splashAge(time = BUILD.time, now = Date.now()): string {
+  if (!Number.isFinite(time)) return "build time unknown";
+  return `built ${ago(time, now)}`;
+}
 
 /** True the first time this browser opens the app. Marks it seen. Storage failures count as already seen (never block the app). */
 export function firstRun(store: Pick<Storage, "getItem" | "setItem"> = localStorage): boolean {
@@ -46,7 +52,7 @@ const winkingKnight = () => KNIGHT_SVG
 export function showSplash(host: HTMLElement = document.body, fast = false): Promise<void> {
   const el = document.createElement("div");
   el.className = fast ? "splash splash-fast" : "splash"; el.setAttribute("role", "presentation");
-  el.innerHTML = `<div class="splash-mid">${winkingKnight()}<div class="splash-name">Chess XP</div></div><div class="splash-ver">v${__APP_VERSION__}</div>`;
+  el.innerHTML = `<div class="splash-mid">${winkingKnight()}<div class="splash-name">Chess XP</div></div><div class="splash-ver">${splashAge()}</div>`;
   host.append(el);
   let ctx: AudioContext | null = null;
   try { if (typeof AudioContext !== "undefined") { ctx = new AudioContext(); void ctx.resume(); dink(ctx, fast ? 0.45 : 1.05); } } catch { ctx = null; }

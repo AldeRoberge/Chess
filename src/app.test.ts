@@ -306,6 +306,26 @@ describe("workflows", () => {
   });
 });
 
+describe("collapsible ribbon", () => {
+  const hdr = () => document.querySelector("#app>header, header") as HTMLElement;
+  const tab = (n: string) => document.querySelector<HTMLElement>(`[data-rtab="${n}"]`)!;
+  it("clicking the open tab folds the ribbon, clicking again or another tab reopens it, and it is remembered", () => {
+    finishSetup(); boot(root);
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
+    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
+    expect(tab("view").getAttribute("aria-expanded")).toBe("false");
+    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBe(true);
+    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
+    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBeUndefined();
+    tab("home").click(); tab("view").click();
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false); expect(tab("view").classList.contains("on")).toBe(true);
+  });
+  it("restores the folded ribbon on launch", () => {
+    finishSetup(); localStorage.setItem("cx.prefs.v1", JSON.stringify({ ribbonCollapsed: true })); boot(root);
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
+  });
+});
+
 describe("resizable inspector", () => {
   const mainEl = () => document.querySelector("main") as HTMLElement;
   const ptr = (el: Element, type: string, x = 0) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x }));
