@@ -243,7 +243,7 @@ export function boot(root: HTMLElement): Boot {
   editor.onView = () => { clearTimeout(viewTimer); viewTimer = setTimeout(() => patchPrefs({ view: editor.getView() }), 400); };
   document.getElementById("graph")!.append(editor.root);
   const tools = document.createElement("div"); tools.className = "ne-tools";
-  const tool = (label: string, ic: string, tip: string, body: string, fn: () => void) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; withIcon(b, ic, 15); b.dataset.tip = tip; b.dataset.tipBody = body; b.onclick = fn; tools.append(b); return b; };
+  const tool = (label: string, ic: string, tip: string, body: string, fn: () => void) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.setAttribute("aria-label", tip); withIcon(b, ic, 15); b.dataset.tip = tip; b.dataset.tipBody = body; b.onclick = fn; tools.append(b); return b; };
   tool("Section", "plus", "Add section", "Wrap the selected nodes (or the middle of the view) in a titled, coloured frame. Drag its title to move everything inside.", () => editor.addGroup());
   tool("Organize", "grid", "Organize into sections", "Lay the workflow out in bands: demo & input, analysis, game & experience, output (sound & narration). Undo with Ctrl+Z.", () => editor.organize());
   document.getElementById("graph")!.append(tools);
@@ -284,7 +284,8 @@ export function boot(root: HTMLElement): Boot {
   let active = 0;
   const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
   const TAB_INFO = ["Virtual table: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing.", "Chat with the AI: it sees the game, cameras and setup, and can change them for you."];
-  panels.forEach(([name], i) => { const b = document.createElement("button"); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span>${name}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  const TAB_SHORT = ["Table", "3D", "Log", "Perf", "AI"]; // phone bar: icon over a one-word label
+  panels.forEach(([name], i) => { const b = document.createElement("button"); b.setAttribute("aria-label", name); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span class="tl">${name}</span><span class="ts" aria-hidden="true">${TAB_SHORT[i]}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
   assistant.onNudge = () => { if (active !== 4) tabs.children[4]?.classList.add("ping"); };
   show(prefs.tab !== undefined && prefs.tab >= 0 && prefs.tab < panels.length ? prefs.tab : 0);
 
