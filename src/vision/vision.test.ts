@@ -269,6 +269,12 @@ describe("Fusion", () => {
     const b = new Fusion().fuse([obs("A", 0.9, 0.9, { motion: 0.04 })], 1000, 500, 0.02);
     expect(b.handOver).toBe(false);
   });
+  it("does not keep a piece where every camera is only mildly unsure", () => {
+    // 0.62 and 0.62 used to add up, in log-odds, to a square that stayed occupied after the piece left
+    const b = new Fusion().fuse([obs("A", 0.62, 0.8), obs("B", 0.62, 0.8)], 1000);
+    expect(b.occ[0]).toBeLessThan(0.05);
+    expect(new Fusion().fuse([obs("A", 0.8, 0.8), obs("B", 0.62, 0.8)], 1000).occ[0]).toBeGreaterThan(0.7);
+  });
   it("colour evidence only counts where a piece is believed present", () => {
     expect(new Fusion().fuse([obs("A", 0, 0.99)], 1000).white[0]).toBe(0.5); // no piece anywhere: colour unknown
     expect(new Fusion().fuse([obs("A", 0.02, 0.99)], 1000).white[0]).toBeCloseTo(0.5, 1); // barely any weight
