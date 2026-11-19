@@ -25,8 +25,13 @@ export class Transcript {
   }
   /** A queued message is about to run: its grey copy goes, the real one is added by `user`. */
   dequeue() { this.root.querySelector(".as-msg.queued")?.remove(); }
-  /** An earlier assistant answer, restored from storage. */
-  assistant(text: string) { const box = el("div", "as-msg assistant"), body = el("div", "as-body"); body.innerHTML = md(text); box.append(body); this.root.append(box); }
+  /** An earlier assistant answer, restored from storage. `spoken` marks a line that was also said aloud. */
+  assistant(text: string, spoken = false) { const box = el("div", "as-msg assistant"), body = el("div", "as-body"); body.innerHTML = md(text); box.append(body); if (spoken) box.append(el("span", "as-said", "Said aloud")); this.root.append(box); }
+  /** The latest assistant bubble was spoken. */
+  markSpoken() {
+    const last = this.root.querySelector(".as-msg.assistant:last-child");
+    if (last && !last.querySelector(".as-said")) last.append(el("span", "as-said", "Said aloud"));
+  }
 
   /** Opens the assistant's reply (with its "thinking" line) if one is not open yet. */
   begin(): Turn {

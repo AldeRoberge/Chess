@@ -49,6 +49,7 @@ export class Watcher {
 export function suggestions(h: AssistantHost): string[] {
   const out: string[] = [], p = problems(h), s = h.setup();
   if (!s || !s.completed) out.push("Help me set the game up from scratch");
+  out.push("Talk me through the cameras");
   if (p.some((x) => x.level === "error")) out.push("Fix the errors in my setup");
   else if (p.length) out.push("Check my setup and tell me what to improve");
   if (bus.cameras.some((c) => !c.online || c.quality < 0.4)) out.push("Why is a camera performing badly?");

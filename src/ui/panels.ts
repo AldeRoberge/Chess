@@ -274,14 +274,14 @@ export class TablePanel {
       const white = el("button", "", hist[i]); white.type = "button";
       white.setAttribute("aria-label", `Move ${i / 2 + 1}, White ${hist[i]}: show this position`);
       if (this.viewPly === i + 1) { white.classList.add("on"); white.setAttribute("aria-current", "true"); }
-      white.onclick = () => { this.viewPly = i + 1; this.paintGame(); };
+      white.onclick = () => { this.viewPly = i + 1; this.paintGame(); this.paintBoardAria(); };
       moves.append(white);
       if (hist[i + 1]) {
         moves.append(document.createTextNode(" "));
         const black = el("button", "", hist[i + 1]); black.type = "button";
         black.setAttribute("aria-label", `Move ${i / 2 + 1}, Black ${hist[i + 1]}: show this position`);
         if (this.viewPly === i + 2) { black.classList.add("on"); black.setAttribute("aria-current", "true"); }
-        black.onclick = () => { this.viewPly = i + 2; this.paintGame(); };
+        black.onclick = () => { this.viewPly = i + 2; this.paintGame(); this.paintBoardAria(); };
         moves.append(black);
       }
       moves.append(document.createTextNode("  "));
@@ -289,7 +289,7 @@ export class TablePanel {
     if (hist.length) {
       const live = el("button", this.viewPly === null ? "on" : "", "Live"); live.type = "button";
       live.setAttribute("aria-label", "Follow the live game"); live.setAttribute("aria-pressed", String(this.viewPly === null));
-      live.onclick = () => { this.viewPly = null; this.paintGame(); };
+      live.onclick = () => { this.viewPly = null; this.paintGame(); this.paintBoardAria(); };
       moves.append(live);
     }
     this.gamebar.replaceChildren(el("span", "turn", clk ? `${turn} · ${clk}` : turn), moves, el("span", "caps", taken));

@@ -1,5 +1,6 @@
 import type { GraphJSON, Registry } from "../core/types";
 import type { SetupConfig } from "../setup/config";
+import { effectiveKey, serverHas } from "../net/vendorFetch";
 import { AiSession, loadAiSettings, saveAiSettings, type Built } from "../workflows/ai";
 import { WORKFLOWS } from "../workflows";
 import { withSpinner } from "./spinner";
@@ -59,23 +60,27 @@ export function openAiWizard(api: WorkflowApi) {
     m.body.replaceChildren();
     const ask = el("textarea", "wf-text"); ask.rows = 6; ask.placeholder = "e.g. Track my chess board with two cameras, narrate in a calm voice, play rain and thunder when a queen is captured, and let me play against chess.com user MyName.";
     const from = el("select"); from.append(new Option("Start from scratch", "blank"), new Option("Modify my current workflow", "current"));
+    const onServer = serverHas("openai") && !saved.apiKey.trim();
     const key = el("input"); key.type = "password"; key.placeholder = "OpenAI API key (sk-...)"; key.value = saved.apiKey; key.autocomplete = "off";
     const model = el("input"); model.type = "text"; model.value = saved.model;
     const remember = el("input"); remember.type = "checkbox"; remember.checked = saved.remember;
     const status = el("p", "wf-status"); status.setAttribute("role", "status");
     const go = btn("Generate workflow", async () => {
       if (!ask.value.trim()) { status.textContent = "Describe the workflow you want first."; return; }
-      if (!key.value.trim()) { status.textContent = "Enter an OpenAI API key."; return; }
-      saveAiSettings({ apiKey: key.value, model: model.value.trim(), remember: remember.checked });
-      session = new AiSession(api.registry, { apiKey: key.value, model: model.value.trim() }, from.value === "current" ? api.current() : undefined, api.fetchImpl);
+      const apiKey = effectiveKey(key.value, "openai");
+      if (!apiKey.trim()) { status.textContent = "Enter an OpenAI API key."; return; }
+      saveAiSettings({ apiKey: onServer ? "" : key.value, model: model.value.trim(), remember: onServer ? false : remember.checked });
+      session = new AiSession(api.registry, { apiKey, model: model.value.trim() }, from.value === "current" ? api.current() : undefined, api.fetchImpl);
       go.disabled = true; status.replaceChildren(withSpinner("Thinking… this usually takes 5 to 20 seconds.", "pawn", 20));
       try { review(await session.ask(ask.value.trim())); } catch (e) { status.textContent = (e as Error).message; go.disabled = false; }
     }, "primary");
     const field = (label: string, input: HTMLElement) => { const l = el("label", "wf-field"); l.append(el("span", "", label), input); return l; };
     const keep = el("label", "chk"); keep.append(remember, el("span", "", "Remember the key in this browser (stored unencrypted)"));
     m.body.append(
-      el("p", "bk-note", "Your description is sent to OpenAI with your own API key, straight from this page. Nothing else leaves your machine: key-like settings in your workflow are never included."),
-      field("What should it do?", ask), field("Start", from), field("API key", key), keep, field("Model", model), status, go);
+      el("p", "bk-note", onServer
+        ? "The Cloudflare worker already has an OpenAI key, so this page does not ask for one. Key-like settings in your workflow are never sent."
+        : "Your description is sent to OpenAI with your own API key, straight from this page. Nothing else leaves your machine: key-like settings in your workflow are never included."),
+      field("What should it do?", ask), field("Start", from), ...(onServer ? [] : [field("API key", key), keep]), field("Model", model), status, go);
     ask.focus();
   };
 

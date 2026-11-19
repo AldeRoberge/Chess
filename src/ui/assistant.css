@@ -16,6 +16,7 @@
 .as-msg.user .as-body{background:var(--ink-3);border:1px solid var(--line);border-radius:10px 10px 2px 10px;padding:7px 10px;white-space:pre-wrap;overflow-wrap:anywhere}
 .as-msg.queued{opacity:.55}.as-msg.queued .as-body::after{content:" (queued)";color:var(--text-dim);font-size:var(--t-xs)}
 .as-msg.assistant .as-body{line-height:1.5;overflow-wrap:anywhere}
+.as-said{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim)}
 .as-msg.assistant .as-body:empty{display:none}
 .as-body p{margin:0 0 .6em}.as-body p:last-child,.as-body ul:last-child{margin-bottom:0}
 .as-body ul{margin:0 0 .6em;padding-left:1.2em}.as-body li{margin:.15em 0}

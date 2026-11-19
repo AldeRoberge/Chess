@@ -86,4 +86,16 @@ describe("worker", () => {
     expect(other.status).toBe(200); // different IP, but now the daily total (3) is spent
     expect((await call(env, "openai/models", { headers: { "CF-Connecting-IP": "3.3.3.3" } })).status).toBe(429);
   });
+
+  it("uses a worker secret when nothing is saved in KV, and a saved key overrides it", async () => {
+    const { env, KEYS } = mk({ OPENAI_API_KEY: " sk-env ", ELEVENLABS_API_KEY: " el-env " });
+    expect(await (await call(env, "status")).json()).toEqual({ openai: true, elevenlabs: true });
+    const up = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", up);
+    await call(env, "openai/models");
+    expect((up.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers.Authorization).toBe("Bearer sk-env");
+    KEYS.m.set("key:openai", "sk-kv");
+    await call(env, "openai/models");
+    expect((up.mock.calls[1][1] as RequestInit & { headers: Record<string, string> }).headers.Authorization).toBe("Bearer sk-kv");
+  });
 });

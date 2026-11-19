@@ -136,11 +136,12 @@ export function scoreAlignment(f: GrayFrame, m: BoardMap): Alignment {
     const calmNb = around.filter((t) => t.spread <= PIECE), nb = calmNb.length >= 2 ? calmNb : around;
     if (tone && nb.length >= 2) votes.push({ s: ((c + 8 - r) % 2 === 1 ? -1 : 1) * (tone.mid - nb.reduce((x, t) => x + t.mid, 0) / nb.length), piece: tone.spread > PIECE });
   }
-  const calm = votes.filter((v) => !v.piece), chosen = calm.length >= 20 ? calm : votes;
+  const calm = votes.filter((v) => !v.piece), chosen = calm.length >= 16 ? calm : votes;
   for (const v of chosen) polarity.push(v.s);
   const slopeSum = slopeW.reduce((a, b) => a + b, 0);
   const warp = slopeSum > 0 ? slopes.reduce((s, v, i) => s + v * slopeW[i], 0) / slopeSum : 0;
-  if (errs.length < 10 || polarity.length < 30) return { q: 0, flipped: false, contrast: 0, error: REACH, outside: 0, fine: REACH, warp: 0 }; // most of the grid is outside the picture
+  // `votes` counts every square we could read. Piece squares are left out of the colour vote, so a full board must not look like an empty picture.
+  if (errs.length < 10 || votes.length < 30) return { q: 0, flipped: false, contrast: 0, error: REACH, outside: 0, fine: REACH, warp: 0 };
   const all = perAll.length >= 20 ? perAll.sort((a, b) => a - b) : [...errs, ...outer].sort((a, b) => a - b), kept = all.slice(0, Math.max(4, Math.ceil(all.length * 0.75))), fine = kept.reduce((a, b) => a + b, 0) / kept.length;
   const error = median(errs), signed = median(polarity), contrast = Math.abs(signed);
   // Does the checker pattern carry on just outside the grid? Then the grid sits inside the board (smaller or shifted) and the interior lines alone cannot tell.

@@ -1,4 +1,4 @@
-import { findBoardCorners } from "../vision/findBoard";
+import { findBoardCorners, findCheckerCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
 import { GOOD, type GridGuide, guideDrift, iconLevels, scoreAlignment, traceSquareGuide } from "./boardGuide";
 import { squareToQuad } from "./quadMap";
@@ -8,7 +8,6 @@ const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const rot = (c: Pt[], k: number) => c.map((_, i) => c[(i + k) % 4]);
 /** Mean length of the four edges, in pixels. A square is a eighth of it. */
 const sideOf = (c: Pt[]) => c.reduce((s, p, i) => s + dist(p, c[(i + 1) % 4]), 0) / 4;
-const centre = (c: Pt[]): Pt => ({ x: c.reduce((s, p) => s + p.x, 0) / 4, y: c.reduce((s, p) => s + p.y, 0) / 4 });
 const convex = (c: Pt[]) => {
   let sign = 0;
   for (let i = 0; i < 4; i++) {
@@ -137,23 +136,27 @@ export function rememberLayout(pts: Pt[], width: number, height: number, store: 
   try { store.setItem(MEM_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
 }
 
-/** Up to ten different guesses at where the board is: the picture's texture blob read loosely and tightly, grown and shrunk, plus the current corners. `prior` alignments from earlier runs are tried as well. */
+/** Guesses at where the board is. Each one is a reading: the corners already on screen, the checkerboard period, the perspective those square edges imply, an alignment kept from an earlier run, or, when no squares were found, the outline of the busy patch. Nothing here is a shifted copy of another guess. */
 export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[][] = []): Pt[][] {
   const out: Pt[][] = [];
-  const tries: [number, number][] = [[1, 1], [0.7, 1], [1.35, 1], [0.5, 1.6], [1, 0.6], [1.7, 1.3]];
-  for (const [tScale, blurScale] of tries) { const c = findBoardCorners(f, { tScale, blurScale }); if (c) out.push(c); }
-  const base = out[0] ?? current ?? prior[0];
-  if (!base) return [];
-  const grow = (c: Pt[], s: number) => { const m = centre(c); return c.map((p) => ({ x: m.x + (p.x - m.x) * s, y: m.y + (p.y - m.y) * s })); };
-  for (const s of [0.94, 1.06]) out.push(grow(base, s));
-  if (current) out.push(current);
-  const j = sideOf(base) / 8 * 0.3; // fill up to ten with shifted copies
-  const shifts: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]];
-  for (let i = 0; out.length < 10; i++) { const [dx, dy] = shifts[i % shifts.length]; out.push(base.map((p) => ({ x: p.x + dx * j, y: p.y + dy * j }))); }
-  const fresh = out.slice(0, 10), sq = sideOf(base) / 8;
-  const known = (q: Pt[]) => fresh.some((c) => c.reduce((s, p, i) => s + dist(p, q[i]), 0) / 4 < sq * 0.35);
-  const extra = prior.filter((q) => q.length === 4 && q.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) && !known(q));
-  return [...extra, ...fresh];
+  const push = (q: Pt[] | null | undefined) => {
+    if (!q || q.length !== 4 || q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return;
+    const sq = sideOf(q) / 8;
+    if (!(sq > 2)) return;
+    if (out.some((c) => c.reduce((s, p, i) => s + dist(p, q[i]), 0) / 4 < sq * 0.3)) return;
+    out.push(q.map((p) => ({ x: p.x, y: p.y })));
+  };
+  let checker: Pt[] | null = null;
+  try { checker = findCheckerCorners(f); } catch { checker = null; }
+  push(current);
+  push(checker);
+  for (const seed of [current, checker]) {
+    if (!seed) continue;
+    try { push(traceSquareGuide(f, seed)?.corners); } catch { /* the picture is not readable there */ }
+  }
+  for (const q of prior) push(q);
+  if (!checker) push(findBoardCorners(f));
+  return out;
 }
 
 /** How far the refined layouts end up from the merged one, on average, in squares. */
@@ -162,7 +165,7 @@ const spreadOf = (all: Pt[][], mid: Pt[]) => all.reduce((s, c) => s + c.reduce((
 export interface AlignStatus { phase: "idle" | "find" | "try" | "merge" | "polish" | "done" | "failed"; progress: number; confidence: number; label: string }
 
 /**
- * Finds the board from scratch and settles the grid on it. It tries the fresh guesses and any alignment kept from an earlier run, refines each one against the
+ * Finds the board from scratch and settles the grid on it. It tries each informed reading (the corners on screen, the checkerboard, the perspective of those edges, and alignments kept from earlier runs), refines each one against the
  * picture, reads the straight edges of the squares (the empty middle counts the most) and uses those lines as the
  * perspective, then merges them slowly (a step at a time, re-fitting at each) into one that sits on the square edges.
  * Call `step(budgetMs)` every frame; read `corners`, `progress`, `confidence` and `label` to show it.

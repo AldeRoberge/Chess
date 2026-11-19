@@ -1,5 +1,5 @@
 // Cloudflare Worker for alderoberge.com/chess: a keyed proxy to OpenAI and ElevenLabs.
-// The API keys live in KV and never reach the browser; the client only calls /chess/api/*.
+// The API keys live in Worker secrets (OPENAI_API_KEY, ELEVENLABS_API_KEY) or KV, and never reach the browser.
 // Everything outside /chess/api/ falls through to the static assets.
 
 interface KV { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void>; delete(k: string): Promise<void> }
@@ -7,6 +7,9 @@ export interface Env {
   KEYS: KV;
   ASSETS: { fetch(r: Request): Promise<Response> };
   ADMIN_PASSPHRASE?: string;
+  /** Dashboard secrets (`wrangler secret put`). Used when KV has no key for that vendor. */
+  OPENAI_API_KEY?: string;
+  ELEVENLABS_API_KEY?: string;
   ALLOWED_ORIGINS?: string; // comma separated hosts, default "alderoberge.com"
   RATE_PER_MIN?: string; // per IP, default 30
   DAILY_LIMIT?: string; // all callers together, default 3000
@@ -59,6 +62,14 @@ async function hit(env: Env, key: string, limit: number, ttl: number): Promise<b
   return true;
 }
 
+/** KV key if one was saved from the setup page, otherwise the Worker secret. */
+async function vendorKey(env: Env, vendor: Vendor): Promise<string | null> {
+  const fromKv = (await env.KEYS.get(`key:${vendor}`))?.trim();
+  if (fromKv) return fromKv;
+  const fromEnv = (vendor === "openai" ? env.OPENAI_API_KEY : env.ELEVENLABS_API_KEY)?.trim();
+  return fromEnv || null;
+}
+
 /** Tighten the request body: cap output size and refuse oversized TTS text. */
 function clampBody(vendor: Vendor, path: string, raw: string): string | null {
   let b: Record<string, unknown>;
@@ -76,7 +87,7 @@ async function proxy(req: Request, env: Env, vendor: Vendor, path: string): Prom
   const v = VENDORS[vendor];
   if (!v.allow.some((r) => r.test(path))) return json({ error: "path not allowed" }, 404, c);
   if (!originOk(req, env)) return json({ error: "origin not allowed" }, 403);
-  const key = await env.KEYS.get(`key:${vendor}`);
+  const key = await vendorKey(env, vendor);
   if (!key) return json({ error: `no ${vendor} key stored on the server` }, 503, c);
 
   const ip = req.headers.get("CF-Connecting-IP") || "unknown";
@@ -114,7 +125,7 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { status: originOk(req, env) ? 204 : 403, headers: c });
 
     if (route === "status" && req.method === "GET") {
-      return json({ openai: !!(await env.KEYS.get("key:openai")), elevenlabs: !!(await env.KEYS.get("key:elevenlabs")) }, 200, c);
+      return json({ openai: !!(await vendorKey(env, "openai")), elevenlabs: !!(await vendorKey(env, "elevenlabs")) }, 200, c);
     }
     if (route === "keys" && req.method === "PUT") {
       const pass = env.ADMIN_PASSPHRASE;
@@ -127,7 +138,7 @@ export default {
         if (typeof val !== "string") continue;
         if (val.trim()) await env.KEYS.put(`key:${vendor}`, val.trim()); else await env.KEYS.delete(`key:${vendor}`);
       }
-      return json({ openai: !!(await env.KEYS.get("key:openai")), elevenlabs: !!(await env.KEYS.get("key:elevenlabs")) }, 200, c);
+      return json({ openai: !!(await vendorKey(env, "openai")), elevenlabs: !!(await vendorKey(env, "elevenlabs")) }, 200, c);
     }
     const m = /^(openai|elevenlabs)\/(.+)$/.exec(route);
     if (m) return proxy(req, env, m[1] as Vendor, m[2]);

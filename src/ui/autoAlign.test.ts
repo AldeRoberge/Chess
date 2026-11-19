@@ -24,9 +24,16 @@ const run = (a: AutoAligner) => { for (let i = 0; i < 5000 && a.step(50); i++); 
 
 describe("auto align", () => {
   const f = render(TRUE);
-  it("offers ten different layouts", () => {
-    const c = candidateLayouts(f, TRUE); expect(c).toHaveLength(10);
-    expect(new Set(c.map((q) => q.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join())).size).toBeGreaterThan(5);
+  it("guesses from the picture and from earlier alignments, not from shifted copies", () => {
+    const c = candidateLayouts(f, TRUE);
+    expect(c.length).toBeGreaterThan(0);
+    expect(c.length).toBeLessThanOrEqual(6);
+    expect(c.some((q) => worst(q, TRUE) < 1)).toBe(true);
+    const shift = (a: Pt[], b: Pt[]) => {
+      const dx = a[0].x - b[0].x, dy = a[0].y - b[0].y;
+      return a.every((p, i) => Math.abs(p.x - b[i].x - dx) < 1.5 && Math.abs(p.y - b[i].y - dy) < 1.5);
+    };
+    for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) expect(shift(c[i], c[j])).toBe(false);
   });
   it("remembers an alignment and tries it again next time, including at another resolution", () => {
     const box = new Map<string, string>();
@@ -41,8 +48,8 @@ describe("auto align", () => {
     expect(both).toHaveLength(2);
     expect(worst(both[0], old)).toBeLessThan(0.01);
     const c = candidateLayouts(f, null, both);
-    expect(c.length).toBeGreaterThan(10);
     expect(c.some((q) => worst(q, old) < 1)).toBe(true);
+    expect(c.some((q) => worst(q, TRUE) < 40)).toBe(true);
     expect(rememberedLayouts(10, 10, { getItem: () => "{", setItem: () => {} })).toEqual([]);
   });
   it("settles on the board from corners that are off", () => {

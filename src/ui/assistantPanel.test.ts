@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bus } from "../core/bus";
+import { defaultSetup } from "../setup/config";
 import { fakeHost, scripted } from "../assistant/testHost";
 import { AssistantPanel } from "./assistantPanel";
 
@@ -84,5 +85,24 @@ describe("assistant panel", () => {
     q<HTMLElement>(p, ".as-nudge .ghost").click(); expect(qa(p, ".as-nudge")).toHaveLength(0);
     for (const id of ["a", "b", "c", "d"]) bus.cameras.push({ id, online: false, quality: 0, reliability: 0 }); p.frame(20000); p.frame(30000); expect(qa(p, ".as-nudge").length).toBeLessThanOrEqual(3);
     q<HTMLElement>(p, ".as-nudge .primary").click(); expect(p.history[0]?.role).toBe("user");
+  });
+
+  it("speaks the setup guide on the page, and next moves to aligning the cameras", async () => {
+    const spoken: string[] = [];
+    const h = fakeHost(); h.setSetup({ ...defaultSetup(), completed: false });
+    const f = scripted([{ content: "Drag the handles until the outline sits on the wood." }]);
+    const p = new AssistantPanel(h.host, { fetchImpl: f.fetch, storage: store(), speak: (t) => spoken.push(t) });
+    document.body.append(p.root);
+    expect(q(p, ".as-msg.assistant .as-body").textContent).toMatch(/reply in this box/i);
+    expect(q(p, ".as-said").textContent).toBe("Said aloud");
+    expect(spoken[0]).toMatch(/reply in this box/i);
+    q<HTMLTextAreaElement>(p, ".as-in").value = "next"; q<HTMLElement>(p, ".as-send").click();
+    const lines = qa(p, ".as-msg.assistant .as-body").map((n) => n.textContent ?? "");
+    expect(lines.at(-1)).toMatch(/Cameras/);
+    expect(spoken.at(-1)).toMatch(/Cameras/);
+    q<HTMLTextAreaElement>(p, ".as-in").value = "the outline is on the table"; q<HTMLElement>(p, ".as-send").click(); await flush();
+    expect(q(p, ".as-msg.assistant:last-child .as-body").textContent).toMatch(/outline/);
+    expect(q(p, ".as-msg.assistant:last-child .as-said")).toBeTruthy();
+    expect(spoken.at(-1)).toMatch(/outline/);
   });
 });

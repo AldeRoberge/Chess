@@ -181,6 +181,13 @@ describe("TablePanel", () => {
     expect(cv.getAttribute("aria-label")).toContain("e2 selected"); expect(cv.getAttribute("aria-label")).toContain("e4");
     click(cv, 4, 6); expect(cv.getAttribute("aria-label")).not.toContain("selected");
     click(cv, 2, 7); expect(cv.getAttribute("aria-label")).toContain("c1 selected"); expect(cv.getAttribute("aria-label")).not.toContain("Legal squares");
+    click(cv, 2, 7);
+    virtualTable.game.move("e4"); virtualTable.game.move("e5"); p.frame(32); click(cv, 6, 7);
+    expect(cv.getAttribute("aria-label")).toContain("g1 selected");
+    [...p.root.querySelectorAll<HTMLButtonElement>(".moves button")].find((b) => b.textContent === "e4")!.click();
+    expect(cv.getAttribute("aria-label")).not.toContain("selected");
+    p.root.querySelector<HTMLButtonElement>('[aria-label="Follow the live game"]')!.click();
+    expect(cv.getAttribute("aria-label")).toContain("g1 selected");
   });
   it("puts the clocks on the game bar when a clock is publishing", () => {
     const p = new TablePanel();

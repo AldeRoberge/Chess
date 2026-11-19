@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Graph } from "../core/graph";
 import { createRegistry } from "../plugins";
 import { STEPS, type StepCtx } from "../ui/wizardSteps";
+import { loadServerKeys } from "../net/vendorFetch";
 import { buildGraphFromConfig, defaultSetup, loadSetup, saveSetup, validateSetup } from "./config";
 import { testElevenLabs, testOpenAiKey } from "./keyTests";
 
@@ -9,6 +10,7 @@ const reply = (ok: boolean, status = 200, body: unknown = { data: [{ id: "gpt-4.
 const paramsOf = (c: ReturnType<typeof defaultSetup>, type: string) => { const g = new Graph(createRegistry()); buildGraphFromConfig(g, c); return [...g.nodes.values()].find((n) => n.type === type)!.params; };
 
 describe("AI and voice setup", () => {
+  beforeEach(async () => { await loadServerKeys(true, async () => new Response("no", { status: 404, headers: { "content-type": "text/html" } })); });
   afterEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
 
   it("defaults to built-in commentary and system voices with no warnings, and old saved setups gain them", () => {
@@ -68,5 +70,19 @@ describe("AI and voice setup", () => {
     }
     expect(opened.every((u) => u.startsWith("https://"))).toBe(true); expect(opened).toHaveLength(4);
     const test = ai.items(ctx).find((i) => i.kind === "action" && i.label === "Test key"); if (test?.kind === "action") test.run(); expect(tests).toEqual(["openai"]);
+  });
+
+  it("does not ask for a key the worker already holds", async () => {
+    await loadServerKeys(true, async () => new Response(JSON.stringify({ openai: true, elevenlabs: true }), { headers: { "content-type": "application/json" } }));
+    const c = defaultSetup(); c.ai.engine = "openai"; c.voice.engine = "elevenlabs";
+    expect(validateSetup(c)).toEqual([]);
+    const ctx = { cfg: c, state: { tests: {} }, refresh: () => {}, open: () => {}, test: () => {}, voiceSettings: () => ({}), speak: () => {} } as unknown as StepCtx;
+    const ai = STEPS.find((s) => s.id === "ai")!.items(ctx);
+    const voice = STEPS.find((s) => s.id === "voice")!.items(ctx);
+    expect(ai.some((i) => i.kind === "text" && i.label === "OpenAI API key")).toBe(false);
+    expect(ai.some((i) => i.kind === "info" && /^\d\./.test(i.label))).toBe(false);
+    expect(voice.some((i) => i.kind === "text" && i.label === "ElevenLabs API key")).toBe(false);
+    expect(ai.some((i) => i.kind === "info" && i.value?.includes("Cloudflare"))).toBe(true);
+    expect(voice.some((i) => i.kind === "info" && i.value?.includes("Cloudflare"))).toBe(true);
   });
 });

@@ -100,6 +100,8 @@ describe("phone page", () => {
     url.mockRestore(); saveClick.mockRestore();
     stop(); start(vi.fn(() => json({ rev: 2, clients: 1, state: state({ clocks: { white: "1:00", black: "0:45", running: "w" } }) }))); await flush();
     expect(q(".rm-clocks").textContent).toBe("White 1:00 running  ·  Black 0:45");
+    q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click();
+    expect(q(".rm-info").textContent).toContain("1:00 (running)");
   });
   it("lets the page be taken down", () => { const f = vi.fn(() => json({ rev: 0, clients: 0, waiting: true })); start(f); stop(); expect(document.body.classList.contains("remote")).toBe(false); });
   it("asks which piece to promote to, and cancels if the board is tapped again", async () => {

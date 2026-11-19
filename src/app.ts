@@ -42,6 +42,7 @@ import { buildBotPlay } from "./setup/botPlay";
 import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
+import { speakAssistant } from "./assistant/voiceOut";
 import { AssistantPanel } from "./ui/assistantPanel";
 import { createAppHost } from "./assistant/appHost";
 import { profiler } from "./core/profiler";
@@ -263,7 +264,7 @@ export function boot(root: HTMLElement): Boot {
     },
     sound: () => ({ on: soundOn, muted: mixer.get().muted }), now: () => performance.now(),
   });
-  const assistant = new AssistantPanel(assistantHost);
+  const assistant = new AssistantPanel(assistantHost, { speak: speakAssistant });
   const panels: [string, { root: HTMLElement }][] = [["Table", table], ["3D / Mapping", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
   const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);

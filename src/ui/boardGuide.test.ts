@@ -43,6 +43,15 @@ describe("alignment score", () => {
     expect(q(flat, corners())).toMatchObject({ q: 0, flipped: false }); expect(q(board(), corners(40, 700, 20)).q).toBe(0);
     const flipped = q(board(40, 80, 20, true), corners()); expect(flipped.flipped).toBe(true); expect(flipped.q).toBeLessThanOrEqual(0.45);
   });
+  it("does not call the colours flipped just because pieces cover the square centres", () => {
+    const f = board();
+    for (let r = 1; r < 7; r++) for (let c = 1; c < 7; c++) {
+      const dark = (c + 8 - r) % 2 === 1, ink = dark ? 235 : 15;
+      for (let y = 20 + r * 40 + 14; y < 20 + r * 40 + 26; y++) for (let x = 80 + c * 40 + 14; x < 80 + c * 40 + 26; x++) f.data[y * 480 + x] = ink;
+    }
+    const a = q(f, corners());
+    expect(a.flipped).toBe(false); expect(a.q).toBeGreaterThan(GOOD);
+  });
   it("treats a pure shift as a shift, and a pulled corner as a tilt", () => {
     const f = board();
     expect(q(f, corners()).warp).toBeLessThan(0.025);

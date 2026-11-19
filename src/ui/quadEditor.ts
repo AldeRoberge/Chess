@@ -4,6 +4,7 @@ import type { GrayFrame, Pt } from "../vision/types";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { squareToQuad } from "./quadMap";
 import { AlignmentMeter, alignColor, drawEdgeIcons, drawMatrixGround, iconLevels, readPerspective, scoreAlignment } from "./boardGuide";
+import { COACH_LABEL, drawPlacementMoves, placementMoves, type PieceMove } from "./pieceCoach";
 
 export { squareToQuad };
 
@@ -74,6 +75,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;
   let sel = 0, raf = 0, closed = false, levels: number[] | undefined, levelsAt = 0, ground: ReturnType<typeof readPerspective> = null, groundAt = 0;
+  let coach: PieceMove[] = [], coachAt = 0;
   const emit = () => o.change(fmtCorners(pts));
   const paint = () => {
     if (closed) return;
@@ -82,6 +84,13 @@ export function openQuadEditor(o: QuadEditorOpts) {
     // How well the grid sits on the squares decides its colour: orange while it is off, green once it fits.
     const fr = o.frame();
     if (o.grid > 1 && fr) meter.feed(scoreAlignment(fr, m));
+    // Pieces off their home squares are a placement problem. Say so, and don't blame the square colours for it.
+    const nowCoach = performance.now();
+    if (o.grid > 1 && fr && nowCoach - coachAt > 350 && meter.contrast >= 8 && meter.q >= 0.35) {
+      coachAt = nowCoach;
+      try { const next = placementMoves(fr, pts); if (next) coach = next; } catch { /* keep the last reading */ }
+    }
+    if (!fr || o.grid <= 1) coach = [];
     // The auto-aligner works a few milliseconds per frame and shows each layout it tries; the follower re-fits after a camera nudge.
     if (aligner) {
       aligner.step(10);
@@ -112,7 +121,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
     const color = live ? alignColor(meter.q) : "#35e0b4";
     if (!meterBox.hidden) {
       meterFill.style.width = `${Math.round((live ? meter.q : 0) * 100)}%`; meterFill.style.background = color;
-      const text = live ? meter.label : "No camera picture to check against."; if (meterText.textContent !== text) meterText.textContent = text;
+      const text = !live ? "No camera picture to check against." : coach.length ? COACH_LABEL : meter.label; if (meterText.textContent !== text) meterText.textContent = text;
       meterBox.classList.toggle("good", live && meter.good);
     }
     // The traced square edges, drawn as a transparent ground so the picture shows through them.
@@ -135,6 +144,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
       const now = performance.now();
       if (fr && now - levelsAt > 250) { levelsAt = now; try { levels = iconLevels(fr, pts, meter.q); } catch { levels = undefined; } }
       drawEdgeIcons(ctx, P, color, fr ? levels : undefined);
+      if (coach.length) drawPlacementMoves(ctx, P, coach, now);
     }
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
     pts.forEach((p, i) => {
