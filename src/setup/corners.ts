@@ -155,32 +155,45 @@ function scaled(c: Pt[], k: number): Pt[] {
   return c.map((p) => ({ x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k }));
 }
 
-/** The hit region sits about one square inside the board. A grown box and a grown hull are both tried; the clearer board wins. */
+/** Slides one edge of a clockwise quad along its outward normal, both corners together. */
+function nudgeEdge(q: Pt[], edge: number, dist: number): Pt[] {
+  const a = q[edge], b = q[(edge + 1) % 4];
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+  const nx = dy / len, ny = -dx / len; // outward for a clockwise quad in image space
+  return q.map((p, i) => (i === edge || i === (edge + 1) % 4 ? { x: p.x + nx * dist, y: p.y + ny * dist } : p));
+}
+
+/**
+ * The checker hits stop about a square short of two edges (the window looks one period ahead).
+ * Slide each edge in and out and keep the place where the squares read most clearly, then nudge corners.
+ */
 function fitQuad(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel): Pt[] {
   const { width: W, height: H } = img;
+  const hull = extremes(blob);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of blob) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-  const box = (dx: number, dy: number): Pt[] => [
-    { x: x0 - dx, y: y0 - dy }, { x: x1 + dx, y: y0 - dy }, { x: x1 + dx, y: y1 + dy }, { x: x0 - dx, y: y1 + dy },
-  ];
-  const hull = extremes(blob);
-  let cur = box(sx, sy), best = -1;
-  const tried = [box(sx, sy), box(sx * 0.5, sy * 0.5), hull, scaled(hull, 1.25), scaled(hull, 1.45)];
-  for (const q of tried) {
-    const s = scoreOf(img, q, ch);
-    console.log("cand", s.toFixed(2), q.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" "));
-    if (s > best) { best = s; cur = q; }
+  const box: Pt[] = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  let cur = scoreOf(img, hull, ch) >= scoreOf(img, box, ch) ? hull : box;
+  const span = Math.max(sx, sy, 16), step0 = Math.max(3, Math.round(span / 8));
+  for (let pass = 0; pass < 3; pass++) {
+    for (let e = 0; e < 4; e++) {
+      let top = cur, topS = scoreOf(img, cur, ch);
+      for (let d = -span; d <= span * 1.6; d += step0) {
+        const next = nudgeEdge(cur, e, d), s = scoreOf(img, next, ch);
+        if (s > topS) { topS = s; top = next; }
+      }
+      cur = top;
+    }
   }
-  console.log("sx sy", sx, sy, "bbox", Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1));
-  let step = Math.max(10, Math.round(Math.max(sx, sy) / 2));
-  for (let round = 0; round < 7 && step >= 1; round++, step = Math.max(1, Math.round(step / 2))) {
+  let step = Math.max(4, Math.round(span / 6));
+  for (let round = 0; round < 5 && step >= 1; round++, step = Math.max(1, Math.round(step / 2))) {
     for (let i = 0; i < 4; i++) {
       let top = cur, topS = scoreOf(img, cur, ch);
       for (const dy of [-step, 0, step]) for (const dx of [-step, 0, step]) {
         if (!dx && !dy) continue;
-        const next = cur.map((p, k) => (k === i ? { x: clamp(p.x + dx, -W * 0.05, W * 1.05), y: clamp(p.y + dy, -H * 0.05, H * 1.05) } : p));
+        const next = cur.map((p, k) => (k === i ? { x: clamp(p.x + dx, -8, W + 8), y: clamp(p.y + dy, -8, H + 8) } : p));
         const s = scoreOf(img, next, ch);
-        if (s > topS + 0.004) { topS = s; top = next; }
+        if (s > topS + 0.002) { topS = s; top = next; }
       }
       cur = top;
     }
