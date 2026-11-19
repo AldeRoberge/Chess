@@ -202,7 +202,7 @@ const dragDrop: NodeSpec<DragNodeState> = {
 /* ───────── Pieces projection ───────── */
 
 const pieces: NodeSpec = {
-  type: "projection.pieces", title: "PIECES PROJECTION", category: "Output",
+  type: "projection.pieces", title: "Pieces projection", category: "Output",
   desc: "Paints the pieces onto the table with the projector, instead of there being real ones. The piece being dragged follows the fingertip, and the squares it can go to light up.",
   inputs: [{ id: "game", type: "game" }, { id: "drag", type: "any" }],
   outputs: [],
