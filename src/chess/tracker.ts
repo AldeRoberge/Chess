@@ -192,7 +192,10 @@ export class PositionTracker {
     // A castle that is only half-seen (the king has stepped, the rook's square is still unread) must wait.
     // A single move the picture matches exactly — a knight hop, a king step — is the move itself.
     // cost 0 means the squares agree; they are only soft, not contradictory. A half-castle still disagrees and waits.
-    const exactStep = best?.moves.length === 1 && best.cost === 0;
+    // Squares the move does not touch, where the cameras only half-see an extra piece, do not count against it: a tall
+    // knight on f3 leans into e3 in a low camera's picture, and without this the first move was never accepted.
+    const contradicts = (grid: string[]) => { for (let i = 0; i < 64; i++) if (grid[i] !== obsGrid[i] && (grid[i] !== exp[i] || b.conf[i] >= this.cfg.minConf)) return true; return false; };
+    const exactStep = best?.moves.length === 1 && (best.cost === 0 || !contradicts(best.grid));
     if (ok && best.unsure > 0 && !exactStep) {
       this.cand = ""; this.candN = 0;
       return this.base("pending", diff, events, b.fidelity);
