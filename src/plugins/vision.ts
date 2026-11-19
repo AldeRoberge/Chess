@@ -11,8 +11,10 @@ import { drawChevrons } from "../world/chevrons";
 import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, parseCorners, withDetail, type DetailRow } from "./shared";
 import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
+import { AlignFollower, evaluate } from "../ui/autoAlign";
+import { GOOD } from "../ui/boardGuide";
 
-interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; readOf: GrayFrame | null }
+interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number }
 /** Board square (0 = a8) under an image pixel for these corners, or null when the pixel is off the board. */
 function squareAtPixel(corners: { x: number; y: number }[], x: number, y: number): number | null {
   const q = applyH(invertH(boardToImage(corners)), x, y);
@@ -26,6 +28,7 @@ const reader: NodeSpec<ReaderState> = {
   params: [
     { id: "cam", kind: "text", label: "Camera id", value: "A" },
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
+    { id: "follow", kind: "bool", label: "Follow camera moves", value: true },
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.15, max: 0.6, step: 0.01, value: 0.22 },
     { id: "weight", kind: "number", label: "Trust", min: 0, max: 2, step: 0.1, value: 1 },
     { id: "clean", kind: "bool", label: "Clean up noise", value: true },
@@ -35,10 +38,24 @@ const reader: NodeSpec<ReaderState> = {
   ],
   previewSize: [160, 120],
   frameOf: (s) => s.frame,
-  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, readOf: null }),
+  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0 }),
   process({ frame }, { params, state, setFidelity, span }) {
     const s = state.sampler;
     s.cam = String(params.cam);
+    // Camera nudged? Keep the corners on the board: re-fit them in small steps whenever the grid stops lining up with the squares.
+    const cur = frame && params.follow ? parseCorners(String(params.corners)) : null;
+    if (!cur || (state.follower.locked && String(params.corners) !== state.followWrote)) state.follower.unlock(); // switched off, or the corners were edited by hand
+    if (cur && frame && frame !== state.followOf) {
+      state.followOf = frame;
+      if (!state.follower.locked) {
+        const now = performance.now();
+        if (now - state.lockTry > 1000) { state.lockTry = now; if (evaluate(frame, cur).q >= GOOD) { state.follower.lock(frame, cur); state.followWrote = String(params.corners); } }
+      } else {
+        const fixed = span("follow camera", () => state.follower.tick(frame, cur, 4));
+        if (fixed) { params.corners = state.followWrote = fmtCorners(fixed); }
+        else if (state.follower.status === "lost") state.follower.unlock();
+      }
+    }
     if (state.corners !== params.corners) { const c = parseCorners(String(params.corners)); if (c) { s.cfg.corners = c; state.corners = String(params.corners); } }
     s.cfg.threshold = Number(params.threshold);
     if (!frame) { state.frame = null; state.raw = null; state.recent = []; state.obs = null; setFidelity(null); return { obs: null }; }
