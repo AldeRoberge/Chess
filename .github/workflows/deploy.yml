@@ -49,4 +49,4 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run setup:stockfish
       - run: npm run build
-      - run: npx --yes wrangler@4 deploy
+      - run: npx wrangler deploy
