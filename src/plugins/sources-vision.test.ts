@@ -3,7 +3,7 @@ import { createRegistry } from "./index";
 import { VirtualTable, virtualTable } from "../sim/virtualTable";
 import { bus } from "../core/bus";
 import { RIGS, rigCorners } from "../sim/rigs";
-import { flatFrame, node, shoot, tick } from "../test/helpers";
+import { checkerFrame, flatFrame, node, shoot, tick } from "../test/helpers";
 import { CAM_PRESETS, drawBoard, drawFrame, fmtCorners, looksLikeStart, parseCorners, readSquares } from "./shared";
 import { resample } from "../vision/enhance";
 
@@ -206,6 +206,7 @@ describe("source.webcam", () => {
 });
 
 describe("vision.boardReader", () => {
+  const cal = () => bus.calibration; // read fresh: the reader sets it
   const table = new VirtualTable();
   it("emits nothing without a frame", () => {
     const n = node("vision.boardReader"); expect(n.run({})).toEqual({ obs: null }); expect(n.h.fidelity).toBeNull(); n.paint();
@@ -255,6 +256,49 @@ describe("vision.boardReader", () => {
     n.run({ frame: shoot(table, "A", 1) }); n.paint();
     const t = new VirtualTable(); t.play("e4", 0); t.tick(0); t.tick(500); t.tick(900);
     n.run({ frame: shoot(t, "A", 2, 6, 2) }); n.paint();
+  });
+  it("finds the board by itself when the corners stay off, shows Calibration in progress, then clears it", () => {
+    const right = [{ x: 110, y: 40 }, { x: 390, y: 55 }, { x: 410, y: 330 }, { x: 90, y: 315 }];
+    const off = right.map((p, i) => ({ x: p.x + [14, -12, 10, -16][i], y: p.y + [-10, 12, 15, -9][i] }));
+    const pic = checkerFrame(right), at = (t: number) => ({ ...pic, t });
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(off) });
+    bus.calibration = null; bus.game = null;
+    let t = 0, seen = false;
+    for (; t < 20000 && !cal(); t += 250) n.run({ frame: at(t) }, t);
+    expect(cal()).toMatchObject({ cam: "A", phase: "running" });
+    for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) { n.run({ frame: at(t) }, t); seen ||= (cal()?.progress ?? 0) > 0; }
+    expect(seen).toBe(true);
+    expect(cal()?.phase).toBe("done");
+    const got = parseCorners(String(n.params.corners))!;
+    expect(Math.max(...got.map((p, i) => Math.hypot(p.x - right[i].x, p.y - right[i].y)))).toBeLessThan(5);
+    n.run({ frame: at(t + 9000) }, t + 9000);
+    expect(cal()).toBeNull(); // the result went away by itself
+  });
+  it("leaves the corners alone when the search finds nothing better", () => {
+    const off = rigCorners(RIGS.A).map((p) => ({ x: p.x + 40, y: p.y + 30 })), start = fmtCorners(off);
+    const n = node("vision.boardReader", { cam: "A", corners: start });
+    bus.calibration = null; bus.game = null;
+    let t = 0;
+    for (; t < 20000 && !cal(); t += 250) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
+    for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
+    expect(cal()?.phase).toBe("failed");
+    expect(n.params.corners).toBe(start);
+  });
+  it("stops when dismissed, and does nothing with auto-calibrate off", () => {
+    const off = rigCorners(RIGS.A).map((p) => ({ x: p.x + 40, y: p.y + 30 }));
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(off) });
+    bus.calibration = null; bus.game = null;
+    let t = 0;
+    for (; t < 20000 && !cal(); t += 250) n.run({ frame: shoot(table, "A", t) }, t);
+    expect(cal()?.phase).toBe("running");
+    bus.calibrationDismiss = true; n.run({ frame: shoot(table, "A", t) }, t);
+    expect(cal()).toBeNull(); expect(bus.calibrationDismiss).toBe(false);
+    for (let i = 0; i < 60; i++, t += 1000) n.run({ frame: shoot(table, "A", t) }, t);
+    expect(cal()).toBeNull();
+    const m = node("vision.boardReader", { cam: "B", corners: fmtCorners(off), autoFind: false });
+    for (let i = 0; i < 40; i++) m.run({ frame: shoot(table, "A", i * 1000) }, i * 1000);
+    expect(cal()).toBeNull();
+    n.run({}, t); // camera unplugged
   });
 });
 

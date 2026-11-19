@@ -22,7 +22,8 @@ export interface QuadEditorOpts {
   done: () => void;
 }
 
-const COL = ["#ffd35a", "#35e0b4", "#7fd4ff", "#ff8a5a"];
+/** Corner marker colours: one scheme for all four corners (their labels tell them apart). */
+const CORNER_GOOD = "#35e07a", CORNER_WARN = "#ff9a3c", CORNER_IDLE = "#cfd8e3";
 
 /** Modal with the camera picture and four draggable corner handles. Cancel restores the value it opened with. */
 export function openQuadEditor(o: QuadEditorOpts) {
@@ -151,10 +152,13 @@ export function openQuadEditor(o: QuadEditorOpts) {
       if (coach.length) drawPlacementMoves(ctx, P, coach, now);
     }
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
+    // Green once the grid fits (or the camera follower has it locked), orange while it still needs work, grey with no picture.
+    const cornerCol = !live ? CORNER_IDLE : meter.good || follower.locked ? CORNER_GOOD : CORNER_WARN;
     pts.forEach((p, i) => {
-      const x = p.x * sx, y = p.y * sy;
-      ctx.fillStyle = COL[i]; ctx.beginPath(); ctx.arc(x, y, i === sel ? 9 : 7, 0, Math.PI * 2); ctx.fill();
+      const x = p.x * sx, y = p.y * sy, r = i === sel ? 9 : 7;
+      ctx.fillStyle = cornerCol; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
       ctx.lineWidth = 2; ctx.strokeStyle = "#07090d"; ctx.stroke();
+      if (i === sel) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.stroke(); }
       ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(o.names[i], x + 12, y - 10); ctx.fillText(o.names[i], x + 12, y - 10);
     });
     raf = requestAnimationFrame(paint);

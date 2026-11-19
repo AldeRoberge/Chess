@@ -50,6 +50,7 @@ import { speakAssistant } from "./assistant/voiceOut";
 import { AssistantPanel } from "./ui/assistantPanel";
 import { createAppHost } from "./assistant/appHost";
 import { profiler } from "./core/profiler";
+import { CalibrationOverlay } from "./ui/calibrationOverlay";
 import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
 import { STEPS } from "./ui/wizardSteps";
@@ -554,6 +555,7 @@ export function boot(root: HTMLElement): Boot {
         { title: `This PC’s join code: ${remote.code}`, details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
     }
   };
+  const calWin = new CalibrationOverlay(() => { bus.calibrationDismiss = true; });
   installJoinBadge(remote, () => document.getElementById("phone")!.click());
   const step = (now: number) => {
     remote.tick(now);
@@ -563,6 +565,7 @@ export function boot(root: HTMLElement): Boot {
     if (now - lastBeat > 5000) { lastBeat = now; beatSession(); }
     if (now - lastBackup > 300000) { lastBackup = now; if (dirty) { dirty = false; addBackup("Autosave", graph.toJSON(), loadSetup(), true); } }
     if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
+    calWin.render(bus.calibration);
     profiler.span("editor", () => editor.frame(now));
     if (calibrationDialog.open) drawCalibration();
     document.getElementById("calibrate")!.classList.toggle("on", !!calibrate.view);
