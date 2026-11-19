@@ -1,5 +1,6 @@
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import type { GrayFrame, Pt } from "../vision/types";
+import { AlignmentMeter, alignColor, drawEdgeIcons, scoreAlignment } from "./boardGuide";
 
 /** Projective map of the unit square onto a quad (Heckbert), so the board grid is drawn in true perspective. */
 export function squareToQuad(q: Pt[]): (u: number, v: number) => Pt {
@@ -50,7 +51,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
   neg.onclick = () => { negative = !negative; neg.textContent = `Negative grid: ${negative ? "on" : "off"}`; };
   bar.append(reset, cancel, ok);
   const opts = document.createElement("div"); opts.className = "qe-bar"; opts.append(neg);
-  box.append(head, hint, cv, bar, opts); back.append(box); document.body.append(back);
+  // alignment readout: a bar and a sentence that go from orange to green as the grid settles onto the squares
+  const meterBox = document.createElement("div"); meterBox.className = "qe-meter"; meterBox.hidden = o.grid <= 1;
+  const meterBar = document.createElement("div"); meterBar.className = "qe-meter-bar"; const meterFill = document.createElement("i"); meterBar.append(meterFill);
+  const meterText = document.createElement("span"); meterText.setAttribute("role", "status"); meterBox.append(meterBar, meterText);
+  const meter = new AlignmentMeter();
+  box.append(head, hint, cv, meterBox, bar, opts); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;
@@ -60,17 +66,26 @@ export function openQuadEditor(o: QuadEditorOpts) {
     if (closed) return;
     drawFrame(ctx, W, H, o.frame(), "no camera frame yet — connect a camera to this node");
     const m = squareToQuad(pts), P = (u: number, v: number) => { const p = m(u, v); return { x: p.x * sx, y: p.y * sy }; };
-    // Negative mode: white lines under "difference" blending give the inverse of the picture beneath them.
-    ctx.save();
-    if (negative) { ctx.globalCompositeOperation = "difference"; ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; }
-    else { ctx.lineWidth = 1; ctx.strokeStyle = "rgba(53,224,180,.55)"; }
-    for (let i = 0; i <= o.grid && o.grid > 1; i++) {
-      const t = i / o.grid;
-      for (const [a, b] of [[P(t, 0), P(t, 1)], [P(0, t), P(1, t)]]) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+    // How well the grid sits on the squares decides its colour: orange while it is off, green once it fits.
+    const fr = o.frame();
+    if (o.grid > 1 && fr) meter.feed(scoreAlignment(fr, m));
+    const live = o.grid > 1 && !!fr, color = live ? alignColor(meter.q) : "#35e0b4";
+    if (!meterBox.hidden) {
+      meterFill.style.width = `${Math.round((live ? meter.q : 0) * 100)}%`; meterFill.style.background = color;
+      const text = live ? meter.label : "No camera picture to check against."; if (meterText.textContent !== text) meterText.textContent = text;
+      meterBox.classList.toggle("good", live && meter.good);
     }
-    ctx.lineWidth = 2; ctx.strokeStyle = negative ? "#fff" : "#35e0b4"; ctx.beginPath();
-    pts.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy))); ctx.closePath(); ctx.stroke();
+    // Casing first (the inverse of the picture, or dark), so the coloured line reads on light and dark squares alike.
+    const lines = (draw: () => void) => { for (let i = 0; i <= o.grid && o.grid > 1; i++) { const t = i / o.grid; for (const [a, b] of [[P(t, 0), P(t, 1)], [P(0, t), P(1, t)]]) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); draw(); } } };
+    const outline = () => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy))); ctx.closePath(); };
+    ctx.save();
+    if (negative) { ctx.globalCompositeOperation = "difference"; ctx.strokeStyle = "#fff"; } else ctx.strokeStyle = "rgba(0,0,0,.5)";
+    ctx.lineWidth = 4; lines(() => ctx.stroke()); outline(); ctx.stroke();
+    ctx.restore(); ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; lines(() => ctx.stroke());
+    ctx.lineWidth = 3; outline(); ctx.stroke();
     ctx.restore();
+    if (o.grid > 1) drawEdgeIcons(ctx, P, color);
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
     pts.forEach((p, i) => {
       const x = p.x * sx, y = p.y * sy;

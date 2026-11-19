@@ -77,4 +77,11 @@ describe("openQuadEditor", () => {
     open(); const b = [...document.querySelectorAll<HTMLElement>(".qe-btn")].find((x) => x.textContent!.startsWith("Negative grid"))!;
     expect(b.textContent).toBe("Negative grid: on"); b.click(); expect(b.textContent).toBe("Negative grid: off"); b.click(); expect(b.textContent).toBe("Negative grid: on");
   });
+  it("shows how well the grid fits: orange fill while off, a readable message, hidden for a plain box, and a note without a picture", () => {
+    open(); raf.splice(0).forEach((f) => f(0));
+    const fill = document.querySelector<HTMLElement>(".qe-meter-bar i")!, text = document.querySelector(".qe-meter span")!;
+    expect(fill.style.background).toMatch(/hsl|rgb/); expect(text.textContent).toMatch(/Can't see|Not lined|closer|Nicely/); expect(document.querySelector<HTMLElement>(".qe-meter")!.hidden).toBe(false);
+    document.body.innerHTML = ""; open({ frame: () => null }); raf.splice(0).forEach((f) => f(0)); expect(document.querySelector(".qe-meter span")!.textContent).toMatch(/No camera picture/);
+    document.body.innerHTML = ""; open({ grid: 1 }); raf.splice(0).forEach((f) => f(0)); expect(document.querySelector<HTMLElement>(".qe-meter")!.hidden).toBe(true);
+  });
 });
