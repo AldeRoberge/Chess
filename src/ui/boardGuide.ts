@@ -446,7 +446,7 @@ export const alignColor = (q: number, light = 54) => `hsl(${Math.round(28 + 102 
 export interface EdgeIcon { code: string; u: number; v: number; edge: "top" | "bottom" | "left" | "right"; /** The board square (0 = a8 .. 63 = h1) this icon stands for. */ sq: number }
 const BACK = ["r", "n", "b", "q", "k", "b", "n", "r"];
 /** How far outside the board's edge the icons sit, in squares. */
-const OUT = 0.62;
+const OUT = 0.95;
 
 /**
  * The pieces as they stand at the start, on the four outer edges: the white back rank along a1–h1, the black one along
@@ -493,14 +493,16 @@ export function drawEdgeIcons(ctx: CanvasRenderingContext2D, P: (u: number, v: n
   ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "middle";
   edgeIcons().forEach((ic, i) => {
     const p = P(ic.u, ic.v), img = pieceImage(ic.code), lv = levels?.[i];
-    ctx.fillStyle = "rgba(7,9,13,.62)"; ctx.strokeStyle = lv === undefined ? ring : "rgba(255,255,255,.18)"; ctx.lineWidth = 2;
+    // A light disc with a dark rim, so both the white and the black pieces read on any background.
+    ctx.fillStyle = "rgba(236,240,245,.94)"; ctx.strokeStyle = lv === undefined ? ring : "rgba(7,9,13,.35)"; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(p.x, p.y, size * 0.62, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(7,9,13,.7)"; ctx.lineWidth = 1; ctx.stroke();
     if (lv !== undefined && lv > 0) { // the outline fills up with how sure we are: full circle = sure
       ctx.strokeStyle = LEVEL_COLOR[lv] ?? ring; ctx.lineWidth = 3.5; ctx.lineCap = "round";
       ctx.beginPath(); ctx.arc(p.x, p.y, size * 0.62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lv); ctx.stroke();
     }
     if (img) ctx.drawImage(img, p.x - size / 2, p.y - size / 2, size, size);
-    else { ctx.fillStyle = ic.code[0] === "w" ? "#fff" : "#9fb4cc"; ctx.font = `${Math.round(size * 0.85)}px serif`; ctx.fillText(GLYPH[ic.code], p.x, p.y + size * 0.04); }
+    else { ctx.fillStyle = "#111"; ctx.font = `${Math.round(size * 0.85)}px serif`; ctx.fillText(GLYPH[ic.code], p.x, p.y + size * 0.04); }
   });
   ctx.restore();
 }
