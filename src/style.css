@@ -7,7 +7,7 @@
   --ink-0:#02060d;--ink-1:#060f1a;--ink-2:#0a1827;--ink-3:#102237;
   --line:#2a4a6e;--line-hi:#4a85bd;
   --text:#f2f8ff;--text-dim:#bdd1e8;
-  --signal:#6fd2ff;--signal-hi:#dcf4ff;
+  --signal:#e0364a;--signal-hi:#ffdadf;
   --amber:#ffc65c;--orange:#ff9f43;--ok:#74f0b3;--bad:#ff8585;
   --font-ui:"Chakra Petch",system-ui,sans-serif;--font-mono:"IBM Plex Mono",ui-monospace,monospace;
   --u:1;--t-xs:calc(12px*var(--u));--t-sm:calc(13px*var(--u));--t-md:calc(15px*var(--u));--t-lg:calc(20px*var(--u));--t-xl:calc(28px*var(--u));
