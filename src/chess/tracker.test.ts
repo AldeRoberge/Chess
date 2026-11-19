@@ -70,6 +70,16 @@ describe("PositionTracker", () => {
     expect(t.observe(lit).history).toEqual(["e4"]);
     expect(t.observe(lit).status).toBe("synced"); // the glow stays, but the move already counted, so the reply can start
   });
+  it("accepts the reply when three soft phantom pieces cling to the knight that just moved", () => {
+    const t = new PositionTracker(), g = new Chess(); g.move("Nf3");
+    t.observe(settled(g)); t.observe(settled(g));
+    expect(t.observe(settled(g)).history).toEqual(["Nf3"]);
+    g.move("d5");
+    const lit = settled(g);
+    for (const i of [44, 46, 62]) { lit.occ[i] = 1; lit.white[i] = 1; lit.conf[i] = 0.25; } // e3, g3, g1 glow around the knight
+    t.observe(lit);
+    expect(t.observe(lit).history).toEqual(["Nf3", "d5"]);
+  });
   it("accepts a knight hop when the squares it changes are only softly read", () => {
     const after = new Chess(); after.move("Nf3");
     const t = new PositionTracker();

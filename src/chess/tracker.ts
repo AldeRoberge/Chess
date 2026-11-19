@@ -266,7 +266,8 @@ export class PositionTracker {
     const fits = cands.filter((c) => c.moves.length === 1 && touched(c).every((i) => c.grid[i] === obsGrid[i]));
     let sole: Cand | null = null;
     if (fits.length && new Set(fits.map((c) => c.grid.join(","))).size === 1) {
-      const own = new Set(touched(fits[0])), stray = diff.filter((i) => !own.has(i)), mover = this.game.turn();
+      // A soft extra blob on an empty square (a knight's shadow, a lamp spot) is not a stray: only firm disagreements count.
+      const own = new Set(touched(fits[0])), mover = this.game.turn(), stray = diff.filter((i) => !own.has(i) && !(!exp[i] && obsGrid[i] && b.conf[i] < this.cfg.minConf));
       if (stray.length <= 2 && !stray.some((i) => exp[i] === mover && !obsGrid[i] && b.conf[i] >= this.cfg.minConf)) sole = fits[0];
     }
     const urgent = this.urgencyAt !== null && b.t - this.urgencyAt >= 5000 && !b.handOver && b.cams > 0;

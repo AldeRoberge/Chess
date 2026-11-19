@@ -258,7 +258,9 @@ function buildShell(): Shell {
     if (view.phase === "complete" && view.validation) {
       const weak = view.validation.accuracy < 0.9 || view.validation.consistency < 0.95;
       setBtn(main, ICON.check, "Apply settings", weak); onMain = cmd("apply");
-      last.textContent = `Validation: ${(view.validation.accuracy * 100).toFixed(1)}% accurate, ${(view.validation.consistency * 100).toFixed(1)}% stable.${weak ? " Too weak to apply: check corners and lighting, then restart." : ""} Disagreements: ${view.validation.errors.join(", ") || "none"}.`;
+      const cams = Object.entries(view.validation.cameraAccuracy ?? {}), perCam = cams.length > 1 ? ` Per camera: ${cams.map(([id, a]) => `${id} ${(a * 100).toFixed(0)}%`).join(", ")}.` : "";
+      const worst = cams.length > 1 ? cams.reduce((a, b) => (b[1] < a[1] ? b : a)) : null, outlier = worst && worst[1] < 0.5 ? ` Camera ${worst[0]} read almost nothing right: its view, corners or lighting changed, or the board was not set up as shown.` : "";
+      last.textContent = `Validation: ${(view.validation.accuracy * 100).toFixed(1)}% accurate, ${(view.validation.consistency * 100).toFixed(1)}% stable.${perCam}${outlier}${weak ? " Too weak to apply: check corners and lighting, then restart." : ""} Disagreements: ${view.validation.errors.join(", ") || "none"}.`;
     } else if (view.phase === "applied") { setBtn(main, ICON.check, "Done", false); onMain = cmd("stop"); }
     else if (busy) { setBtn(main, ICON.spin, view.phase === "capturing" ? "Capturing…" : "Analysing…", true); onMain = () => {}; }
     else { setBtn(main, ICON.camera, "I moved the pieces. Capture", false); onMain = cmd("capture"); }

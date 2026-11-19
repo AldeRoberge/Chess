@@ -44,11 +44,13 @@ export const calibrationDefaults: DetectionSettings = { threshold: 0.22, shapeWe
 /** The levers the search turns, one at a time. legalMargin is the tracker's and cannot be judged from jumps between unrelated boards, so it keeps its current value. */
 export const settingRanges: Record<keyof DetectionSettings, number[]> = { threshold: [0.12, 0.15, 0.18, 0.22, 0.27, 0.32, 0.4, 0.5], shapeWeight: [0.25, 0.5, 1, 1.5, 2], colorWeight: [0.25, 0.5, 1, 1.5, 2], patch: [0.35, 0.45, 0.6, 0.7, 0.8], positionWeight: [0, 0.5, 1, 1.5, 2], softness: [0.03, 0.045, 0.06, 0.09, 0.13], grid: [4, 6, 8], legalMargin: [] };
 export interface CalibrationSample { step: number; fen: string; cameras: { id: string; corners: Pt[]; frames: GrayFrame[] }[] }
-export interface CalibrationResult { label: string; settings: DetectionSettings; accuracy: number; consistency: number; score: number; exactBoards: number; errors: string[] }
+export interface CalibrationResult { label: string; settings: DetectionSettings; accuracy: number; consistency: number; score: number; exactBoards: number; errors: string[]; /** Accuracy per camera id, so one bad camera is not hidden inside the average. */ cameraAccuracy?: Record<string, number> }
 /** Replay each candidate from the same labelled start frame. Never train references on a later position. */
 export function evaluateCalibration(samples: CalibrationSample[], settings: DetectionSettings, label: string, heldOutOnly = false): CalibrationResult {
   let loss = 0, count = 0, flips = 0, pairs = 0, exactCorrect = 0, exactCount = 0; const errors = new Set<string>();
+  const perCamera: Record<string, number> = {};
   for (const base of samples[0]?.cameras ?? []) {
+    const loss0 = loss, count0 = count;
     const sampler = new BoardSampler(base.id, { ...defaultSamplerConfig(), ...settings, corners: base.corners });
     sampler.calibrateFromStart(base.frames[0]);
     for (const sample of samples) {
@@ -72,10 +74,11 @@ export function evaluateCalibration(samples: CalibrationSample[], settings: Dete
         previous = map;
       }
     }
+    if (count > count0) perCamera[base.id] = 1 - (loss - loss0) / (count - count0);
   }
   const accuracy = count ? 1 - loss / count : 0, consistency = pairs ? 1 - flips / pairs : 0;
   const exactBoards = exactCount ? exactCorrect / exactCount : 0;
-  return { label, exactBoards, settings: { ...settings }, accuracy, consistency, score: accuracy * 0.75 + consistency * 0.1 + exactBoards * 0.15, errors: [...errors] };
+  return { label, exactBoards, settings: { ...settings }, accuracy, consistency, score: accuracy * 0.75 + consistency * 0.1 + exactBoards * 0.15, errors: [...errors], cameraAccuracy: perCamera };
 }
 export interface CalibrationView {
   session: string; step: number; phase: "ready" | "capturing" | "searching" | "complete" | "applied";

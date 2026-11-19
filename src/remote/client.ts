@@ -210,6 +210,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     live.classList.toggle("on", view === null); live.setAttribute("aria-pressed", String(view === null));
   }
 
+  let shot: HTMLImageElement | null = null;
   function drawPanel() {
     if (tab === "calibrate") {
       const signature = JSON.stringify(st?.calibration ?? null);
@@ -237,8 +238,12 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       if (cams.length > 1) { const bar = el("div", "rm-cams"); for (const c of cams) { const b = withIcon(el("button", c.id === cam ? "on" : "", `Camera ${c.id}${c.online ? "" : " (offline)"}`), "camera", 16); b.type = "button"; b.onclick = () => { cam = c.id; drawPanel(); }; bar.append(b); } panel.append(bar); }
       const c = cams.find((x) => x.id === cam)!;
       if (!c.hasFrame) { panel.append(el("p", "rm-empty", c.online ? "Waiting for the first picture from this camera." : "This camera is offline. Check its cable on the computer.")); return; }
-      const im = el("img", "rm-shot"); im.alt = `Latest picture from camera ${c.id}`; im.src = `${api}frame/${encodeURIComponent(c.id)}.jpg?code=${encodeURIComponent(code)}&cid=${cid}&r=${frames[c.id] ?? 0}`;
-      panel.append(im, el("p", "rm-cap", "Grayscale, as the tracker sees it. Updates about once a second."));
+      // One picture element is kept across redraws: rebuilding it on every state push restarts the download before it finishes, so a phone never shows it.
+      const url = `${api}frame/${encodeURIComponent(c.id)}.jpg?code=${encodeURIComponent(code)}&cid=${cid}&r=${frames[c.id] ?? 0}`;
+      if (!shot) { shot = el("img", "rm-shot"); shot.decoding = "async"; }
+      shot.alt = `Latest picture from camera ${c.id}`;
+      if (shot.dataset.url !== url) { shot.dataset.url = url; shot.src = url; }
+      panel.append(shot, el("p", "rm-cap", "Grayscale, as the tracker sees it. Updates about once a second."));
     } else {
       const dl = el("dl", "rm-info"), row = (k: string, v: string) => { dl.append(el("dt", "", k), el("dd", "", v)); };
       if (st) {
