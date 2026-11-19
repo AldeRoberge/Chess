@@ -1,0 +1,89 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mountRemote } from "./client";
+import type { RemoteState } from "./protocol";
+
+const state = (o: Partial<RemoteState> = {}): RemoteState => ({
+  v: 1, t: 1, phase: "game", status: "synced", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", turn: "b", ply: 1, over: false, moves: ["e4"],
+  last: { from: "e2", to: "e4", san: "e4" }, hint: null, fidelity: 0.9, cameras: [{ id: "A", online: true, quality: 0.8, hasFrame: true }, { id: "B", online: false, quality: 0, hasFrame: false }],
+  lines: [{ name: "Jean", text: "Un beau départ." }], play: "virtual", notice: null, ...o,
+});
+const flush = () => new Promise((r) => setTimeout(r, 15));
+const json = (body: unknown, status = 200) => Promise.resolve({ ok: status < 400, status, json: async () => body } as Response);
+let stop = () => {};
+const host = () => document.getElementById("app")!;
+const start = (fetchFn: ReturnType<typeof vi.fn>, hash = "#/remote?code=4321") => { history.replaceState({}, "", `/${hash}`); stop = mountRemote(host(), { fetchFn: fetchFn as never, base: "/", poll: 5, storage: { getItem: () => null, setItem: () => {} } }).stop; };
+const q = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+
+beforeEach(() => { document.body.innerHTML = '<div id="app"></div>'; Element.prototype.scrollIntoView = vi.fn(); });
+afterEach(() => { stop(); history.replaceState({}, "", "/"); });
+
+describe("phone page", () => {
+  it("asks for the code when the address has none, and keeps the player on that screen until one is typed", async () => {
+    const f = vi.fn(() => json({ rev: 0, clients: 1, waiting: true }));
+    start(f, "#/remote");
+    expect(q("h1").textContent).toBe("Join the game");
+    q<HTMLFormElement>(".rm-join").dispatchEvent(new Event("submit", { cancelable: true })); expect(q(".rm-err").textContent).toContain("Type the code");
+    q<HTMLInputElement>(".rm-join input").value = "9999"; q<HTMLFormElement>(".rm-join").dispatchEvent(new Event("submit", { cancelable: true })); await flush();
+    expect(String((f.mock.calls as unknown[][])[0][0])).toContain("code=9999"); expect(q(".rm-turn").textContent).toContain("Waiting for the computer");
+  });
+  it("goes back to the code screen, with a reason, when the code is wrong", async () => {
+    start(vi.fn(() => json({ error: "no" }, 401))); await flush();
+    expect(q("h1").textContent).toBe("Join the game"); expect(q(".rm-err").textContent).toContain("not right");
+  });
+  it("shows the live game: turn, board, the paper score sheet and game info", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 2, state: state({ moves: ["e4", "e5", "Nf3"], turn: "b", hint: { from: "g1", to: "f3" }, notice: { text: "Playing Nf3.", ok: true, at: 5 } }), frames: { A: 3 } }))); await flush();
+    expect(q(".rm-turn").textContent).toBe("Black to move, move 2"); expect(q(".rm-conn").textContent).toBe("Live");
+    expect(document.querySelectorAll(".rm-sq")).toHaveLength(64); expect(q('[data-sq="e4"]').getAttribute("aria-label")).toBe("e4, white pawn"); expect(q('[data-sq="e5"]').getAttribute("aria-label")).toBe("e5, empty");
+    expect(q('[data-sq="e4"]').classList.contains("last")).toBe(true);
+    expect([...document.querySelectorAll(".rm-sheet tbody tr")].map((r) => r.textContent)).toEqual(["1e4e5", "2Nf3"]);
+    q<HTMLButtonElement>('.rm-tabs button:nth-child(3)').click(); expect(q(".rm-info").textContent).toContain("Following the board"); expect(q(".rm-lines").textContent).toContain("Un beau départ."); expect(q(".rm-info").textContent).toContain("2");
+  });
+  it("steps back through the moves from the sheet and the buttons, and returns to live", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ moves: ["e4", "e5", "Nf3"], fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2" }) }))); await flush();
+    const cells = () => [...document.querySelectorAll<HTMLButtonElement>(".rm-sheet td button")];
+    cells()[1].click(); expect(q(".rm-turn").textContent).toBe("Looking back: after 1... e5"); expect(q('[data-sq="f3"]').getAttribute("aria-label")).toBe("f3, empty"); expect(cells()[1].getAttribute("aria-current")).toBe("true");
+    q('button[aria-label="Previous move"]').click(); expect(q(".rm-turn").textContent).toBe("Looking back: after 1. e4");
+    q('button[aria-label="First move"]').click(); expect(q(".rm-turn").textContent).toBe("Looking back: start position");
+    q('button[aria-label="Next move"]').click(); q('button[aria-label="Next move"]').click(); q('button[aria-label="Next move"]').click(); expect(q(".rm-turn").textContent).toBe("Black to move, move 2");
+    cells()[0].click(); q('button[aria-label="Latest move"]').click(); expect(q(".rm-turn").textContent).toBe("Black to move, move 2");
+    cells()[0].click(); q('button[aria-label="Follow the live game"]').click(); expect(q(".rm-turn").classList.contains("back")).toBe(false);
+    q('button[aria-label="Turn the board around"]').click(); expect(document.querySelector<HTMLElement>(".rm-sq")!.dataset.sq).toBe("h1");
+  });
+  it("sends a move on two taps, with a promotion piece when needed, and tells the player when the computer refuses", async () => {
+    const posts: unknown[] = [];
+    const f = vi.fn((url: string, init?: RequestInit) => { if (init?.method === "POST") { posts.push(JSON.parse(String(init.body))); return json({ error: "The computer is not sharing a game right now." }, 503); } return json({ rev: 1, clients: 1, state: state({ turn: "w", fen: "8/4P3/8/8/8/8/8/k6K w - - 0 1", moves: [] }) }); });
+    start(f); await flush();
+    q('[data-sq="e7"]').click(); expect(q('[data-sq="e8"]').classList.contains("target")).toBe(true); q('[data-sq="e8"]').click(); await flush();
+    expect(posts).toEqual([{ type: "move", from: "e7", to: "e8", promotion: "q" }]); expect(q(".rm-notice").textContent).toContain("not sharing"); expect(q(".rm-notice").classList.contains("bad")).toBe(true);
+    q('[data-sq="h1"]').click(); expect(document.querySelector(".rm-sq.sel")!.getAttribute("data-sq")).toBe("h1"); // white's king, white to move: selects
+  });
+  it("does not let a phone play when it is not allowed, or when looking back", async () => {
+    const posts: unknown[] = []; let mode: RemoteState["play"] = "off";
+    const f = vi.fn((_u: string, init?: RequestInit) => { if (init?.method === "POST") posts.push(1); return json({ rev: mode === "off" ? 1 : 2, clients: 1, state: state({ play: mode, turn: "b", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" }) }); });
+    start(f); await flush(); q('[data-sq="e7"]').click(); expect(document.querySelector(".target")).toBeNull();
+    mode = "hint"; await flush(); await flush(); q('[data-sq="e7"]').click(); expect(document.querySelectorAll(".target").length).toBe(2);
+    q('[data-sq="e7"]').click(); expect(document.querySelector(".sel")).toBeNull(); q('[data-sq="e7"]').click(); q('[data-sq="d7"]').click(); expect(document.querySelector(".sel")!.getAttribute("data-sq")).toBe("d7");
+    q<HTMLButtonElement>('button[aria-label="First move"]').click(); q('[data-sq="d7"]').click(); expect(posts).toHaveLength(0);
+  });
+  it("reports a network failure when sending", async () => {
+    const f = vi.fn((_u: string, init?: RequestInit) => init?.method === "POST" ? Promise.reject(new Error("net")) : json({ rev: 1, clients: 1, state: state({ turn: "b" }) }));
+    start(f); await flush(); q('[data-sq="e7"]').click(); q('[data-sq="e5"]').click(); await flush(); expect(q(".rm-notice").textContent).toContain("Could not reach");
+  });
+  it("shows the camera picture, switches cameras and explains when there is none", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state(), frames: { A: 4 } }))); await flush();
+    q<HTMLButtonElement>(".rm-tabs button:nth-child(2)").click(); expect(q<HTMLImageElement>(".rm-shot").src).toContain("/remote/api/frame/A.jpg?code=4321"); expect(q<HTMLImageElement>(".rm-shot").src).toContain("r=4");
+    q<HTMLButtonElement>(".rm-cams button:nth-child(2)").click(); expect(q(".rm-empty").textContent).toContain("offline");
+    stop(); start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ cameras: [{ id: "A", online: true, quality: 1, hasFrame: false }] }) }))); await flush(); q<HTMLButtonElement>(".rm-tabs button:nth-child(2)").click(); expect(q(".rm-empty").textContent).toContain("Waiting for the first picture");
+    stop(); start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ cameras: [] }) }))); await flush(); q<HTMLButtonElement>(".rm-tabs button:nth-child(2)").click(); expect(q(".rm-empty").textContent).toContain("No cameras");
+  });
+  it("says so when the computer cannot be reached, and when no moves exist yet", async () => {
+    start(vi.fn(() => Promise.reject(new Error("down")))); await flush(); expect(q(".rm-conn").textContent).toContain("Offline"); expect(q(".rm-empty").textContent).toContain("No moves yet");
+    stop(); start(vi.fn(() => json({}, 500))); await flush(); expect(q(".rm-conn").classList.contains("off")).toBe(true);
+    stop(); start(vi.fn(() => json({ rev: 0, clients: 1, waiting: true }))); q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click(); await flush(); expect(q(".rm-info").textContent).toContain("Waiting for the computer");
+  });
+  it("describes a finished game and other tracker states", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ over: true, status: "weird" }) }))); await flush();
+    expect(q(".rm-turn").textContent).toBe("Game over"); q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click(); expect(q(".rm-info").textContent).toContain("weird");
+  });
+  it("lets the page be taken down", () => { const f = vi.fn(() => json({ rev: 0, clients: 0, waiting: true })); start(f); stop(); expect(document.body.classList.contains("remote")).toBe(false); });
+});

@@ -331,3 +331,33 @@ describe("resizable inspector", () => {
     h.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 2 })); expect(document.body.classList.contains("resizing")).toBe(false);
   });
 });
+
+describe("phone remote", () => {
+  it("explains it is not running when the page has no relay (a static build)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
+    const app = boot(root); finishSetup(); root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-title")!.textContent).toBe("Phone remote"); // still probing
+    app.step(0); await new Promise((r) => setTimeout(r, 10));
+    root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-title")!.textContent).toBe("Phone remote is not running");
+  });
+  it("shows the address and join code, and plays a phone's move on the virtual table", async () => {
+    const posted: any[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("host/info")) return { ok: true, json: async () => ({ code: "4321", urls: ["http://10.0.0.5:5173/#/remote?code=4321"], clients: 1 }) };
+      if (url.endsWith("host/state")) { posted.push(JSON.parse(String(init!.body))); return { ok: true, json: async () => ({ clients: 1, code: "4321", commands: posted.length === 2 ? [{ type: "move", from: "e2", to: "e4" }] : [] }) }; }
+      return { ok: true, json: async () => ({}) };
+    }));
+    const copy = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: copy }, configurable: true });
+    const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
+    root.querySelector<HTMLElement>("#phone")!.click();
+    expect(document.querySelector(".notice-title")!.textContent).toBe("Watch and play from a phone"); expect(document.querySelector(".notice-msg")!.textContent).toContain("4321"); expect(document.querySelector(".notice-details")!.textContent).toContain("10.0.0.5");
+    [...document.querySelectorAll<HTMLElement>(".notice button")].find((b) => b.textContent === "Copy address")!.click(); expect(copy).toHaveBeenCalledWith("http://10.0.0.5:5173/#/remote?code=4321");
+    bus.game = { fen: virtualTable.game.fen(), turn: "w", ply: 0, over: false, status: "synced", history: [], fidelity: 1, last: null } as never;
+    for (let i = 0; i < 3; i++) { app.step(1000 * (i + 2)); await new Promise((r) => setTimeout(r, 10)); }
+    expect(virtualTable.busy).toBe(true); expect(posted.length).toBeGreaterThanOrEqual(2);
+  });
+  it("tells the player to connect to Wi-Fi when this computer has no address", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ code: "1", urls: [], clients: 0 }) })));
+    const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
+    root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-details")!.textContent).toContain("Connect this computer to Wi-Fi"); expect(document.querySelector(".notice-msg")!.textContent).toContain("No phone is connected yet");
+  });
+});

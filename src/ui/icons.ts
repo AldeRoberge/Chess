@@ -35,6 +35,24 @@ const P: Record<string, string> = {
   open: '<path d="M3 19V6a1 1 0 0 1 1-1h5l2 2.5h8a1 1 0 0 1 1 1V10"/><path d="M3 19l2.6-8.2a1 1 0 0 1 .95-.7H22l-2.7 8.4a1 1 0 0 1-.95.7z"/>',
   save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
   export: '<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  home: '<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-5.5h4V20"/>',
+  tools: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/>',
+  pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+  first: '<path d="M6 5v14"/><path d="M18 6.5v11L9 12z"/>',
+  last: '<path d="M18 5v14"/><path d="M6 6.5v11L15 12z"/>',
+  prev: '<path d="M15 5l-7 7 7 7"/>',
+  next: '<path d="M9 5l7 7-7 7"/>',
+  flip: '<path d="M7 4v14M7 18l-3-3M7 18l3-3"/><path d="M17 20V6M17 6l-3 3M17 6l3 3"/>',
+  live: '<circle cx="12" cy="12" r="2.2"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-1.8 4L16 12H5"/>',
+  popout: '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  target: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/>',
+  gauge: '<path d="M4.5 18a8.5 8.5 0 1 1 15 0"/><path d="M12 14l4-5"/><circle cx="12" cy="14" r="1.2"/>',
+  contrast: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
   check: '<path d="M5 12.5 10 17.5 19 7"/>',
@@ -117,6 +135,27 @@ export const portIcon = (type: string, size = 10): string => icon(PORT_ICON[type
 
 /** Raw inner SVG (24x24 stroke paths) of a known icon, for composing larger drawings such as spinners. */
 export const glyph = (name: string): string => P[name];
+
+/**
+ * Puts an icon in front of a button's text. The text moves into a span so it can change later (see setLabel) without losing the icon,
+ * and the button's textContent stays just the label: the icon is decoration and says nothing to a screen reader.
+ */
+export function withIcon<T extends HTMLElement>(b: T, name: string, size = 16): T {
+  const text = b.textContent ?? "";
+  b.classList.add("has-ic");
+  b.innerHTML = `${icon(name, size)}${text ? `<span class="lbl">${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</span>` : ""}`;
+  return b;
+}
+
+/** Icons for the buttons in dialogs, by their label, so the same action looks the same wherever it appears. */
+export const BUTTON_ICON: Record<string, string> = {
+  Dismiss: "x", Close: "x", "Copy address": "copy", "Open backups": "layers", "Back up now": "save", "Import file…": "open", "Export file": "export",
+  Restore: "undo", Delete: "trash", Start: "play", Load: "open", "Open workflow file…": "open", "Generate workflow": "spark", Revise: "refresh",
+  "Apply workflow": "check", "Start over": "undo", "Play now": "play",
+};
+
+/** Changes a button's text, keeping its icon. */
+export function setLabel(b: HTMLElement, text: string) { const l = b.querySelector(".lbl"); if (l) l.textContent = text; else b.textContent = text; }
 
 export const icon = (name: string, size = 16): string =>
   `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] ?? P.spark}</svg>`;

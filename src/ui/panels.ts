@@ -15,6 +15,7 @@ import { PIECE_SETS, pieceColors, pieceImage, pieceSet, setPieceColors, setPiece
 import { BOARD_THEMES, boardTheme, setBoardTheme } from "./boardThemes";
 import { openChannel, type InMsg } from "./channel";
 import { drawBotAvatar, drawGrabHand } from "./botAvatar";
+import { setLabel, withIcon } from "./icons";
 import type { Tip, TipRow } from "./tooltip";
 import { fenPieces } from "../plugins/shared";
 import { isLightSquare, pct, pieceLabel, tone } from "../plugins/hover";
@@ -49,15 +50,16 @@ export class TablePanel {
     this.cv.setAttribute("role", "application");
     this.cv.setAttribute("aria-label", "Chessboard. Arrow keys move the cursor. Enter or Space selects and moves. q, r, b or n chooses a promotion.");
     const bar = el("div", "bar");
-    const reset = el("button", "", "Reset table"); reset.type = "button"; reset.dataset.tip = "Reset table"; reset.dataset.tipBody = "Puts every piece back on its starting square.";
+    const reset = withIcon(el("button", "", "Reset table"), "undo"); reset.type = "button"; reset.dataset.tip = "Reset table"; reset.dataset.tipBody = "Puts every piece back on its starting square.";
     reset.onclick = () => { this.pending = null; this.paintPromo(); virtualTable.reset(); };
-    this.seat.type = "button"; this.seat.dataset.tip = "Sit / stand"; this.seat.dataset.tipBody = "Seats or removes the virtual player, so the cameras and tracking see a person at the table.";
+    this.seat.type = "button"; withIcon(this.seat, "people");
+    this.seat.dataset.tip = "Sit / stand"; this.seat.dataset.tipBody = "Seats or removes the virtual player, so the cameras and tracking see a person at the table.";
     this.seat.onclick = () => { virtualTable.seated = !virtualTable.seated; this.paintSeat(); this.seatCb(virtualTable.seated); };
     this.paintSeat();
     const look = el("select", "board-look"); look.title = "Board look";
     for (const t of BOARD_THEMES) { const o = el("option", "", t.name); o.value = t.id; look.append(o); }
     look.value = boardTheme().id; look.onchange = () => setBoardTheme(look.value);
-    const hover = el("button", "", "Hover hand"); hover.title = "Hold a simulated hand over the board under your mouse, to test what the cameras do when squares are covered";
+    const hover = withIcon(el("button", "", "Hover hand"), "hand"); hover.title = "Hold a simulated hand over the board under your mouse, to test what the cameras do when squares are covered";
     hover.onclick = () => { virtualTable.hoverHand = !virtualTable.hoverHand; hover.classList.toggle("on", virtualTable.hoverHand); if (!virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
     bar.append(this.seat, reset, hover, look);
     this.promo.hidden = true;
@@ -152,7 +154,7 @@ export class TablePanel {
 
   private paintSeat() {
     const on = virtualTable.seated;
-    this.seat.textContent = on ? "Stand" : "Sit down";
+    setLabel(this.seat, on ? "Stand" : "Sit down");
     this.seat.classList.toggle("on", on);
     this.seat.setAttribute("aria-pressed", on ? "true" : "false");
   }
@@ -307,9 +309,9 @@ export class WorldPanel {
     const bar = el("div", "bar");
     const frusta = this.toggle("Projector frusta", viewSettings().display.frusta, (v) => { this.view.showFrusta = v; setDisplay({ frusta: v }); });
     const proj = this.toggle("Projected content", true, (v) => { this.view.showProjection = v; this.view.setMapping(this.cfg); });
-    const scan = el("label", "btn", "Import room scan (.glb/.obj)"); scan.dataset.tip = "Import room scan"; scan.dataset.tipBody = "Loads a 3D scan of the room, finds the flat surfaces (table, walls, floor) and maps the projectors onto them."; scan.dataset.tipTag = "file .glb · .obj"; const file = el("input"); file.type = "file"; file.accept = ".glb,.gltf,.obj"; file.hidden = true; scan.append(file);
+    const scan = withIcon(el("label", "btn", "Import room scan (.glb/.obj)"), "open"); scan.dataset.tip = "Import room scan"; scan.dataset.tipBody = "Loads a 3D scan of the room, finds the flat surfaces (table, walls, floor) and maps the projectors onto them."; scan.dataset.tipTag = "file .glb · .obj"; const file = el("input"); file.type = "file"; file.accept = ".glb,.gltf,.obj"; file.hidden = true; scan.append(file);
     file.onchange = () => file.files?.[0] && void this.importScan(file.files[0]);
-    const reset = el("button", "", "Default room"); reset.dataset.tip = "Default room"; reset.dataset.tipBody = "Forgets the imported scan and projector poses and goes back to the built-in room."; reset.dataset.tipTag = "resets mapping"; reset.onclick = () => { this.cfg = defaultMapping(); this.apply(); };
+    const reset = withIcon(el("button", "", "Default room"), "room"); reset.dataset.tip = "Default room"; reset.dataset.tipBody = "Forgets the imported scan and projector poses and goes back to the built-in room."; reset.dataset.tipTag = "resets mapping"; reset.onclick = () => { this.cfg = defaultMapping(); this.apply(); };
     bar.append(frusta, proj, scan, reset);
     const rig = el("div", "rig");
     this.root.append(bar, this.cv, rig, this.status);
@@ -334,8 +336,8 @@ export class WorldPanel {
     rig.replaceChildren();
     this.cfg.projectors.forEach((p, i) => {
       const row = el("div", "rig-row"); row.append(el("b", "", p.id));
-      const open = el("button", "", "Open output"); open.dataset.tip = `Open output for ${p.id}`; open.dataset.tipBody = "Opens the picture this projector shows in its own window. Drag it onto the projector and double-click for fullscreen."; open.onclick = () => { this.wins.set(i, window.open(`?output=${i}`, `cx-out-${i}`, "popup,width=960,height=540")); };
-      const cal = el("button", "", this.cfg.calibration[p.id] ? `Re-calibrate (${this.cfg.calibration[p.id].rms.toFixed(1)}px)` : "Auto-calibrate"); cal.dataset.tip = `Calibrate ${p.id}`; cal.dataset.tipBody = "Projects dots and watches them with the webcam to learn where the projector lands on the table. Needs the output window open and a webcam Online."; cal.dataset.tipRows = this.cfg.calibration[p.id] ? `Last error:${this.cfg.calibration[p.id].rms.toFixed(1)} px` : "Calibrated:no"; cal.onclick = () => void this.calibrate(i);
+      const open = withIcon(el("button", "", "Open output"), "popout"); open.dataset.tip = `Open output for ${p.id}`; open.dataset.tipBody = "Opens the picture this projector shows in its own window. Drag it onto the projector and double-click for fullscreen."; open.onclick = () => { this.wins.set(i, window.open(`?output=${i}`, `cx-out-${i}`, "popup,width=960,height=540")); };
+      const cal = withIcon(el("button", "", this.cfg.calibration[p.id] ? `Re-calibrate (${this.cfg.calibration[p.id].rms.toFixed(1)}px)` : "Auto-calibrate"), "target"); cal.dataset.tip = `Calibrate ${p.id}`; cal.dataset.tipBody = "Projects dots and watches them with the webcam to learn where the projector lands on the table. Needs the output window open and a webcam Online."; cal.dataset.tipRows = this.cfg.calibration[p.id] ? `Last error:${this.cfg.calibration[p.id].rms.toFixed(1)} px` : "Calibrated:no"; cal.onclick = () => void this.calibrate(i);
       row.append(open, cal); rig.append(row);
     });
   }
