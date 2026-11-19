@@ -18,6 +18,9 @@ import { pieceGeometry } from "./pieces";
 import { projectableSurfaces, surfaceMesh } from "./surfaces";
 import { fxEngine } from "../fx/engine";
 
+const CAM_KEY = "chess.worldCamera";
+const DEFAULT_CAM = { pos: [0.4, 1.6, 0.75] as [number, number, number], target: [0, TABLE_Y, 0] as [number, number, number] };
+
 /** The simulation model: room, table + board, chairs, people, projector frusta, live projected content. */
 export class WorldView {
   private renderer: THREE.WebGLRenderer;
@@ -77,9 +80,10 @@ export class WorldView {
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = false; this.renderer.shadowMap.needsUpdate = true; // re-rendered only when pieces or arms move
     this.scene.background = new THREE.Color(0x05070c);
-    this.cam.position.set(1.3, 1.5, 1.7); // close to the table: the board is what matters
     this.controls = new OrbitControls(this.cam, canvas);
-    this.controls.target.set(0, 0.8, 0); this.controls.enableDamping = true;
+    this.controls.enableDamping = true;
+    if (!this.restoreCamera()) this.defaultCamera();
+    this.controls.addEventListener("change", () => this.saveCameraSoon());
     this.content.width = 640; this.content.height = 360;
     this.contentTex = new THREE.CanvasTexture(this.content); this.contentTex.colorSpace = THREE.SRGBColorSpace;
     this.overlayCanvas.width = this.overlayCanvas.height = 14 * 48;
@@ -278,7 +282,31 @@ export class WorldView {
     this.canvas.width = 0; // force the next resize() to rebuild the drawing buffer at the new ratio
   }
 
-  resetCamera() { this.cam.position.set(1.3, 1.5, 1.7); this.controls.target.set(0, 0.8, 0); this.controls.update(); }
+  /** High and close over the table, looking down at the board so the squares read clearly. */
+  private defaultCamera() { this.cam.position.set(...DEFAULT_CAM.pos); this.controls.target.set(...DEFAULT_CAM.target); this.controls.update(); }
+
+  resetCamera() { try { localStorage.removeItem(CAM_KEY); } catch { /* storage unavailable */ } this.defaultCamera(); }
+
+  /** The orbit view survives a reload: where the camera sits and what it looks at. */
+  private restoreCamera(): boolean {
+    try {
+      const v = JSON.parse(localStorage.getItem(CAM_KEY) ?? "null") as { pos?: number[]; target?: number[] } | null;
+      const ok = (a?: number[]): a is [number, number, number] => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+      if (!v || !ok(v.pos) || !ok(v.target)) return false;
+      this.cam.position.set(...v.pos); this.controls.target.set(...v.target); this.controls.update();
+      return true;
+    } catch { return false; }
+  }
+
+  private camSave: ReturnType<typeof setTimeout> | null = null;
+  private saveCameraSoon() {
+    if (this.camSave) return;
+    this.camSave = setTimeout(() => {
+      this.camSave = null;
+      const r = (n: number) => Math.round(n * 1000) / 1000;
+      try { localStorage.setItem(CAM_KEY, JSON.stringify({ pos: this.cam.position.toArray().map(r), target: this.controls.target.toArray().map(r) })); } catch { /* storage unavailable */ }
+    }, 300);
+  }
 
   resize() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
