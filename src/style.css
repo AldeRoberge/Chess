@@ -289,13 +289,13 @@ body.resizing{cursor:col-resize;user-select:none}
 .ne-tools{position:absolute;left:12px;top:12px;z-index:20;display:flex;gap:6px}.ne-tools button{padding:5px 10px;font-size:var(--t-xs);background:color-mix(in srgb,var(--ink-1) 90%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 
 /* settings as a table: name | control | value share columns across rows */
-.ne-node:not(.wide) .ne-params{display:grid;grid-template-columns:max-content minmax(90px,1fr) 46px;gap:0;padding:8px 4px 4px}
+.ne-node:not(.wide) .ne-params{display:grid;grid-template-columns:fit-content(50%) minmax(90px,1fr) 46px;gap:0;padding:8px 4px 4px}
 .ne-node:not(.wide) .ne-param{grid-column:1/-1;display:grid;grid-template-columns:subgrid;column-gap:8px;padding:5px 4px;min-height:28px;border-left:2px solid transparent;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:0}
 .ne-node:not(.wide) .ne-param:nth-child(odd){background:color-mix(in srgb,var(--ink-2) 55%,transparent)}
 .ne-node:not(.wide) .ne-param:first-child{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:4px 4px 0 0}
 .ne-node:not(.wide) .ne-param:last-child{border-radius:0 0 4px 4px}
 .ne-node:not(.wide) .ne-param.changed{background:color-mix(in srgb,var(--signal) 10%,transparent)}
-.ne-node:not(.wide) .ne-pn{white-space:nowrap;color:var(--text-dim)}
+.ne-node:not(.wide) .ne-pn{white-space:normal;overflow-wrap:anywhere;color:var(--text-dim)}
 .ne-node:not(.wide) .ne-pv{min-width:0}
 .ne-node:not(.wide) .ne-param input[type=text],.ne-node:not(.wide) .ne-param select{width:100%;box-sizing:border-box}
 .ne-node{width:320px;min-width:320px}.ne-node.sized{min-height:min-content}
