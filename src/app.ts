@@ -276,7 +276,7 @@ export function boot(root: HTMLElement): Boot {
   const mixBtn = document.getElementById("mixer")!;
   const mixPanel = document.createElement("div");
   mixPanel.hidden = true; mixPanel.setAttribute("role", "dialog"); mixPanel.setAttribute("aria-label", "Mixer");
-  mixPanel.style.cssText = "position:fixed;z-index:1000;min-width:240px;padding:10px 12px;display:grid;gap:8px;background:var(--panel,#1b1f27);color:var(--text,inherit);border:1px solid var(--border,#3a4150);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:12px";
+  mixPanel.style.cssText = "position:fixed;z-index:1000;min-width:240px;padding:10px 12px;display:grid;gap:8px;background:#1b1f27;color:#eef3fa;border:1px solid #3a4150;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:12px";
   mixPanel.innerHTML = MIX_ROWS.map(([k, l]) => `<label style="display:grid;grid-template-columns:110px 1fr 40px;gap:8px;align-items:center"><span>${l}</span><input type="range" min="0" max="100" step="1" data-bus="${k}"><output style="text-align:right"></output></label>`).join("")
     + `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mixmute"><span>Mute all</span></label>`;
   document.body.append(mixPanel);
