@@ -2,7 +2,7 @@
   "app": "chess-experience",
   "kind": "workflow",
   "name": "Complete demo",
-  "description": "Real cameras, no fake player: webcams read the real board, people tracking seats you and reads your hand at the table menu, then you play a second person or the optional Stockfish opponent (it announces its move, you move its piece). Narrator, scenes and projectors included. Assign each camera and mark its board corners in Setup.",
+  "description": "Real cameras, no fake player: a webcam reads the real board, people tracking seats you and reads your hand at the table menu, then you play a second person or the optional Stockfish opponent (it announces its move, you move its piece). Narrator, scenes and projectors included. Pick your webcam and mark its board corners in Setup. Add a second camera there if you have one: it covers what a hand hides from the first.",
   "graph": {
     "nodes": [
       {
@@ -36,34 +36,6 @@
         "y": 878,
         "params": {
           "cam": "A",
-          "corners": "142,84;338,84;352,285;128,285",
-          "threshold": 0.22,
-          "weight": 1,
-          "autoCal": true,
-          "learn": false
-        },
-        "w": 360
-      },
-      {
-        "id": "n6",
-        "type": "source.webcam",
-        "x": 864,
-        "y": 434,
-        "params": {
-          "online": true,
-          "device": "",
-          "channel": "luma",
-          "fps": 4
-        },
-        "w": 360
-      },
-      {
-        "id": "n7",
-        "type": "vision.boardReader",
-        "x": 454,
-        "y": 878,
-        "params": {
-          "cam": "B",
           "corners": "142,84;338,84;352,285;128,285",
           "threshold": 0.22,
           "weight": 1,
@@ -258,28 +230,6 @@
         "to": {
           "node": "n1",
           "port": "o1"
-        }
-      },
-      {
-        "id": "e8",
-        "from": {
-          "node": "n6",
-          "port": "frame"
-        },
-        "to": {
-          "node": "n7",
-          "port": "frame"
-        }
-      },
-      {
-        "id": "e9",
-        "from": {
-          "node": "n7",
-          "port": "obs"
-        },
-        "to": {
-          "node": "n1",
-          "port": "o2"
         }
       },
       {
@@ -578,17 +528,6 @@
           "node": "n27",
           "port": "f1"
         }
-      },
-      {
-        "id": "e1001",
-        "from": {
-          "node": "n6",
-          "port": "frame"
-        },
-        "to": {
-          "node": "n27",
-          "port": "f2"
-        }
       }
     ],
     "groups": [
@@ -642,18 +581,6 @@
         "online": true,
         "channel": "luma",
         "rig": "A",
-        "corners": "142,84;338,84;352,285;128,285",
-        "trust": 1,
-        "fov": 60
-      },
-      {
-        "id": "B",
-        "kind": "webcam",
-        "deviceId": "",
-        "label": "Webcam 2",
-        "online": true,
-        "channel": "luma",
-        "rig": "B",
         "corners": "142,84;338,84;352,285;128,285",
         "trust": 1,
         "fov": 60
