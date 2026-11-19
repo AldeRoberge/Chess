@@ -80,7 +80,7 @@ The phone page shows:
 
 How it works: the dev server (`src/remote/relay.ts`, a Vite plugin with no dependencies) relays between the app on the computer and the phone. The app pushes the game state a few times a second; the phone polls. Host routes only answer requests from the computer itself, and phone routes need the join code. The server listens on the network (`server.host` in `vite.config.ts`), so on Windows the first start asks whether Node may use private networks: allow it. The code changes every time the server starts. This is for a home or venue network you trust; there is no encryption, so do not expose the port to the internet.
 
-A static build (the copy on a web host) has no relay, so the Phone button says so.
+On the production site, open **alderoberge.com/chess/** on the host PC. Its **This PC’s join code** badge displays a six-digit code. Open the same site on a phone, type that code and tap **Join**. The Cloudflare worker relays the game and camera pictures over HTTPS, so the devices can be on different networks. Keep the host page open. Each desktop session gets a separate room; reloading the host creates a new code. Plain static hosting without the worker has no phone relay.
 
 ## Tests: behaviour, and 100 % coverage
 

@@ -113,5 +113,22 @@ describe("remote host", () => {
     const d = make(down); d.host.tick(0); await flush(); d.host.tick(10); await flush(); d.host.tick(1500); await flush(); expect(d.host.available).toBe(true);
     const nope = make(vi.fn((url: string) => url.endsWith("host/info") ? reply({ code: "1", clients: 1 }) : reply({ ok: true })), { encode: async () => null }); nope.host.tick(0); await flush(); nope.host.tick(2000); await flush(); expect(nope.host.urls).toEqual([]);
   });
+  it("publishes production games with host credentials and collects phone moves", async () => {
+    const f = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith("host/session")) {
+        expect(init?.method).toBe("POST");
+        return reply({ code: "654321", token: "private-host-token", urls: ["https://alderoberge.com/chess/#/remote?code=654321"], clients: 1 });
+      }
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer private-host-token" });
+      expect(url).toContain("code=654321");
+      return reply({ clients: 1, commands: url.includes("host/state") ? [{ type: "move", from: "e2", to: "e4" }] : [] });
+    });
+    const { host, command } = make(f, { cloud: true, base: "/chess/remote/" });
+    host.tick(0); await flush(); expect(host.available).toBe(true);
+    host.tick(10); await flush();
+    expect(command).toHaveBeenCalledWith({ type: "move", from: "e2", to: "e4" }, 10);
+    expect(f.mock.calls.some(([url]) => url.includes("host/frame?cam=A&code=654321"))).toBe(true);
+  });
+
   it("uses the browser's fetch when none is injected", () => { expect(() => new RemoteHost({ base: "/", build: () => ({}) as never, frames: () => [], command: () => ({ ok: true, text: "" }) })).not.toThrow(); });
 });

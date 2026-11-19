@@ -67,6 +67,8 @@ export class PositionTracker {
   private moveFid = 1;
   private badN = 0;
   private keepBad = false;
+  /** Extra blobs already present when a legal move was confirmed (e.g. a knight's shadow). */
+  private acceptedExtras = new Map<number, string>();
 
   constructor(cfg: Partial<TrackerConfig> = {}) {
     this.cfg = { ...defaultTrackerConfig(), ...cfg };
@@ -79,6 +81,7 @@ export class PositionTracker {
     this.lastMove = null;
     this.moveFid = 1;
     this.badN = 0;
+    this.acceptedExtras.clear();
   }
 
   /** Picks up a stored game: replays its moves from the start so the history is kept. False (and a fresh game) if one is illegal. */
@@ -151,8 +154,17 @@ export class PositionTracker {
     const events: ExperienceEvent[] = [];
     const obsGrid = Array.from({ length: 64 }, (_, i) => (b.occ[i] > 0.5 ? (b.white[i] > 0.5 ? "w" : "b") : ""));
     const exp = gridOf(this.game);
+    // Retain only unchanged extra blobs on empty squares. Never learn a newly appearing
+    // hand here, or hide a missing piece, a colour change, or a real occupied square.
+    for (const [i, color] of this.acceptedExtras) {
+      if (exp[i] || obsGrid[i] !== color) this.acceptedExtras.delete(i);
+    }
     const diff: number[] = [];
     for (let i = 0; i < 64; i++) if (exp[i] !== obsGrid[i]) diff.push(i);
+    if (!b.handOver && diff.length && diff.every((i) => this.acceptedExtras.get(i) === obsGrid[i])) {
+      this.cand = ""; this.candN = 0;
+      return this.base("synced", diff, events, b.fidelity);
+    }
     const firm = diff.some((i) => b.conf[i] >= this.cfg.minConf);
     // The settle timer only gates a new move. A picture that already matches the game, or disagrees
     // only where the cameras are unsure, is the position we have: the opponent can play.
@@ -226,6 +238,10 @@ export class PositionTracker {
       if (this.candN >= this.cfg.confirm) {
         const fid = Math.exp(-chosen.cost);
         for (const m of chosen.moves) this.commit(m, b.t, fid, events);
+        this.acceptedExtras.clear();
+        for (let i = 0; i < 64; i++) {
+          if (!chosen.grid[i] && obsGrid[i]) this.acceptedExtras.set(i, obsGrid[i]);
+        }
         if (this.game.isDraw()) events.push({ type: "draw", t: b.t });
         this.moveFid = fid;
         this.cand = ""; this.candN = 0;

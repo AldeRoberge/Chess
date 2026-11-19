@@ -120,6 +120,23 @@ describe("PositionTracker", () => {
     seen.occ[44] = 1; seen.white[44] = 0; seen.conf[44] = 0.8;
     t.observe(seen);
     expect(t.observe(seen).history).toEqual(["Nf3"]);
+    for (let i = 0; i < 10; i++) expect(t.observe(seen).status).toBe("synced");
+    seen.settled = false;
+    expect(t.observe(seen).status).toBe("synced");
+    seen.handOver = true;
+    expect(t.observe(seen).status).toBe("pending");
+    seen.handOver = false; seen.settled = true;
+    // The reply still counts with the same blob present.
+    g.move("e5");
+    const reply = settled(g); reply.occ[44] = 1; reply.white[44] = 0; reply.conf[44] = 0.8;
+    t.observe(reply);
+    expect(t.observe(reply).history).toEqual(["Nf3", "e5"]);
+    expect(t.observe(reply).status).toBe("synced");
+    // Once the blob clears, a new object in that square must be checked again.
+    expect(t.observe(settled(g)).status).toBe("synced");
+    expect(t.observe(reply).status).toBe("pending");
+    t.reset();
+    expect(t.observe(seen).history).toEqual([]);
   });
   it("reads a capture and a pawn push from the changed squares alone", () => {
     const g = new Chess(); for (const m of ["e4", "d5"]) g.move(m);

@@ -21,9 +21,9 @@ const baseUrl = () => { try { return (import.meta as any).env?.BASE_URL ?? "/"; 
 export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const fetchFn = deps.fetchFn ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   const api = `${deps.base ?? baseUrl()}remote/api/`;
-  const store = deps.storage ?? sessionStorage;
-  const read = (k: string) => { try { return store.getItem(k) ?? ""; } catch { return ""; } };
-  const write = (k: string, v: string) => { try { store.setItem(k, v); } catch { /* private mode: the code is asked again next time */ } };
+  const store = () => deps.storage ?? sessionStorage;
+  const read = (k: string) => { try { return store().getItem(k) ?? ""; } catch { return ""; } };
+  const write = (k: string, v: string) => { try { store().setItem(k, v); } catch { /* private mode: the code is asked again next time */ } };
   const cid = read("chess.remote.cid") || Math.random().toString(36).slice(2, 12); write("chess.remote.cid", cid);
   let code = codeFromHash(location.hash) || read("chess.remote.code");
   let rev = -1, st: RemoteState | null = null, frames: Record<string, number> = {}, clients = 0;

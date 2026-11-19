@@ -18,6 +18,18 @@ beforeEach(() => { document.body.innerHTML = '<div id="app"></div>'; Element.pro
 afterEach(() => { stop(); history.replaceState({}, "", "/"); });
 
 describe("phone page", () => {
+  it("renders and polls when the browser blocks access to session storage", async () => {
+    history.replaceState({}, "", "/#/remote?code=4321");
+    const getter = vi.spyOn(window, "sessionStorage", "get").mockImplementation(() => { throw new DOMException("Storage blocked", "SecurityError"); });
+    const f = vi.fn(() => json({ rev: 0, clients: 1, waiting: true }));
+    try {
+      stop = mountRemote(host(), { fetchFn: f as never, base: "/", poll: 5 }).stop;
+      expect(document.querySelectorAll(".rm-sq")).toHaveLength(64);
+      await flush();
+      expect(f).toHaveBeenCalled();
+      expect(q(".rm-conn").textContent).toBe("Waiting for the computer");
+    } finally { getter.mockRestore(); }
+  });
   it("asks for the code when the address has none, and keeps the player on that screen until one is typed", async () => {
     const f = vi.fn(() => json({ rev: 0, clients: 1, waiting: true }));
     start(f, "#/remote");

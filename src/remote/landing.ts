@@ -7,7 +7,6 @@ import "./remote.css";
 import { withIcon } from "../ui/icons";
 
 export const SKIP_KEY = "chess.join.skip";
-const CODE_LEN = 4; // the relay hands out four-digit codes; a longer one still works with the Join button
 
 type Store = Pick<Storage, "getItem" | "setItem">;
 const local = (): Store | null => { try { return localStorage; } catch { return null; } };
@@ -46,7 +45,7 @@ export function mountJoinLanding(root: HTMLElement, deps: LandingDeps) {
   };
   const teardown = () => { page.remove(); document.body.classList.remove("remote"); };
   f.onsubmit = (e) => { e.preventDefault(); submit(); };
-  i.oninput = () => { err.textContent = ""; i.value = i.value.replace(/\D/g, ""); if (i.value.length === CODE_LEN) submit(); };
+  i.oninput = () => { err.textContent = ""; i.value = i.value.replace(/\D/g, ""); };
   app.onclick = () => { if (keep.checked) { try { store?.setItem(SKIP_KEY, "1"); } catch { /* private mode */ } } teardown(); deps.onApp(); };
   i.focus();
   return { page, input: i };

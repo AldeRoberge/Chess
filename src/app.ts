@@ -489,6 +489,7 @@ export function boot(root: HTMLElement): Boot {
     return on("source.synthetic") && !camFrames().some((c) => [...graph.nodes.values()].some((n) => n.type === "source.webcam" && n.params.online !== false && graph.states.get(n.id)?.frame));
   };
   const remote = new RemoteHost({
+    cloud: !!(import.meta as any).env?.PROD,
     base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
     build: (framed, notice, now) => {
       const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
@@ -503,7 +504,7 @@ export function boot(root: HTMLElement): Boot {
     command: (c, now) => applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
   });
   document.getElementById("phone")!.onclick = () => {
-    if (remote.available === false) notify("Phone access is built into the dev server. Start the app with npm run dev (or start-chess), then open it on this computer as localhost.", [], "warn", { title: "Phone remote is not running" });
+    if (remote.available === false) notify("The phone connection could not be opened. Reload this page to retry. If it still fails, the server’s phone bridge may be unavailable.", [], "warn", { title: "Phone remote is not running" });
     else if (remote.available === null) notify("Still checking for the phone connection. Try again in a second.", [], "info", { title: "Phone remote" });
     else {
       const away = remote.urls.some((u) => u.includes("alderoberge.com"));

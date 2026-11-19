@@ -134,7 +134,7 @@ const engine: NodeSpec<EngState> = {
     bus.botColor = params.color === "w" ? "w" : "b";
     if (!state.engine && !state.loading) { state.loading = true; void createEngine().then((e) => { state.engine = e; state.loading = false; state.info = e.constructor.name; }); }
     if (state.hintFen && state.hintFen !== g.fen) { bus.engineHint = null; state.hintFen = ""; }
-    if (state.engine && g.status === "synced" && !g.over && g.turn === params.color && state.thinkingFen !== g.fen) {
+    if (state.engine && (g.status === "synced" || g.status === "moved") && !g.over && g.turn === params.color && state.thinkingFen !== g.fen) {
       state.thinkingFen = g.fen;
       state.engine.setElo(d.elo);
       const fen = g.fen;

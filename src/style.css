@@ -529,6 +529,7 @@ body.simple #organize,body.simple #addsec{display:none!important}
   .ne-tools{left:8px;top:8px}
   .ne-tools button{width:44px;height:44px;padding:0;border-radius:999px;justify-content:center}
   .ne-tools button .lbl{display:none}
+}
 /* Table panel columns: stacked by default (the wrappers vanish); in the simple view the dock is a size container so the board fits its height and nothing needs scrolling. */
 .cc-board,.cc-side{display:contents}
 body.simple #dock{container:dock/size;overflow:hidden}
@@ -541,4 +542,12 @@ body.simple .cc-side .moves{max-height:none;flex:1 1 auto;min-height:60px}
   body.simple .panel.table{flex-direction:row;justify-content:center;align-items:stretch;gap:20px;padding:12px 16px}
   body.simple .cc-board{align-self:flex-start;width:min(max(220px,100cqh - 140px),100cqw - 392px,1000px)}
   body.simple .cc-side{flex:0 1 360px;min-width:260px}
+}
+
+/* On phones the table owns vertical scrolling; its sections keep their natural height. */
+@media (max-width:900px){
+  body.simple .panel.table{display:flex;flex-direction:column;justify-content:flex-start;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+  body.simple .cc-board{width:min(100%,440px);flex:none}
+  body.simple .cc-side{flex:none;min-height:auto;min-width:0;overflow:visible}
+  body.simple .cc-side .moves{flex:none;max-height:240px}
 }

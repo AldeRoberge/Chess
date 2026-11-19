@@ -92,6 +92,26 @@ describe("game.engine node", () => {
     const n = node("game.engine"); n.run({ game: gameAfter("e4"), director: director() }); await tick(); n.dispose(); expect(eng.dispose).toHaveBeenCalled();
     expect(() => node("game.engine").dispose()).not.toThrow();
   });
+  it("starts the reply from an accepted move even if later camera readings stay pending", async () => {
+    const eng = fakeEngine(); vi.mocked(createEngine).mockResolvedValue(eng as any);
+    const engine = node("game.engine", { color: "b", virtualHand: false });
+    const tracker = node("game.tracker", { confirm: 2 });
+    engine.run({ game: gameAfter(), director: director() }, 0); await tick();
+    const g = new Chess(); g.move("Nf3");
+    const seen = belief(g); seen.occ[44] = 1; seen.white[44] = 0; seen.conf[44] = 0.8;
+    tracker.run({ board: seen, director: director() }, 100);
+    const accepted = tracker.run({ board: seen, director: director() }, 200)!;
+    expect(accepted.game.status).toBe("moved");
+    engine.run({ game: accepted.game, director: director() }, 200); await tick();
+    expect(eng.bestMove).toHaveBeenCalledTimes(1);
+    expect(bus.engineHint).toEqual({ from: "e7", to: "e5" });
+    for (let i = 0; i < 5; i++) {
+      const next = tracker.run({ board: seen, director: director() }, 300 + i)!;
+      expect(next.game.status).toBe("synced");
+      engine.run({ game: next.game, director: director() }, 300 + i);
+    }
+    expect(eng.bestMove).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("experience nodes", () => {
