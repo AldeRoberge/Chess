@@ -8,7 +8,7 @@ import { GroupLayer } from "./groups";
 import { NODE_H, NODE_W } from "../core/groups";
 import { profiler, type NodeSummary } from "../core/profiler";
 import type { NodeInstance, NodeSpec, ParamDef, PortType } from "../core/types";
-import { drawRows, objRows } from "../plugins/shared";
+import { drawRows, fmtCorners, frameScale, objRows, parseCorners } from "../plugins/shared";
 import { portsCompatible } from "../core/types";
 import { openQuadEditor } from "./quadEditor";
 import { openModelChart } from "./modelChart";
@@ -290,10 +290,20 @@ export class NodeEditor {
         b.onpointerdown = (e) => e.stopPropagation();
         b.onclick = (e) => {
           e.preventDefault(); e.stopPropagation();
+          const live = () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null;
+          // The editor works in the picture's own pixels. Saved corners stay in the 480×360 reader frame, so a sharper camera does not move the grid.
+          const toView = (stored: string) => {
+            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(stored);
+            return !pts || (sc.sx === 1 && sc.sy === 1) ? stored : fmtCorners(pts.map((pt) => ({ x: pt.x * sc.sx, y: pt.y * sc.sy })));
+          };
+          const toStored = (view: string) => {
+            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(view);
+            return !pts || (sc.sx === 1 && sc.sy === 1) ? view : fmtCorners(pts.map((pt) => ({ x: pt.x / sc.sx, y: pt.y / sc.sy })));
+          };
           openQuadEditor({
-            title: `${this.spec(n).title} — ${p.label}`, value: String(n.params[p.id]), names: q.names, grid: q.grid,
-            frame: () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null,
-            change: (v) => { t.value = v; commit(v); }, done: () => {},
+            title: `${this.spec(n).title} — ${p.label}`, value: toView(String(n.params[p.id])), names: q.names, grid: q.grid,
+            frame: live,
+            change: (v) => { const s = toStored(v); t.value = s; commit(s); }, done: () => {},
           });
         };
         pn.append(b);

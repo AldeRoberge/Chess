@@ -1,9 +1,9 @@
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
-import { AlignFollower, AutoAligner } from "./autoAlign";
+import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { squareToQuad } from "./quadMap";
-import { AlignmentMeter, alignColor, drawEdgeIcons, iconLevels, scoreAlignment } from "./boardGuide";
+import { AlignmentMeter, alignColor, drawEdgeIcons, drawMatrixGround, iconLevels, readPerspective, scoreAlignment } from "./boardGuide";
 
 export { squareToQuad };
 
@@ -60,17 +60,20 @@ export function openQuadEditor(o: QuadEditorOpts) {
   };
   const autoBox = document.createElement("div"); autoBox.className = "qe-auto"; autoBox.hidden = o.grid <= 1;
   const progRow = mkRow("Progress"), confRow = mkRow("Confidence"); autoBox.append(progRow.row, confRow.row);
-  let follow = true; const followBtn = btn("Follow camera: on");
-  followBtn.title = "When the camera is nudged, move the grid to keep it on the board";
-  followBtn.onclick = () => { follow = !follow; followBtn.textContent = `Follow camera: ${follow ? "on" : "off"}`; follower.unlock(); };
-  opts.append(followBtn); followBtn.hidden = o.grid <= 1;
+  let follow = true; const followBtn = btn("Try following camera: on");
+  followBtn.title = "When the camera is nudged, ease the grid so it stays on the board";
+  followBtn.onclick = () => { follow = !follow; followBtn.textContent = `Try following camera: ${follow ? "on" : "off"}`; follower.unlock(); };
+  let matrix = true; const matrixBtn = btn("Matrix: on");
+  matrixBtn.title = "Show the detected perspective lines as a transparent ground";
+  matrixBtn.onclick = () => { matrix = !matrix; matrixBtn.textContent = `Matrix: ${matrix ? "on" : "off"}`; };
+  opts.append(followBtn, matrixBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1;
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
   box.append(head, hint, cv, meterBox, autoBox, bar, opts); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;
-  let sel = 0, raf = 0, closed = false, levels: number[] | undefined, levelsAt = 0;
+  let sel = 0, raf = 0, closed = false, levels: number[] | undefined, levelsAt = 0, ground: ReturnType<typeof readPerspective> = null, groundAt = 0;
   const emit = () => o.change(fmtCorners(pts));
   const paint = () => {
     if (closed) return;
@@ -84,12 +87,18 @@ export function openQuadEditor(o: QuadEditorOpts) {
       aligner.step(10);
       if (aligner.changed) { aligner.changed = false; pts = aligner.corners.map((p) => ({ ...p })); emit(); }
       progress = aligner.progress; status = aligner.label; doneConf = aligner.confidence;
-      if (aligner.done) { if (aligner.phase === "done") follower.lock(fr ?? o.frame()!, pts); aligner = null; auto.textContent = "Auto detect"; }
+      if (aligner.done) {
+        if (aligner.phase === "done") {
+          const pic = fr ?? o.frame();
+          if (pic) { rememberLayout(pts, pic.width, pic.height); follower.lock(pic, pts); }
+        }
+        aligner = null; auto.textContent = "Auto detect";
+      }
     } else if (o.grid > 1 && fr && follow) {
       if (!follower.locked) { if (meter.good) follower.lock(fr, pts); }
       else {
         const fixed = follower.tick(fr, pts);
-        if (fixed) { pts = fixed; emit(); status = "Camera moved: grid adjusted"; }
+        if (fixed) { pts = fixed; emit(); status = follower.status === "adjusting" ? "Following the camera…" : "Camera moved: grid adjusted"; }
         else if (follower.status === "adjusting") status = "Camera moved: re-fitting…";
         else if (follower.status === "lost") { follower.unlock(); startAuto(); }
       }
@@ -106,6 +115,11 @@ export function openQuadEditor(o: QuadEditorOpts) {
       const text = live ? meter.label : "No camera picture to check against."; if (meterText.textContent !== text) meterText.textContent = text;
       meterBox.classList.toggle("good", live && meter.good);
     }
+    // The traced square edges, drawn as a transparent ground so the picture shows through them.
+    const nowGround = performance.now();
+    if (o.grid > 1 && fr && matrix && nowGround - groundAt > 180) { groundAt = nowGround; try { ground = readPerspective(fr, pts); } catch { ground = null; } }
+    if (!fr || !matrix) ground = null;
+    if (ground) drawMatrixGround(ctx, ground, (p) => ({ x: p.x * sx, y: p.y * sy }));
     // Casing first (the inverse of the picture, or dark), so the coloured line reads on light and dark squares alike.
     const lines = (draw: () => void) => { for (let i = 0; i <= o.grid && o.grid > 1; i++) { const t = i / o.grid; for (const [a, b] of [[P(t, 0), P(t, 1)], [P(0, t), P(1, t)]]) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); draw(); } } };
     const outline = () => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy))); ctx.closePath(); };
@@ -144,7 +158,11 @@ export function openQuadEditor(o: QuadEditorOpts) {
     const up = () => { cv.removeEventListener("pointermove", move); cv.removeEventListener("pointerup", up); };
     cv.addEventListener("pointermove", move); cv.addEventListener("pointerup", up);
   });
-  const close = (keep: boolean) => { if (closed) return; closed = true; cancelAnimationFrame(raf); back.remove(); document.removeEventListener("keydown", key, true); if (!keep) o.change(start); o.done(); };
+  const close = (keep: boolean) => {
+    if (closed) return;
+    if (keep) { const pic = o.frame(); if (pic) rememberLayout(pts, pic.width, pic.height); }
+    closed = true; cancelAnimationFrame(raf); back.remove(); document.removeEventListener("keydown", key, true); if (!keep) o.change(start); o.done();
+  };
   const key = (e: KeyboardEvent) => {
     if (e.key === "Escape") { e.preventDefault(); close(false); return; }
     if (e.key === "Enter") { e.preventDefault(); close(true); return; }
@@ -162,7 +180,8 @@ export function openQuadEditor(o: QuadEditorOpts) {
       let seed: Pt[] | null = null;
       try { const q = findCheckerCorners(fr); seed = q ? orientBoardCorners(fr, q) : null; } catch { seed = null; }
       follower.unlock(); progress = 0; doneConf = 0;
-      aligner = new AutoAligner(fr, seed ?? pts); auto.textContent = "Stop";
+      rememberLayout(pts, fr.width, fr.height);
+      aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); auto.textContent = "Stop";
       return;
     }
     legacyAuto();

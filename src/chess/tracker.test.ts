@@ -33,6 +33,23 @@ describe("PositionTracker", () => {
     for (let i = 0; i < 5; i++) { const r = t.observe(covered); expect(r.status).toBe("pending"); expect(r.history).toEqual([]); }
     expect(t.observe(settled(g)).status).toBe("pending"); expect(t.observe(settled(g)).history).toEqual(["Nc3"]); // once the arm is gone the real move is accepted
   });
+  it("still accepts a pawn move when one soft extra square is also lit", () => {
+    const t = new PositionTracker();
+    const g = new Chess(); g.move("e4");
+    const lit = settled(g);
+    lit.occ[42] = 1; lit.white[42] = 1; lit.conf[42] = 0.25; // c3 glows, but e2-e4 is clear
+    t.observe(lit);
+    expect(t.observe(lit).history).toEqual(["e4"]);
+  });
+  it("accepts a king step even when the square it lands on is only softly read", () => {
+    const before = new Chess("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1");
+    const after = new Chess(before.fen()); after.move("Ke2");
+    const t = new PositionTracker(); t.reset(before.fen());
+    const soft = settled(after);
+    soft.conf[60] = 0.35; soft.conf[52] = 0.35; // e1 and e2: the camera sees the step, just not crisply
+    t.observe(soft);
+    expect(t.observe(soft).history).toEqual(["Ke2"]);
+  });
   it("will not commit a king step while the rook's square is still unread: half a castle waits, then O-O is accepted", () => {
     const castled = new Chess("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1"), after = new Chess(castled.fen()); after.move("O-O");
     const t = new PositionTracker(); t.reset(castled.fen());

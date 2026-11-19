@@ -25,7 +25,7 @@
           "online": true,
           "device": "",
           "channel": "luma",
-          "fps": 12
+          "fps": 4
         },
         "w": 360
       },
@@ -53,7 +53,7 @@
           "online": true,
           "device": "",
           "channel": "luma",
-          "fps": 12
+          "fps": 4
         },
         "w": 360
       },

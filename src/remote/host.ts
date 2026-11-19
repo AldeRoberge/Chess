@@ -3,6 +3,7 @@
  * and turns a move sent from a phone into something that happens at the table.
  */
 import { Chess } from "chess.js";
+import { fmtClock } from "../clock/types";
 import type { GrayFrame } from "../vision/types";
 import type { PlayMode, RemoteCommand, RemoteMove, RemoteState } from "./protocol";
 
@@ -14,6 +15,7 @@ export interface BusView {
   botColor: "w" | "b" | null;
   cameras: { id: string; online: boolean; quality: number }[];
   lines: { name: string; text: string }[];
+  clock?: { white: { ms: number }; black: { ms: number }; running: "w" | "b" | null } | null;
 }
 
 /** What a move from a phone can do right now: play it on the virtual table, show it as an arrow for a real board, or nothing. */
@@ -42,6 +44,7 @@ export function snapshot(b: BusView, opts: { now: number; virtualBoard: boolean;
     cameras: b.cameras.map((c) => ({ id: c.id, online: c.online, quality: c.quality, hasFrame: opts.framed.has(c.id) })),
     lines: b.lines.slice(-5).map((l) => ({ name: l.name, text: l.text })),
     play: playMode(b, opts.virtualBoard), notice: opts.notice,
+    clocks: b.clock ? { white: fmtClock(b.clock.white.ms), black: fmtClock(b.clock.black.ms), running: b.clock.running } : null,
   };
 }
 

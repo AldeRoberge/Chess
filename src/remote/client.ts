@@ -53,6 +53,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const head = el("div", "rm-head"), title = el("span", "rm-title", "Chess XP"), conn = el("span", "rm-conn", "Connecting"); conn.setAttribute("role", "status");
   head.append(title, conn);
   const turn = el("p", "rm-turn"); turn.setAttribute("aria-live", "polite");
+  const clocksEl = el("p", "rm-clocks"); clocksEl.hidden = true;
   const boardEl = el("div", "rm-board"); boardEl.setAttribute("role", "group"); boardEl.setAttribute("aria-label", "Chess board");
   const nav = el("div", "rm-nav");
   const navBtn = (ic: string, label: string, aria: string, run: () => void, cls = "") => { const b = withIcon(el("button", `rm-btn ${cls}`.trim(), label), ic, 20); b.type = "button"; b.setAttribute("aria-label", aria); b.onclick = run; return b; };
@@ -74,7 +75,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const tabBtns = (["moves", "camera", "info"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info" }[t]), { moves: "list", camera: "camera", info: "info" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
-  function build() { page.replaceChildren(head, turn, boardEl, promoEl, nav, acts, notice, tabs, panel); draw(); }
+  function build() { page.replaceChildren(head, turn, clocksEl, boardEl, promoEl, nav, acts, notice, tabs, panel); draw(); }
   const markTabs = () => tabBtns.forEach((b, i) => { const on = (["moves", "camera", "info"] as Tab[])[i] === tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
 
   const total = () => st?.moves.length ?? 0;
@@ -153,13 +154,16 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   function showNotice(text: string, ok: boolean) { notice.textContent = text; notice.classList.toggle("bad", !ok); }
 
   function drawTurn() {
-    if (!st) { turn.textContent = "Waiting for the computer to share a game…"; return; }
+    if (!st) { turn.textContent = "Waiting for the computer to share a game…"; clocksEl.hidden = true; clocksEl.textContent = ""; return; }
     turn.classList.toggle("back", view !== null);
-    if (view !== null) {
-      turn.textContent = view === 0 ? "Looking back: start position" : `Looking back: after ${Math.ceil(view / 2)}${view % 2 ? "." : "..."} ${st.moves[view - 1]}`;
-      return;
-    }
-    turn.textContent = st.over ? "Game over" : `${sideName(st.turn)} to move, move ${Math.floor(st.moves.length / 2) + 1}`;
+    if (view !== null) turn.textContent = view === 0 ? "Looking back: start position" : `Looking back: after ${Math.ceil(view / 2)}${view % 2 ? "." : "..."} ${st.moves[view - 1]}`;
+    else turn.textContent = st.over ? "Game over" : `${sideName(st.turn)} to move, move ${Math.floor(st.moves.length / 2) + 1}`;
+    const c = st.clocks;
+    if (!c) { clocksEl.hidden = true; clocksEl.textContent = ""; return; }
+    clocksEl.hidden = false;
+    const w = c.running === "w" ? `${c.white} running` : c.white;
+    const b = c.running === "b" ? `${c.black} running` : c.black;
+    clocksEl.textContent = `White ${w}  ·  Black ${b}`;
   }
 
   function drawNav() {
@@ -195,6 +199,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
         row("Tracker", { synced: "Following the board", lifted: "A piece is in the air", illegal: "Board does not match a legal move", moved: "Move just read", pending: "Waiting for the board" }[st.status] ?? st.status);
         row("Phase", st.phase); row("Position confidence", `${Math.round(st.fidelity * 100)}%`);
         row("Last move", st.last?.san ?? "none yet");
+        if (st.clocks) row("Clocks", `White ${st.clocks.white}${st.clocks.running === "w" ? " (running)" : ""} · Black ${st.clocks.black}${st.clocks.running === "b" ? " (running)" : ""}`);
         for (const c of st.cameras) row(`Camera ${c.id}`, `${c.online ? "online" : "offline"}, picture quality ${Math.round(c.quality * 100)}%`);
         row("Phones watching", String(clients));
       } else row("Status", "Waiting for the computer");
@@ -205,7 +210,12 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       };
       const g = new Chess();
       for (const san of st?.moves ?? []) try { g.move(san); } catch { break; }
-      const copies = el("div", "rm-copies"); copies.append(copy("Copy PGN", g.pgn()), copy("Copy FEN", g.fen()));
+      const save = withIcon(el("button", "rm-btn", "Download PGN"), "export", 18); save.type = "button";
+      save.onclick = () => {
+        const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([g.pgn()], { type: "text/plain;charset=utf-8" })); a.download = "chess-xp.pgn"; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      };
+      const copies = el("div", "rm-copies"); copies.append(copy("Copy PGN", g.pgn()), copy("Copy FEN", g.fen()), save);
       panel.append(dl, copies);
       if (st?.lines.length) { const l = el("ul", "rm-lines"); for (const x of [...st.lines].reverse()) { const li = el("li"); li.append(el("b", "", x.name), document.createTextNode(` ${x.text}`)); l.append(li); } panel.append(el("h2", "", "Narration"), l); }
     }

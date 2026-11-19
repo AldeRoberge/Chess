@@ -33,17 +33,25 @@ function luma(f: GrayFrame, p: Pt): number | null {
 }
 
 const median = (xs: number[]) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+/** Above this, the samples inside one square disagree because a piece is standing there, not because the wood changed colour. */
+const PIECE = 46;
+
+/** Median brightness of one square, and how far the samples spread. The corners stay on the wood when a piece covers the middle. */
+function squareTone(f: GrayFrame, m: BoardMap, u: number, v: number): { mid: number; spread: number } | null {
+  const d = 0.4 / 8;
+  const s = [[0, 0], [-d, -d], [d, -d], [d, d], [-d, d]].map(([du, dv]) => luma(f, m(u + du, v + dv))).filter((x): x is number => x !== null);
+  if (s.length < 3) return null;
+  let lo = s[0], hi = s[0];
+  for (const n of s) { if (n < lo) lo = n; if (n > hi) hi = n; }
+  s.sort((a, b) => a - b);
+  return { mid: s[s.length >> 1], spread: hi - lo };
+}
 /** How far (in squares) each way a grid line is searched for the real edge, and the step between tries. */
 const REACH = 0.25, STEP = 0.025, HALF = 0.04;
 const OFFSETS = Array.from({ length: Math.round((2 * REACH) / STEP) + 1 }, (_, i) => -REACH + i * STEP);
 /** Distance in squares at which the score reaches 0: the picture's edge is this far from the grid line. */
 const FAR = 0.15;
 
-/**
- * Where is the real edge relative to one grid line? For the 8 stretches of the line (one per square) it reads the
- * brightness step across it at a range of offsets, takes the median over the stretches (pieces cover only a few), and
- * returns the offset where the step peaks. For a lined-up grid that is 0, whatever the blur of the lens.
- */
 /** Signed edge-offset against position along the line. Squares per square; 0 when every stretch is shifted by the same amount. */
 function offsetSlope(samples: { j: number; off: number; w: number }[]): number {
   if (samples.length < 4) return 0;
@@ -55,6 +63,12 @@ function offsetSlope(samples: { j: number; off: number; w: number }[]): number {
   return sjj < 1e-6 ? 0 : sjo / sjj;
 }
 
+/**
+ * Where is the real edge relative to one grid line? For the 8 stretches of the line (one per square) it reads the
+ * brightness step across it at a range of offsets, takes the median over the stretches (pieces cover only a few), and
+ * returns the offset where the step peaks. For a lined-up grid that is 0, whatever the blur of the lens.
+ * `slope` is how that offset changes along the line: the tilt a single median cannot see.
+ */
 function lineError(f: GrayFrame, m: BoardMap, alongU: boolean, k: number): { at: number; per: number[]; slope: number; slopeN: number } | null {
   const prof: number[] = [], h = HALF / 8, grid: number[][] = []; // grid[offset][stretch], NaN where unreadable
   for (const s of OFFSETS) {
@@ -112,12 +126,18 @@ export function scoreAlignment(f: GrayFrame, m: BoardMap): Alignment {
   for (let k = 1; k < 8; k++) for (const alongU of [true, false]) take(k, alongU, errs);
   const outer: number[] = [];
   for (const k of [0, 8]) for (const alongU of [true, false]) take(k, alongU, outer);
+  const votes: { s: number; piece: boolean }[] = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const u = (c + 0.5) / 8, v = (r + 0.5) / 8;
-    // neighbours are the other colour; a1 is dark, i.e. file + rank odd, and rank = 8 - r
-    const mid = luma(f, m(u, v)), nb = [luma(f, m(u - 1 / 8, v)), luma(f, m(u + 1 / 8, v)), luma(f, m(u, v - 1 / 8)), luma(f, m(u, v + 1 / 8))].filter((x): x is number => x !== null);
-    if (mid !== null && nb.length >= 2) polarity.push(((c + 8 - r) % 2 === 1 ? -1 : 1) * (mid - nb.reduce((x, y) => x + y, 0) / nb.length));
+    // neighbours are the other colour; a1 is dark, i.e. file + rank odd, and rank = 8 - r.
+    // A piece covers the middle, so that square does not get a vote when its own samples disagree.
+    const tone = squareTone(f, m, u, v);
+    const around = [squareTone(f, m, u - 1 / 8, v), squareTone(f, m, u + 1 / 8, v), squareTone(f, m, u, v - 1 / 8), squareTone(f, m, u, v + 1 / 8)].filter((x): x is { mid: number; spread: number } => x !== null);
+    const calmNb = around.filter((t) => t.spread <= PIECE), nb = calmNb.length >= 2 ? calmNb : around;
+    if (tone && nb.length >= 2) votes.push({ s: ((c + 8 - r) % 2 === 1 ? -1 : 1) * (tone.mid - nb.reduce((x, t) => x + t.mid, 0) / nb.length), piece: tone.spread > PIECE });
   }
+  const calm = votes.filter((v) => !v.piece), chosen = calm.length >= 20 ? calm : votes;
+  for (const v of chosen) polarity.push(v.s);
   const slopeSum = slopeW.reduce((a, b) => a + b, 0);
   const warp = slopeSum > 0 ? slopes.reduce((s, v, i) => s + v * slopeW[i], 0) / slopeSum : 0;
   if (errs.length < 10 || polarity.length < 30) return { q: 0, flipped: false, contrast: 0, error: REACH, outside: 0, fine: REACH, warp: 0 }; // most of the grid is outside the picture
@@ -355,6 +375,52 @@ export function traceSquareGuide(f: GrayFrame, corners: Pt[]): { corners: Pt[]; 
     return { corners: snapped, guide: again ?? guide };
   }
   return { corners, guide };
+}
+
+/** The square edges traced from the picture, without moving the corners. Null when the squares are not visible enough. */
+export function readPerspective(f: GrayFrame, corners: Pt[]): GridGuide | null {
+  return traceLines(f, squareToQuad(corners), sideLen(corners) / 8);
+}
+
+/**
+ * Draws those traced edges as a faint ground grid: a transparent plane with the perspective lines across it,
+ * so the picture still shows through.
+ */
+export function drawMatrixGround(ctx: CanvasRenderingContext2D, g: GridGuide, P: (p: Pt) => Pt) {
+  const files = g.lines.filter((l) => l.alongU).sort((a, b) => a.k - b.k);
+  const ranks = g.lines.filter((l) => !l.alongU).sort((a, b) => a.k - b.k);
+  const ends = (ln: TracedLine, others: TracedLine[]): [Pt, Pt] | null => {
+    const hits: Pt[] = [];
+    for (const o of others) { const p = intersect(ln, o); if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) hits.push(p); }
+    if (hits.length < 2) return null;
+    let i0 = 0, i1 = 1, best = -1;
+    for (let i = 0; i < hits.length; i++) for (let j = i + 1; j < hits.length; j++) {
+      const d = (hits[i].x - hits[j].x) ** 2 + (hits[i].y - hits[j].y) ** 2;
+      if (d > best) { best = d; i0 = i; i1 = j; }
+    }
+    const ax = hits[i0].x, ay = hits[i0].y, bx = hits[i1].x, by = hits[i1].y;
+    return [{ x: ax + (ax - bx) * 0.06, y: ay + (ay - by) * 0.06 }, { x: bx + (bx - ax) * 0.06, y: by + (by - ay) * 0.06 }];
+  };
+  const segs: [Pt, Pt][] = [];
+  for (const ln of files) { const s = ends(ln, ranks); if (s) segs.push(s); }
+  for (const ln of ranks) { const s = ends(ln, files); if (s) segs.push(s); }
+  if (segs.length < 4) return;
+  ctx.save();
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  if (files.length >= 2 && ranks.length >= 2) {
+    const quad = [intersect(files[0], ranks[0]), intersect(files[files.length - 1], ranks[0]), intersect(files[files.length - 1], ranks[ranks.length - 1]), intersect(files[0], ranks[ranks.length - 1])];
+    if (quad.every((p): p is Pt => !!p && Number.isFinite(p.x) && Number.isFinite(p.y))) {
+      ctx.beginPath();
+      quad.forEach((p, i) => { const q = P(p); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); });
+      ctx.closePath();
+      ctx.fillStyle = "rgba(64, 255, 176, 0.14)";
+      ctx.fill();
+    }
+  }
+  ctx.strokeStyle = "rgba(64, 255, 176, 0.72)";
+  ctx.lineWidth = 1.25;
+  for (const [a, b] of segs) { const A = P(a), B = P(b); ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); }
+  ctx.restore();
 }
 
 /** Keeps the readout calm: it follows the score, a little late, so a moving hand does not make it flicker. */

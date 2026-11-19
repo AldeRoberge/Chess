@@ -5,6 +5,18 @@ import { bus } from "../core/bus";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { flatFrame, node, shoot, tick } from "../test/helpers";
 import { CAM_PRESETS, drawBoard, drawFrame, fmtCorners, looksLikeStart, parseCorners, readSquares } from "./shared";
+import { resample } from "../vision/enhance";
+
+describe("resample", () => {
+  it("returns the same frame when the size already matches, and area-averages otherwise", () => {
+    const same = flatFrame(7, 4, 2);
+    expect(resample(same, 4, 2)).toBe(same);
+    const data = Uint8ClampedArray.from([0, 10, 0, 10, 100, 110, 100, 110]);
+    const out = resample({ width: 4, height: 2, data, t: 7 }, 2, 1);
+    expect(out.width).toBe(2); expect(out.height).toBe(1); expect(out.t).toBe(7);
+    expect(out.data[0]).toBe(55); expect(out.data[1]).toBe(55);
+  });
+});
 
 describe("shared painters and parsers", () => {
   it("presets come from the three camera rigs", () => { expect(Object.keys(CAM_PRESETS)).toEqual(["A", "B", "C"]); expect(CAM_PRESETS.A).toEqual(rigCorners(RIGS.A)); });
@@ -84,9 +96,22 @@ describe("source.webcam", () => {
     const gum = vi.fn(async (_c: any) => { if (opts.fail) throw new Error("denied"); return stream; });
     Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: gum, enumerateDevices: async () => opts.devices ?? [] }, configurable: true });
     let px: Uint8ClampedArray<ArrayBufferLike> = rgba(10, 200, 30);
+    let vw = 480, vh = 360;
+    const prevW = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, "videoWidth");
+    const prevH = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, "videoHeight");
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => vw });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => vh });
+    spies.push({ mockRestore: () => { if (prevW) Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", prevW); if (prevH) Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", prevH); } });
     spies.push(vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined));
-    spies.push(vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => ({ drawImage() {}, getImageData: () => ({ data: px }), fillRect() {}, fillText() {}, createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {} })) as any));
-    return { gum, set: (d: Uint8ClampedArray) => { px = d; } };
+    spies.push(vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => ({ imageSmoothingEnabled: true, drawImage() {}, getImageData: (_x: number, _y: number, w?: number, h?: number) => {
+      if (w && h && w * h * 4 !== px.length) {
+        const d = new Uint8ClampedArray(w * h * 4), r = px[0], g = px[1], b = px[2];
+        for (let i = 0; i < d.length; i += 4) { d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255; }
+        return { data: d };
+      }
+      return { data: px };
+    }, fillRect() {}, fillText() {}, createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {} })) as any));
+    return { gum, set: (d: Uint8ClampedArray) => { px = d; }, size: (w: number, h: number) => { vw = w; vh = h; } };
   };
   afterEach(cleanup);
 
@@ -152,6 +177,21 @@ describe("source.webcam", () => {
     expect(() => node("source.webcam").dispose()).not.toThrow();
   });
   it("paints the live image once it has a frame", async () => { setup(); const n = node("source.webcam", { fps: 30 }); n.run({}, 0); await tick(); n.run({}, 1000); n.paint(); });
+  it("keeps a 1280×960 camera picture instead of averaging it down to 480×360", async () => {
+    const { size } = setup(); size(1280, 960);
+    const n = node("source.webcam", { fps: 30, resolution: "1280x960" });
+    n.run({}, 0); await tick();
+    const f = n.run({}, 1000)!.frame;
+    expect(f.width).toBe(1280); expect(f.height).toBe(960);
+    expect(f.data[0]).toBe(Math.round(10 * 0.299 + 200 * 0.587 + 30 * 0.114));
+  });
+  it("shrinks a camera that is larger than the chosen capture size, without stretching it", async () => {
+    const { size } = setup(); size(1920, 1080);
+    const n = node("source.webcam", { fps: 30, resolution: "1280x960" });
+    n.run({}, 0); await tick();
+    const f = n.run({}, 1000)!.frame;
+    expect(f.width).toBe(1280); expect(f.height).toBe(720);
+  });
 });
 
 describe("vision.boardReader", () => {

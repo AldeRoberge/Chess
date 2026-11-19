@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
 import { squareToQuad } from "./quadMap";
 import { traceSquareGuide } from "./boardGuide";
-import { AlignFollower, AutoAligner, candidateLayouts, evaluate } from "./autoAlign";
+import { AlignFollower, AutoAligner, candidateLayouts, evaluate, rememberLayout, rememberedLayouts } from "./autoAlign";
 
 /** A checkerboard seen with some perspective: the unit square is mapped through the quad `c` (a8,h8,h1,a1), a1 dark. */
 function render(c: Pt[], W = 480, H = 360): GrayFrame {
@@ -28,6 +28,23 @@ describe("auto align", () => {
     const c = candidateLayouts(f, TRUE); expect(c).toHaveLength(10);
     expect(new Set(c.map((q) => q.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join())).size).toBeGreaterThan(5);
   });
+  it("remembers an alignment and tries it again next time, including at another resolution", () => {
+    const box = new Map<string, string>();
+    const store = { getItem: (k: string) => box.get(k) ?? null, setItem: (k: string, v: string) => { box.set(k, v); } };
+    rememberLayout(TRUE, 480, 360, store);
+    expect(worst(rememberedLayouts(480, 360, store)[0], TRUE)).toBeLessThan(0.01);
+    expect(rememberedLayouts(960, 720, store)[0][0].x).toBeCloseTo(TRUE[0].x * 2, 4);
+    const old = TRUE.map((p) => ({ x: p.x + 40, y: p.y - 25 }));
+    rememberLayout(old, 480, 360, store);
+    rememberLayout(old, 480, 360, store);
+    const both = rememberedLayouts(480, 360, store);
+    expect(both).toHaveLength(2);
+    expect(worst(both[0], old)).toBeLessThan(0.01);
+    const c = candidateLayouts(f, null, both);
+    expect(c.length).toBeGreaterThan(10);
+    expect(c.some((q) => worst(q, old) < 1)).toBe(true);
+    expect(rememberedLayouts(10, 10, { getItem: () => "{", setItem: () => {} })).toEqual([]);
+  });
   it("settles on the board from corners that are off", () => {
     const off = TRUE.map((p, i) => ({ x: p.x + [14, -12, 10, -16][i], y: p.y + [-10, 12, 15, -9][i] }));
     const a = run(new AutoAligner(f, off, 0));
@@ -36,18 +53,25 @@ describe("auto align", () => {
   it("puts the corners in the right order when they start turned", () => {
     const turned = [TRUE[1], TRUE[2], TRUE[3], TRUE[0]];
     const a = run(new AutoAligner(f, turned, 0));
-    const half = [TRUE[2], TRUE[3], TRUE[0], TRUE[1]];
-    console.log(JSON.stringify({ got: a.corners, costGot: evaluate(f, a.corners).cost, costTrue: evaluate(f, TRUE).cost, costHalf: evaluate(f, half).cost, worstTrue: worst(a.corners, TRUE), worstHalf: worst(a.corners, half) }));
     // with no pieces on it, a board turned half way looks the same: either order is right
-    expect(Math.min(worst(a.corners, TRUE), worst(a.corners, half))).toBeLessThan(4.5);
+    expect(Math.min(worst(a.corners, TRUE), worst(a.corners, [TRUE[2], TRUE[3], TRUE[0], TRUE[1]]))).toBeLessThan(4.5);
   });
-  it("follows a small camera move", () => {
+  it("follows a small camera move, easing toward it instead of jumping", () => {
     let t = 0; const fol = new AlignFollower(0, () => t);
     const fit = run(new AutoAligner(f, TRUE, 0)).corners; fol.lock(f, fit);
     const shifted = TRUE.map((p) => ({ x: p.x + 7, y: p.y + 4 })), g = render(shifted);
     expect(evaluate(g, fit).q).toBeLessThan(evaluate(f, fit).q);
-    let out: Pt[] | null = null; for (let i = 0; i < 200 && !out; i++) { t += 600; out = fol.tick(g, fit, 1000); }
-    expect(out).not.toBeNull(); expect(worst(out!, shifted)).toBeLessThan(4.5);
+    let cur = fit, first: Pt[] | null = null;
+    for (let i = 0; i < 80 && worst(cur, shifted) >= 4.5; i++) {
+      t += 20;
+      const step = fol.tick(g, cur, 1000);
+      if (!step) continue;
+      if (!first) first = step;
+      cur = step;
+    }
+    expect(first).not.toBeNull();
+    expect(worst(first!, fit)).toBeLessThan(worst(shifted, fit) * 0.5);
+    expect(worst(cur, shifted)).toBeLessThan(4.5);
   });
   it("takes its perspective from the square edges, including when the rim is covered", () => {
     const skew = [{ x: TRUE[0].x + 16, y: TRUE[0].y - 6 }, { x: TRUE[1].x - 8, y: TRUE[1].y + 10 }, { x: TRUE[2].x - 14, y: TRUE[2].y + 12 }, { x: TRUE[3].x + 11, y: TRUE[3].y - 9 }];

@@ -11,6 +11,8 @@ body.remote #app{display:block;height:auto}
 .rm-conn.off{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,var(--line))}
 .rm-turn{margin:0;font:600 var(--t-md)/1.3 var(--font-ui)}
 .rm-turn.back{color:var(--amber)}
+.rm-clocks{margin:0;font:600 var(--t-md)/1.3 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--signal-hi)}
+.rm-clocks[hidden]{display:none}
 .rm button{font:inherit}
 .rm-btn{min-height:44px;min-width:44px;padding:0 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--ink-2);color:var(--text);font:500 var(--t-md)/1 var(--font-ui);cursor:pointer}
 .rm-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px}

@@ -74,6 +74,31 @@ export function averageFrames(frames: GrayFrame[]): GrayFrame {
   return { width: f.width, height: f.height, data, t: frames[frames.length - 1].t };
 }
 
+/**
+ * Area-average a frame to exactly `tw`×`th`. The same size returns the same object.
+ * Each output pixel is the mean of the input pixels that cover it, so a 1280×960 grab
+ * becomes the 480×360 the board reader samples without a second blur from scaling up first.
+ */
+export function resample(f: GrayFrame, tw: number, th: number): GrayFrame {
+  if (tw === f.width && th === f.height) return f;
+  if (tw < 1 || th < 1) return f;
+  const data = new Uint8ClampedArray(tw * th);
+  const xScale = f.width / tw, yScale = f.height / th;
+  for (let y = 0; y < th; y++) {
+    const y0 = y * yScale, ya = Math.floor(y0), yb = Math.min(f.height, Math.ceil(y0 + yScale));
+    for (let x = 0; x < tw; x++) {
+      const x0 = x * xScale, xa = Math.floor(x0), xb = Math.min(f.width, Math.ceil(x0 + xScale));
+      let s = 0, n = 0;
+      for (let yy = ya; yy < yb; yy++) {
+        const row = yy * f.width;
+        for (let xx = xa; xx < xb; xx++) { s += f.data[row + xx]; n++; }
+      }
+      data[y * tw + x] = n ? s / n : 0;
+    }
+  }
+  return { width: tw, height: th, data, t: f.t };
+}
+
 /** Average-pool a frame down by an integer factor (a higher-resolution grab becomes a cleaner standard one). */
 export function downscale(f: GrayFrame, k: number): GrayFrame {
   if (k <= 1) return f;

@@ -131,12 +131,7 @@ export class PositionTracker {
       return this.base("synced", diff, events, b.fidelity);
     }
 
-    // No legal move ever adds a piece to the board. More occupied squares than expected means something that is not a
-    // piece (a forearm, a hand, a shadow) is covering the table: wait for it to clear instead of explaining it as a move.
-    if (obsGrid.filter(Boolean).length > exp.filter(Boolean).length) {
-      this.cand = ""; this.candN = 0;
-      return this.base("pending", diff, events, b.fidelity);
-    }
+    const surplus = obsGrid.filter(Boolean).length > exp.filter(Boolean).length;
 
     // score every legal move, then (only if needed) every legal pair
     type Cand = { moves: Move[]; cost: number; key: string; grid: string[]; unsure: number };
@@ -170,7 +165,12 @@ export class PositionTracker {
     const rival = cands.find((c) => c.key !== best?.key && c.grid.join(",") !== best?.grid.join(","));
     const ok = best && best.cost <= this.cfg.maxCost && (!rival || rival.cost - best.cost >= this.cfg.margin);
 
-    if (ok && best.unsure > 0) { // e.g. a king move that is really half a castle: wait for the rook's square to be read
+    // A castle that is only half-seen (the king has stepped, the rook's square is still unread) must wait.
+    // A king that has simply stepped one square is the move itself: a slightly soft square must not throw it away.
+    // cost 0 means the picture matches the step exactly; the squares are only soft, not contradictory.
+    // A half-castle still disagrees (the rook square is empty) and keeps waiting.
+    const kingStep = best?.moves.length === 1 && best.moves[0].piece === "k" && !best.moves[0].flags.includes("k") && !best.moves[0].flags.includes("q") && best.cost === 0;
+    if (ok && best.unsure > 0 && !kingStep) {
       this.cand = ""; this.candN = 0;
       return this.base("pending", diff, events, b.fidelity);
     }
@@ -190,6 +190,8 @@ export class PositionTracker {
     }
 
     this.cand = ""; this.candN = 0;
+    // No legal move explained the picture, and there are more pieces than the game has. That is a hand or a shadow, not a move.
+    if (surplus) return this.base("pending", diff, events, b.fidelity);
     // exactly one of our pieces vanished: a piece is in hand, waiting for the destination
     const gone = diff.filter((i) => exp[i] && !obsGrid[i]);
     if (gone.length === 1 && diff.length === 1) {

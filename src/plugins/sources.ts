@@ -9,7 +9,7 @@ import { frameHover } from "./hover";
 import { openStream } from "../setup/devices";
 
 interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string }
-/** Capture sizes: larger ones are grabbed at 960x720 and averaged 2x2 down to the 480x360 the board reader works in (less noise per pixel). */
+/** Capture sizes. The picture is kept at this size (or the camera's own size when that is smaller). The board reader averages it down to 480×360 to sample the squares. */
 const RESOLUTIONS: Record<string, [number, number]> = { "640x480": [640, 480], "960x720": [960, 720], "1280x960": [1280, 960] };
 
 const webcam: NodeSpec<WebcamState> = {
@@ -19,7 +19,7 @@ const webcam: NodeSpec<WebcamState> = {
     { id: "online", kind: "bool", label: "Online", value: true },
     { id: "device", kind: "text", label: "Device", value: "" },
     { id: "channel", kind: "select", label: "Channel", options: ["luma", "red", "green", "blue"], value: "luma" },
-    { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 12 },
+    { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 4 },
     { id: "resolution", kind: "select", label: "Capture resolution", options: Object.keys(RESOLUTIONS), value: "1280x960" },
     // Simulated faults, to test how the pipeline copes with a bad camera. All off by default.
     // Shown as a list: pick a fault from the "Add…" dropdown and it appears with its own sliders.
@@ -42,7 +42,6 @@ const webcam: NodeSpec<WebcamState> = {
     if (!params.online) { if (state.stream) stop(); setFidelity(null); return { frame: null }; }
     const [capW, capH] = RESOLUTIONS[String(params.resolution)] ?? RESOLUTIONS["640x480"];
     if (state.stream && state.res !== String(params.resolution)) stop(); // a new capture size reopens the camera
-    const k = capW > 640 ? 2 : 1; // supersample factor: grab 960x720 and average 2x2 down
     if (!state.stream && !state.starting && navigator.mediaDevices) {
       state.starting = true;
       void (async () => {
@@ -52,7 +51,7 @@ const webcam: NodeSpec<WebcamState> = {
           const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
           const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: capW, height: capH } });
           const v = document.createElement("video"); v.srcObject = stream; v.muted = true; await v.play();
-          state.stream = stream; state.video = v; state.res = String(params.resolution); state.canvas = document.createElement("canvas"); state.canvas.width = 480 * k; state.canvas.height = 360 * k; state.err = "";
+          state.stream = stream; state.video = v; state.res = String(params.resolution); state.canvas = document.createElement("canvas"); state.err = "";
           stream.getVideoTracks()[0].onended = () => stop(); // unplugged -> camera simply goes offline
         } catch (e) { state.err = String(e); }
         state.starting = false;
@@ -64,31 +63,29 @@ const webcam: NodeSpec<WebcamState> = {
       else if (params.freeze && Math.random() * 100 < Number(params.freezePct)) { state.frozenUntil = now + Number(params.freezeMs); }
       else if (params.drop && Math.random() * 100 < Number(params.dropPct)) { /* dropped: this frame never arrives, the last one stays */ }
       else {
-        const ctx = state.canvas!.getContext("2d", { willReadFrequently: true })!;
-        const cw = state.canvas!.width, ch2 = state.canvas!.height, ss = cw / 480; // ss = 2 when grabbing 960x720 to average down
-        const px = span("grab frame (read pixels)", () => { ctx.drawImage(state.video!, 0, 0, cw, ch2); return ctx.getImageData(0, 0, cw, ch2).data; });
-        const g = new Uint8ClampedArray(480 * 360);
+        const video = state.video!, canvas = state.canvas!;
+        // Keep the camera's real pixels. Only shrink when the camera is larger than the chosen capture size, and do not stretch a smaller one up.
+        const vw = video.videoWidth || capW, vh = video.videoHeight || capH;
+        let tw = vw, th = vh;
+        if (vw > capW || vh > capH) { const sc = Math.min(capW / vw, capH / vh); tw = Math.max(1, Math.round(vw * sc)); th = Math.max(1, Math.round(vh * sc)); }
+        if (canvas.width !== tw || canvas.height !== th) { canvas.width = tw; canvas.height = th; }
+        const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+        ctx.imageSmoothingEnabled = tw !== vw || th !== vh;
+        const px = span("grab frame (read pixels)", () => { ctx.drawImage(video, 0, 0, tw, th); return ctx.getImageData(0, 0, tw, th).data; });
+        const g = new Uint8ClampedArray(tw * th);
         // Fake IR reads the red plane (how IR often lands in a colour camera) and beats the channel menu; black and white forces brightness.
         const ch = params.ir ? "red" : params.bw ? "luma" : String(params.channel);
         const n = g.length; // channel chosen once, not per pixel
-        const grey = ch === "red" ? (o: number) => px[o] : ch === "green" ? (o: number) => px[o + 1] : ch === "blue" ? (o: number) => px[o + 2] : (o: number) => px[o] * 0.299 + px[o + 1] * 0.587 + px[o + 2] * 0.114;
         span("to grayscale", () => {
-          if (ss === 1) {
-            if (ch === "red") for (let i = 0; i < n; i++) g[i] = px[i * 4];
-            else if (ch === "green") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 1];
-            else if (ch === "blue") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 2];
-            else for (let i = 0; i < n; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
-          } else
-            for (let y = 0; y < 360; y++)
-              for (let x = 0; x < 480; x++) { // each output pixel is the mean of a 2x2 block of the larger grab: the sensor noise drops by half
-                const o = ((y * 2) * cw + x * 2) * 4;
-                g[y * 480 + x] = (grey(o) + grey(o + 4) + grey(o + cw * 4) + grey(o + cw * 4 + 4)) / 4;
-              }
+          if (ch === "red") for (let i = 0; i < n; i++) g[i] = px[i * 4];
+          else if (ch === "green") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 1];
+          else if (ch === "blue") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 2];
+          else for (let i = 0; i < n; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
         });
         // Exposure: a gain on the picture; the Uint8ClampedArray store clips highlights (over) or shadows crush to black (under).
         const gain = params.over ? 1 + Number(params.overAmount) / 100 * 3 : params.under ? 1 - Number(params.underAmount) / 100 * 0.9 : 1;
         if (gain !== 1) span("apply exposure", () => { for (let i = 0; i < n; i++) g[i] = g[i] * gain; });
-        state.frame = { width: 480, height: 360, data: g, t: now };
+        state.frame = { width: tw, height: th, data: g, t: now };
       }
     }
     setFidelity(state.frame ? 1 : 0);

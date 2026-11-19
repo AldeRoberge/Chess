@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.stubGlobal("BroadcastChannel", FakeChannel); FakeChannel.all = []; view.made.length = 0; localStorage.clear();
   resetViewSettings(); setPieceSet("chessnut");
   virtualTable.reset(); virtualTable.seated = false; virtualTable.pointer = null;
-  Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [], botColor: null });
+  Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [], botColor: null, clock: null });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -120,11 +120,11 @@ describe("TablePanel", () => {
     pieces.value = "fantasy"; pieces.dispatchEvent(new Event("change")); expect(pieceSet().id).toBe("fantasy");
     virtualTable.game.load("4k3/4Q3/4K3/8/8/8/8/8 b - - 0 1"); p.frame(0);
     expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(false);
-    expect(p.root.querySelector(".over-banner")!.textContent).toBe("White wins");
+    expect(p.root.querySelector(".over-msg")!.textContent).toBe("White wins");
     virtualTable.game.load("4K3/4q3/4k3/8/8/8/8/8 w - - 0 1"); p.frame(8);
-    expect(p.root.querySelector(".over-banner")!.textContent).toBe("Black wins");
+    expect(p.root.querySelector(".over-msg")!.textContent).toBe("Black wins");
     virtualTable.game.load("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"); p.frame(16);
-    expect(p.root.querySelector(".over-banner")!.textContent).toBe("Draw");
+    expect(p.root.querySelector(".over-msg")!.textContent).toBe("Draw");
     p.root.querySelectorAll("button")[1].click(); expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
     setBoardTheme("green"); setPieceSet("chessnut");
   });
@@ -142,9 +142,9 @@ describe("TablePanel", () => {
     expect(p.root.querySelector('[aria-label="Follow the live game"]')!.getAttribute("aria-pressed")).toBe("true");
     btn("Takeback").click(); expect(virtualTable.game.history()).toEqual(["e4"]);
     btn("Resign").click(); expect(virtualTable.ended).toEqual({ kind: "resign", color: "b" });
-    expect(p.root.querySelector(".over-banner")!.textContent).toBe("White wins");
+    expect(p.root.querySelector(".over-msg")!.textContent).toBe("White wins");
     btn("Takeback").click(); expect(virtualTable.ended).toBeNull(); expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
-    btn("Draw").click(); expect(virtualTable.ended).toEqual({ kind: "draw" }); expect(p.root.querySelector(".over-banner")!.textContent).toBe("Draw");
+    btn("Draw").click(); expect(virtualTable.ended).toEqual({ kind: "draw" }); expect(p.root.querySelector(".over-msg")!.textContent).toBe("Draw");
     btn("Resign").click(); expect(virtualTable.ended).toEqual({ kind: "draw" }); // already over
   });
   it("snaps a dragged piece onto a legal square and names cameras on the info line", () => {
@@ -156,6 +156,37 @@ describe("TablePanel", () => {
     cv.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 0, clientY: 0 }));
     bus.cameras = [{ id: "A", online: false, quality: 0, reliability: 0 }, { id: "B", online: true, quality: 0.8, reliability: 0.9 }];
     p.frame(0); expect(p.root.querySelector(".muted")!.textContent).toContain("Camera A is offline"); expect(p.root.querySelector(".muted")!.textContent).toContain("Camera B is online");
+  });
+  it("downloads the PGN, rematches from the banner, toggles hints and legal dots, and announces legal squares", () => {
+    const p = new TablePanel(), cv = p.root.querySelector("canvas")!; rect(cv);
+    const btn = (label: string) => [...p.root.querySelectorAll("button")].find((b) => b.textContent === label)!;
+    virtualTable.game.move("e4");
+    const url = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pgn");
+    const saveClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    btn("Download PGN").click();
+    expect(url).toHaveBeenCalled(); expect(saveClick).toHaveBeenCalled();
+    expect((saveClick.mock.instances[0] as HTMLAnchorElement).download).toBe("chess-xp.pgn");
+    url.mockRestore(); saveClick.mockRestore();
+    virtualTable.game.load("4k3/4Q3/4K3/8/8/8/8/8 b - - 0 1"); p.frame(0);
+    expect(p.root.querySelector(".over-msg")!.textContent).toBe("White wins");
+    btn("Rematch").click();
+    expect(virtualTable.game.fen()).toBe(new Chess().fen()); expect(virtualTable.ended).toBeNull();
+    expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
+    const hints = btn("Hints"), dots = btn("Legal dots");
+    expect(hints.classList.contains("on")).toBe(true); expect(dots.classList.contains("on")).toBe(true);
+    hints.click(); expect(viewSettings().display.hints).toBe(false); expect(hints.classList.contains("on")).toBe(false); expect(hints.getAttribute("aria-pressed")).toBe("false");
+    dots.click(); expect(viewSettings().display.legalMoves).toBe(false); expect(dots.classList.contains("on")).toBe(false);
+    hints.click(); dots.click();
+    click(cv, 4, 6);
+    expect(cv.getAttribute("aria-label")).toContain("e2 selected"); expect(cv.getAttribute("aria-label")).toContain("e4");
+    click(cv, 4, 6); expect(cv.getAttribute("aria-label")).not.toContain("selected");
+    click(cv, 2, 7); expect(cv.getAttribute("aria-label")).toContain("c1 selected"); expect(cv.getAttribute("aria-label")).not.toContain("Legal squares");
+  });
+  it("puts the clocks on the game bar when a clock is publishing", () => {
+    const p = new TablePanel();
+    bus.clock = { t: 0, white: { ms: 300000, sigmaMs: 0, conf: 1, src: "model" }, black: { ms: 59000, sigmaMs: 0, conf: 1, src: "model" }, running: "w", control: { baseMs: 300000, incMs: 0, delayMs: 0, mode: "fischer" }, flagged: null, lastRead: null };
+    p.frame(0);
+    expect(p.root.querySelector(".turn")!.textContent).toContain("5:00"); expect(p.root.querySelector(".turn")!.textContent).toContain("0:59");
   });
 });
 

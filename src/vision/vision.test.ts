@@ -67,7 +67,7 @@ describe("BoardSampler", () => {
 
   it("default config exposes sane tunables", () => {
     const d = defaultSamplerConfig();
-    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(4);
+    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(6);
   });
   it("is uncalibrated until it has seen the start position, and then reads every piece's colour", () => {
     const t = new VirtualTable(), s = new BoardSampler("A", cfg());
@@ -101,6 +101,32 @@ describe("BoardSampler", () => {
     const o = s.read({ ...f, data });
     expect(o.occ[sq]).toBeLessThan(0.5);
   });
+  it("does not keep a square occupied after the piece leaves just because a lamp makes the wood bright and flat", () => {
+    const t = new VirtualTable(), s = new BoardSampler("A", cfg());
+    s.calibrateFromStart(shoot(t, "A", 0, 4, 2));
+    t.game.move("e4");
+    const f = shoot(t, "A", 1, 4, 2);
+    const H = boardToImage(s.cfg.corners), e2 = sqIndex("e2"), e4 = sqIndex("e4");
+    const c = applyH(H, 4.5, 6.5), rad = Math.hypot(applyH(H, 5.2, 6.5).x - c.x, applyH(H, 5.2, 6.5).y - c.y);
+    const data = new Uint8ClampedArray(f.data);
+    for (let y = 0; y < f.height; y++) for (let x = 0; x < f.width; x++) {
+      if (Math.hypot(x - c.x, y - c.y) < rad) data[y * f.width + x] = Math.min(255, data[y * f.width + x] + 70);
+    }
+    const o = s.read({ ...f, data });
+    expect(o.occ[e2]).toBeLessThan(0.5);
+    expect(o.occ[e4]).toBeGreaterThan(0.5);
+  });
+  it("reads a king that has stepped off its home square, and still sees the pawns beside it", () => {
+    const start = new VirtualTable(), moved = new VirtualTable();
+    moved.game.load("rnbqkbnr/pppppppp/8/8/4P3/8/PPPPKPPP/RNBQ1BNR w KQkq - 0 2");
+    const s = new BoardSampler("C", { ...defaultSamplerConfig(), corners: rigCorners(RIGS.C), threshold: 0.1 });
+    s.calibrateFromStart(shoot(start, "C", 0, 0, 2));
+    const o = s.read(shoot(moved, "C", 1, 0, 3));
+    expect(o.occ[sqIndex("e1")]).toBeLessThan(0.5);
+    expect(o.occ[sqIndex("e2")]).toBeGreaterThan(0.5);
+    expect(o.white[sqIndex("e2")]).toBeGreaterThan(0.5);
+    for (const name of ["b2", "d2", "f2", "g2", "e4"]) expect(o.occ[sqIndex(name)]).toBeGreaterThan(0.5);
+  });
   it("flags squares that changed sharply since the last frame as a hand / occlusion", () => {
     const t = new VirtualTable(), s = new BoardSampler("A", cfg());
     s.calibrateFromStart(shoot(t));
@@ -131,7 +157,9 @@ describe("BoardSampler", () => {
     for (let i = 0; i < 20; i++) s.read(flatFrame(104, 480, 360, i));
     expect(s.ref[27]).toBeGreaterThan(before);
     const beforeOcc = s.ref[27];
-    for (let i = 0; i < 5; i++) s.read(flatFrame(230, 480, 360, 100 + i)); // strong change = piece, no adaptation
+    const piece = flatFrame(180, 480, 360, 100);
+    for (let i = 0; i < piece.data.length; i += 2) piece.data[i] = 30; // a real piece has shading; a flat lamp must not count
+    for (let i = 0; i < 5; i++) s.read({ ...piece, t: 100 + i });
     expect(s.ref[27]).toBeCloseTo(beforeOcc, 3);
   });
   it("re-derives its sampling grid when the corners are edited", () => {

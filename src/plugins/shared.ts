@@ -1,6 +1,6 @@
 import { boardTheme } from "../ui/boardThemes";
 import { pieceImage } from "../ui/pieceSets";
-import { RIGS, rigCorners } from "../sim/rigs";
+import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
 import type { BoardBelief, GrayFrame, Pt } from "../vision/types";
 
 export const CAM_PRESETS: Record<string, Pt[]> = Object.fromEntries(Object.entries(RIGS).map(([k, r]) => [k, rigCorners(r)]));
@@ -10,6 +10,15 @@ export const parseCorners = (s: string): Pt[] | null => {
   return pts.length === 4 && pts.every((p) => p.length === 2 && p.every(Number.isFinite)) ? pts.map(([x, y]) => ({ x, y })) : null;
 };
 export const fmtCorners = (c: Pt[]) => c.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(";");
+
+/**
+ * Saved corners are in the 480×360 picture the reader samples.
+ * A larger camera frame uses those same numbers, scaled up to its own pixels.
+ * A frame that is not larger is left alone: its corners are already in its own pixels (tests, the old 480 path).
+ */
+export function frameScale(w: number, h: number): { sx: number; sy: number } {
+  return w > FRAME_W && h > FRAME_H ? { sx: w / FRAME_W, sy: h / FRAME_H } : { sx: 1, sy: 1 };
+}
 
 /** Plain grey copy of a frame, built once per frame object and shared by every preview that shows it (camera + reader previews, 15x/s). */
 const frameCache = new WeakMap<GrayFrame, HTMLCanvasElement>();

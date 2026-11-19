@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
-import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, edgeIcons, scoreAlignment, snapLevel, traceSquareGuide } from "./boardGuide";
+import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, drawMatrixGround, edgeIcons, readPerspective, scoreAlignment, snapLevel, traceSquareGuide } from "./boardGuide";
 import { squareToQuad } from "./quadEditor";
 
 /** A flat checkerboard: squares of `sq` px with the board's a8 corner at (x0, y0). a1 is dark unless `flip`. */
@@ -65,6 +65,19 @@ describe("alignment score", () => {
     const mid = traceSquareGuide(bare, off);
     expect(mid).not.toBeNull();
     expect(Math.max(...mid!.corners.map((p, i) => Math.hypot(p.x - truth[i].x, p.y - truth[i].y)))).toBeLessThan(6);
+  });
+  it("draws the traced edges as a transparent ground", () => {
+    const g = readPerspective(board(), corners());
+    expect(g).not.toBeNull();
+    expect(g!.lines.length).toBeGreaterThan(8);
+    const c = document.createElement("canvas").getContext("2d")!;
+    let strokes = 0, fills = 0;
+    const stroke = c.stroke.bind(c), fill = c.fill.bind(c);
+    c.stroke = (() => { strokes++; return stroke(); }) as typeof c.stroke;
+    c.fill = (() => { fills++; return fill(); }) as typeof c.fill;
+    drawMatrixGround(c, g!, (p) => p);
+    expect(strokes).toBeGreaterThan(6);
+    expect(fills).toBe(1);
   });
 });
 

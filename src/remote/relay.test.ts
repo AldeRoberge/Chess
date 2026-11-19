@@ -7,7 +7,7 @@ import type { RemoteState } from "./protocol";
 let server: Server | null = null;
 afterEach(() => { server?.close(); server = null; });
 
-const state = (t = Date.now()): RemoteState => ({ v: 1, t, phase: "game", status: "synced", fen: "x", turn: "w", ply: 0, over: false, moves: [], last: null, hint: null, fidelity: 1, cameras: [], lines: [], play: "virtual", notice: null });
+const state = (t = Date.now()): RemoteState => ({ v: 1, t, phase: "game", status: "synced", fen: "x", turn: "w", ply: 0, over: false, moves: [], last: null, hint: null, fidelity: 1, cameras: [], lines: [], play: "virtual", notice: null, clocks: null });
 
 async function boot(opts: Parameters<typeof createRelay>[0] = { code: "4321", addresses: () => ["10.0.0.5"] }, prefix = "/remote/") {
   const relay = createRelay(opts);

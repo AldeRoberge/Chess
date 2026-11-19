@@ -5,7 +5,7 @@ import type { RemoteState } from "./protocol";
 const state = (o: Partial<RemoteState> = {}): RemoteState => ({
   v: 1, t: 1, phase: "game", status: "synced", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", turn: "b", ply: 1, over: false, moves: ["e4"],
   last: { from: "e2", to: "e4", san: "e4" }, hint: null, fidelity: 0.9, cameras: [{ id: "A", online: true, quality: 0.8, hasFrame: true }, { id: "B", online: false, quality: 0, hasFrame: false }],
-  lines: [{ name: "Jean", text: "Un beau départ." }], play: "virtual", notice: null, ...o,
+  lines: [{ name: "Jean", text: "Un beau départ." }], play: "virtual", notice: null, clocks: null, ...o,
 });
 const flush = () => new Promise((r) => setTimeout(r, 15));
 const json = (body: unknown, status = 200) => Promise.resolve({ ok: status < 400, status, json: async () => body } as Response);
@@ -84,7 +84,22 @@ describe("phone page", () => {
   });
   it("describes a finished game and other tracker states", async () => {
     start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ over: true, status: "weird" }) }))); await flush();
-    expect(q(".rm-turn").textContent).toBe("Game over"); q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click(); expect(q(".rm-info").textContent).toContain("weird");
+    expect(q(".rm-turn").textContent).toBe("Game over"); expect(q(".rm-clocks").hidden).toBe(true);
+    q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click(); expect(q(".rm-info").textContent).toContain("weird");
+  });
+  it("shows the clocks on the turn line and the info tab, and downloads the PGN", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ clocks: { white: "5:00", black: "4:59", running: "b" }, moves: ["e4"] }) }))); await flush();
+    expect(q(".rm-clocks").hidden).toBe(false); expect(q(".rm-clocks").textContent).toBe("White 5:00  ·  Black 4:59 running");
+    q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click();
+    expect(q(".rm-info").textContent).toContain("4:59 (running)");
+    const url = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pgn");
+    const saveClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Download PGN")!.click();
+    expect(url).toHaveBeenCalled(); expect(saveClick).toHaveBeenCalled();
+    expect((saveClick.mock.instances[0] as HTMLAnchorElement).download).toBe("chess-xp.pgn");
+    url.mockRestore(); saveClick.mockRestore();
+    stop(); start(vi.fn(() => json({ rev: 2, clients: 1, state: state({ clocks: { white: "1:00", black: "0:45", running: "w" } }) }))); await flush();
+    expect(q(".rm-clocks").textContent).toBe("White 1:00 running  ·  Black 0:45");
   });
   it("lets the page be taken down", () => { const f = vi.fn(() => json({ rev: 0, clients: 0, waiting: true })); start(f); stop(); expect(document.body.classList.contains("remote")).toBe(false); });
   it("asks which piece to promote to, and cancels if the board is tapped again", async () => {

@@ -38,6 +38,8 @@ export interface RemoteState {
   play: PlayMode;
   /** The outcome of the last move sent from a phone, so every phone can show it. */
   notice: { text: string; ok: boolean; at: number } | null;
+  /** Formatted clock times when the host is publishing a clock; null if there is none. */
+  clocks: { white: string; black: string; running: "w" | "b" | null } | null;
 }
 
 export interface RemoteMove { type: "move"; from: string; to: string; promotion?: "q" | "r" | "b" | "n" }

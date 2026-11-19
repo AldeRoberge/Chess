@@ -15,7 +15,9 @@ describe("remote host", () => {
   it("snapshots the game for phones, with only the latest five narration lines", () => {
     const s = snapshot(bus(), { now: 5, virtualBoard: true, framed: new Set(["A"]), notice: null });
     expect(s).toMatchObject({ v: 1, t: 5, phase: "game", turn: "w", moves: ["e4"], last: { san: "e4" }, play: "virtual", fidelity: 0.9, cameras: [{ id: "A", hasFrame: true }] });
-    expect(s.lines).toHaveLength(5); expect(s.lines[4].text).toBe("line 6");
+    expect(s.lines).toHaveLength(5); expect(s.lines[4].text).toBe("line 6"); expect(s.clocks).toBeNull();
+    expect(snapshot(bus({ clock: { white: { ms: 61000 }, black: { ms: 59000 }, running: "w" } }), { now: 5, virtualBoard: true, framed: new Set(), notice: null }).clocks).toEqual({ white: "1:01", black: "0:59", running: "w" });
+    expect(snapshot(bus({ clock: { white: { ms: 0 }, black: { ms: 0 }, running: null } }), { now: 5, virtualBoard: true, framed: new Set(), notice: null }).clocks).toEqual({ white: "0:00", black: "0:00", running: null });
     const empty = snapshot(bus({ game: null, director: null }), { now: 1, virtualBoard: false, framed: new Set(), notice: null });
     expect(empty).toMatchObject({ phase: "idle", status: "pending", moves: [], last: null, over: false, play: "off", ply: 0 }); expect(empty.fen).toContain("rnbqkbnr");
     expect(snapshot(bus({ game: { ...game(), last: null } }), { now: 1, virtualBoard: true, framed: new Set(), notice: null }).last).toBeNull();

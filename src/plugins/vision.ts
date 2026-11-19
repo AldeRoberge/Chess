@@ -1,4 +1,4 @@
-import { averageFrames, enhance, noEnhance } from "../vision/enhance";
+import { averageFrames, enhance, noEnhance, resample } from "../vision/enhance";
 import { Fusion } from "../vision/fusion";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
 import { Stabilizer } from "../vision/stabilizer";
@@ -8,13 +8,14 @@ import { bus } from "../core/bus";
 import { applyH, boardToImage, invertH } from "../vision/homography";
 import { sqIndex, sqName } from "../vision/types";
 import { drawChevrons } from "../world/chevrons";
-import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, parseCorners, withDetail, type DetailRow } from "./shared";
+import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, frameScale, parseCorners, withDetail, type DetailRow } from "./shared";
+import { FRAME_H, FRAME_W } from "../sim/rigs";
 import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
 import { AlignFollower, evaluate } from "../ui/autoAlign";
 import { GOOD } from "../ui/boardGuide";
 
-interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number }
+interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number }
 /** Board square (0 = a8) under an image pixel for these corners, or null when the pixel is off the board. */
 function squareAtPixel(corners: { x: number; y: number }[], x: number, y: number): number | null {
   const q = applyH(invertH(boardToImage(corners)), x, y);
@@ -38,39 +39,42 @@ const reader: NodeSpec<ReaderState> = {
   ],
   previewSize: [160, 120],
   frameOf: (s) => s.frame,
-  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0 }),
+  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0 }),
   process({ frame }, { params, state, setFidelity, span }) {
     const s = state.sampler;
     s.cam = String(params.cam);
+    if (!frame) { state.frame = state.raw = state.analysis = state.cleaned = null; state.recent = []; state.obs = null; state.follower.unlock(); setFidelity(null); return { obs: null }; }
+    // The picture you line up stays at the camera's resolution. The squares are read from a 480×360 average of it, which is the space the saved corners are in.
+    const fresh = frame !== state.raw;
+    if (fresh) { state.raw = frame; state.analysis = resample(frame, FRAME_W, FRAME_H); }
+    const analysis = state.analysis!;
     // Camera nudged? Keep the corners on the board: re-fit them in small steps whenever the grid stops lining up with the squares.
-    const cur = frame && params.follow ? parseCorners(String(params.corners)) : null;
+    const cur = params.follow ? parseCorners(String(params.corners)) : null;
     if (!cur || (state.follower.locked && String(params.corners) !== state.followWrote)) state.follower.unlock(); // switched off, or the corners were edited by hand
-    if (cur && frame && frame !== state.followOf) {
-      state.followOf = frame;
+    if (cur && fresh) {
       if (!state.follower.locked) {
         const now = performance.now();
-        if (now - state.lockTry > 1000) { state.lockTry = now; if (evaluate(frame, cur).q >= GOOD) { state.follower.lock(frame, cur); state.followWrote = String(params.corners); } }
+        if (now - state.lockTry > 1000) { state.lockTry = now; if (evaluate(analysis, cur).q >= GOOD) { state.follower.lock(analysis, cur); state.followWrote = String(params.corners); } }
       } else {
-        const fixed = span("follow camera", () => state.follower.tick(frame, cur, 4));
+        const fixed = span("follow camera", () => state.follower.tick(analysis, cur, 4));
         if (fixed) { params.corners = state.followWrote = fmtCorners(fixed); }
         else if (state.follower.status === "lost") state.follower.unlock();
       }
     }
     if (state.corners !== params.corners) { const c = parseCorners(String(params.corners)); if (c) { s.cfg.corners = c; state.corners = String(params.corners); } }
     s.cfg.threshold = Number(params.threshold);
-    if (!frame) { state.frame = null; state.raw = null; state.recent = []; state.obs = null; setFidelity(null); return { obs: null }; }
     // Clean-up: a median filter plus the mean of the last few frames of a still board (benchmarked: far fewer phantom and missed pieces than reading raw frames).
-    // The mean restarts whenever the board is changing (a hand, a moved piece), so motion is never smeared into the picture.
-    if (frame !== state.raw || !state.frame) {
-      state.raw = frame;
+    // The mean restarts whenever the board is changing (a hand, a moved piece), so motion is never smeared into the picture the reader samples. The preview is not averaged.
+    if (fresh || !state.cleaned) {
       const keep = Math.max(1, Math.round(Number(params.average) || 1));
       if (state.obs && state.obs.motion > 0.02) state.recent = [];
-      state.recent.push(frame);
+      state.recent.push(analysis);
       if (state.recent.length > keep) state.recent.splice(0, state.recent.length - keep);
-      const mean = state.recent.length > 1 ? averageFrames(state.recent) : frame;
-      state.frame = span("clean up picture", () => enhance(mean, { ...noEnhance(), denoise: params.clean ? "median" : "none" }));
+      const mean = state.recent.length > 1 ? averageFrames(state.recent) : analysis;
+      state.cleaned = span("clean up picture", () => enhance(mean, { ...noEnhance(), denoise: params.clean ? "median" : "none" }));
+      state.frame = frame.width === FRAME_W && frame.height === FRAME_H ? state.cleaned : frame;
     }
-    const img = state.frame!;
+    const img = state.cleaned!;
     if (params.learn || (params.autoCal && !state.autoDone && !s.calibrated)) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; }
     if (img !== state.readOf || !state.obs) { state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight))); } // one read per camera frame
     setFidelity(state.obs.quality * (1 - Math.min(1, state.obs.motion * 4)));
@@ -83,15 +87,16 @@ const reader: NodeSpec<ReaderState> = {
     const { r, x, y, inside } = framePixel(f, p, v.w, v.h);
     if (!inside) return null;
     const cfg = s.sampler.cfg, lum = f.data[Math.floor(y) * f.width + Math.floor(x)];
-    const sq = squareAtPixel(cfg.corners, x, y), o = s.obs;
+    const sc = frameScale(f.width, f.height), ax = x / sc.sx, ay = y / sc.sy;
+    const sq = squareAtPixel(cfg.corners, ax, ay), o = s.obs, read = s.cleaned ?? f;
     const rows: TipRow[] = [{ label: "Pixel", value: `${Math.floor(x)}, ${Math.floor(y)}` }, { label: "Brightness", value: `${lum} / 255`, bar: lum / 255 }];
     const H = boardToImage(cfg.corners);
-    const at = (u: number, vv: number) => { const q = applyH(H, u, vv); return { x: r.x + q.x * r.s, y: r.y + q.y * r.s }; };
+    const at = (u: number, vv: number) => { const q = applyH(H, u, vv); return { x: r.x + q.x * sc.sx * r.s, y: r.y + q.y * sc.sy * r.s }; };
     if (sq === null) {
       rows.push({ label: "Board", value: "outside the corners", tone: "warn" });
       return { title: `pixel ${Math.floor(x)}, ${Math.floor(y)}`, tag: "off the board", color: "#9fb8ff", body: "This part of the picture is outside the four corners, so it is ignored.", rows, preview: { frame: cropFrame(f, x, y) }, mark: (ctx) => markPixel(ctx, r, x, y) };
     }
-    const dgn = s.sampler.diagnose(f, sq), m = dgn.crown, ref = dgn.ref, thr = dgn.gate, d = dgn.drive;
+    const dgn = s.sampler.diagnose(read, sq), m = dgn.crown, ref = dgn.ref, thr = dgn.gate, d = dgn.drive;
     rows.unshift({ label: "Square", value: `${sqName(sq)} (${isLightSquare(sq) ? "light" : "dark"})` });
     const tracked = bus.game?.fen ? fenPieces(bus.game.fen)[sq] ?? null : undefined;
     if (tracked !== undefined) rows.splice(1, 0, { label: "Tracked piece", value: pieceLabel(tracked) });
@@ -130,7 +135,8 @@ const reader: NodeSpec<ReaderState> = {
     withDetail(ctx, w, h, [160, 120], (pw, ph) => {
       const r = drawFrame(ctx, pw, ph, s.frame);
       if (!s.frame || !r) return;
-      const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * r.s, y: r.y + p.y * r.s }), c = s.sampler.cfg.corners;
+      const sc = frameScale(s.frame.width, s.frame.height);
+      const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * sc.sx * r.s, y: r.y + p.y * sc.sy * r.s }), c = s.sampler.cfg.corners;
       ctx.strokeStyle = "#35e0b4"; ctx.beginPath(); c.forEach((p, i) => { const q = at(p); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath(); ctx.stroke();
       if (bus.engineHint) { // the move the human must play on the real board for the bot
         const H = boardToImage(c), ctr = (n: string) => { const i = sqIndex(n), q = applyH(H, (i % 8) + 0.5, Math.floor(i / 8) + 0.5); return at(q); };
