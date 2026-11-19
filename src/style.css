@@ -332,3 +332,12 @@ aside{container-type:inline-size}
   #tabs button{padding:11px 6px}
   #app{height:100vh;height:100dvh}
 }
+
+/* buttons and tabs with an icon: 16px beside 13px text (14px in the dense performance panel), 22px above the ribbon's labels */
+.has-ic{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.has-ic .ic{flex:none}
+.rtabs>button{display:inline-flex;align-items:center;gap:7px}
+.rtabs>button .ic{flex:none;opacity:.85}.rtabs>button.on .ic{opacity:1;color:var(--signal)}
+.ne-tools button{display:inline-flex;align-items:center;gap:6px}
+.scen-pause{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.notice-actions button,.bk-bar button,.bk-head button,.bk-row button{display:inline-flex;align-items:center;gap:7px}

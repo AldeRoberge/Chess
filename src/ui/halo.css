@@ -50,7 +50,6 @@
 .halo-item.disabled{opacity:.55;cursor:not-allowed}
 /* destructive actions: indented under their camera, muted red, quieter than the main rows */
 .halo-item.danger{padding:5px 16px 9px 34px;color:var(--bad);font-size:var(--t-sm,.9em);opacity:.85}
-.halo-item.danger .halo-label::before{content:"✕";margin-right:8px;font-size:.85em}
 /* the one bold element */
 .halo-item.sel{color:var(--ink-0);background:linear-gradient(90deg,var(--signal-hi),var(--signal));box-shadow:0 0 28px color-mix(in srgb,var(--signal) 33%,transparent);clip-path:polygon(0 0,100% 0,calc(100% - 12px) 100%,0 100%)}
 .halo-item.sel .halo-value,.halo-item.sel .halo-label{color:var(--ink-0)}

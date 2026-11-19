@@ -3,9 +3,10 @@ import type { SetupConfig } from "../setup/config";
 import { AiSession, loadAiSettings, saveAiSettings, type Built } from "../workflows/ai";
 import { WORKFLOWS } from "../workflows";
 import { withSpinner } from "./spinner";
+import { BUTTON_ICON, withIcon } from "./icons";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
-const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return b; };
+const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return BUTTON_ICON[label] ? withIcon(b, BUTTON_ICON[label]) : b; };
 
 export interface WorkflowApi {
   registry: Registry;

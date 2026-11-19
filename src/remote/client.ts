@@ -5,6 +5,7 @@
 import "../style.css";
 import "./remote.css";
 import { boardTheme } from "../ui/boardThemes";
+import { withIcon } from "../ui/icons";
 import { pieceSet } from "../ui/pieceSets";
 import { Chess } from "chess.js";
 import { codeFromHash, needsPromotion, positionAt, scoreSheet, sideName, targetsFrom, type RemoteState } from "./protocol";
@@ -41,7 +42,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     const h = el("h1", "", "Join the game"), p = el("p", "rm-lead", "Enter the code shown on the computer, in the Phone window.");
     const i = el("input"); i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "one-time-code"; i.maxLength = 8; i.value = code; i.setAttribute("aria-label", "Join code"); i.placeholder = "Code";
     const err = el("p", "rm-err", problem); err.setAttribute("role", "alert");
-    const b = el("button", "rm-btn primary", "Join"); b.type = "submit";
+    const b = withIcon(el("button", "rm-btn primary", "Join"), "arrow", 18); b.type = "submit";
     f.append(h, p, i, err, b);
     f.onsubmit = (e) => { e.preventDefault(); code = i.value.trim(); if (!code) { err.textContent = "Type the code from the computer."; return; } write("chess.remote.code", code); rev = -1; build(); void poll(); };
     page.append(f); i.focus();
@@ -53,14 +54,14 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const turn = el("p", "rm-turn"); turn.setAttribute("aria-live", "polite");
   const boardEl = el("div", "rm-board"); boardEl.setAttribute("role", "group"); boardEl.setAttribute("aria-label", "Chess board");
   const nav = el("div", "rm-nav");
-  const navBtn = (label: string, aria: string, run: () => void, cls = "") => { const b = el("button", `rm-btn ${cls}`.trim(), label); b.type = "button"; b.setAttribute("aria-label", aria); b.onclick = run; return b; };
-  const first = navBtn("⏮", "First move", () => go(0)), prev = navBtn("‹", "Previous move", () => go((view ?? total()) - 1));
-  const next = navBtn("›", "Next move", () => go((view ?? total()) + 1)), last = navBtn("⏭", "Latest move", () => go(null));
-  const live = navBtn("Live", "Follow the live game", () => go(null), "live"), flip = navBtn("Flip", "Turn the board around", () => { flipped = !flipped; draw(); });
+  const navBtn = (ic: string, label: string, aria: string, run: () => void, cls = "") => { const b = withIcon(el("button", `rm-btn ${cls}`.trim(), label), ic, 20); b.type = "button"; b.setAttribute("aria-label", aria); b.onclick = run; return b; };
+  const first = navBtn("first", "", "First move", () => go(0)), prev = navBtn("prev", "", "Previous move", () => go((view ?? total()) - 1));
+  const next = navBtn("next", "", "Next move", () => go((view ?? total()) + 1)), last = navBtn("last", "", "Latest move", () => go(null));
+  const live = navBtn("live", "Live", "Follow the live game", () => go(null), "live"), flip = navBtn("flip", "Flip", "Turn the board around", () => { flipped = !flipped; draw(); });
   nav.append(first, prev, next, last, live, flip);
   const notice = el("p", "rm-notice"); notice.setAttribute("role", "status");
   const tabs = el("div", "rm-tabs"); tabs.setAttribute("role", "tablist");
-  const tabBtns = (["moves", "camera", "info"] as Tab[]).map((t) => { const b = el("button", "", { moves: "Moves", camera: "Camera", info: "Game info" }[t]); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
+  const tabBtns = (["moves", "camera", "info"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info" }[t]), { moves: "list", camera: "camera", info: "info" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
   function build() { page.replaceChildren(head, turn, boardEl, nav, notice, tabs, panel); draw(); }
@@ -154,7 +155,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       const cams = st?.cameras ?? [];
       if (!cams.length) { panel.append(el("p", "rm-empty", "No cameras are set up on the computer yet.")); return; }
       if (!cams.some((c) => c.id === cam)) cam = (cams.find((c) => c.hasFrame) ?? cams[0]).id;
-      if (cams.length > 1) { const bar = el("div", "rm-cams"); for (const c of cams) { const b = el("button", c.id === cam ? "on" : "", `Camera ${c.id}${c.online ? "" : " (offline)"}`); b.type = "button"; b.onclick = () => { cam = c.id; drawPanel(); }; bar.append(b); } panel.append(bar); }
+      if (cams.length > 1) { const bar = el("div", "rm-cams"); for (const c of cams) { const b = withIcon(el("button", c.id === cam ? "on" : "", `Camera ${c.id}${c.online ? "" : " (offline)"}`), "camera", 16); b.type = "button"; b.onclick = () => { cam = c.id; drawPanel(); }; bar.append(b); } panel.append(bar); }
       const c = cams.find((x) => x.id === cam)!;
       if (!c.hasFrame) { panel.append(el("p", "rm-empty", c.online ? "Waiting for the first picture from this camera." : "This camera is offline. Check its cable on the computer.")); return; }
       const im = el("img", "rm-shot"); im.alt = `Latest picture from camera ${c.id}`; im.src = `${api}frame/${encodeURIComponent(c.id)}.jpg?code=${encodeURIComponent(code)}&cid=${cid}&r=${frames[c.id] ?? 0}`;
