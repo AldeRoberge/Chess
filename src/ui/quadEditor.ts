@@ -1,5 +1,6 @@
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import type { GrayFrame, Pt } from "../vision/types";
+import { findBoardCorners } from "../vision/findBoard";
 
 /** Projective map of the unit square onto a quad (Heckbert), so the board grid is drawn in true perspective. */
 export function squareToQuad(q: Pt[]): (u: number, v: number) => Pt {
@@ -42,8 +43,8 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const W = 720, H = Math.round((W * fh) / fw); cv.width = W; cv.height = H; cv.style.aspectRatio = `${fw} / ${fh}`;
   const bar = document.createElement("div"); bar.className = "qe-bar";
   const btn = (t: string, cls = "") => { const b = document.createElement("button"); b.className = "qe-btn " + cls; b.textContent = t; return b; };
-  const reset = btn("Reset"), cancel = btn("Cancel"), ok = btn("Done", "primary");
-  bar.append(reset, cancel, ok);
+  const auto = btn("Auto detect"), reset = btn("Reset"), cancel = btn("Cancel"), ok = btn("Done", "primary");
+  bar.append(auto, reset, cancel, ok);
   box.append(head, cv, bar); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
@@ -93,6 +94,13 @@ export function openQuadEditor(o: QuadEditorOpts) {
   document.addEventListener("keydown", key, true);
   back.addEventListener("pointerdown", (e) => { if (e.target === back) close(false); });
   ok.onclick = () => close(true); cancel.onclick = () => close(false);
+  let autoTimer = 0;
+  auto.onclick = () => {
+    const fr = o.frame(), found = fr ? findBoardCorners(fr) : null;
+    if (found) { pts = found; emit(); auto.textContent = "Auto detect"; return; }
+    auto.textContent = fr ? "No board found" : "No camera frame";
+    clearTimeout(autoTimer); autoTimer = window.setTimeout(() => { auto.textContent = "Auto detect"; }, 2000);
+  };
   reset.onclick = () => { pts = parseCorners(start) ?? pts; emit(); };
   paint(); cv.focus();
 }
