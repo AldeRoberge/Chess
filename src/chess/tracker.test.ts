@@ -84,6 +84,16 @@ describe("PositionTracker", () => {
     for (let i = 0; i < 5; i++) { const r = t.observe(half); expect(r.history).toEqual([]); expect(r.status).not.toBe("moved"); }
     t.observe(settled(after)); expect(t.observe(settled(after)).history).toEqual(["O-O"]);
   });
+  it("accepts a first move the cameras read softly even when a tall piece casts a faint ghost on the next square", () => {
+    const g = new Chess(); g.move("Nf3");
+    const t = new PositionTracker();
+    const seen = settled(g); // g1 empty, f3 knight, both read softly; e3 half-sees the knight leaning over it
+    seen.conf[45] = 0.4; seen.conf[62] = 0.4;
+    seen.occ[44] = 0.6; seen.white[44] = 0.3; seen.conf[44] = 0.2;
+    expect(t.observe(seen).status).toBe("pending");
+    const r = t.observe(seen);
+    expect(r.status).toBe("moved"); expect(r.history).toEqual(["Nf3"]);
+  });
   it("recovers two plies when frames were dropped", () => {
     const t = new PositionTracker();
     const g = new Chess(); g.move("e4"); g.move("e5");

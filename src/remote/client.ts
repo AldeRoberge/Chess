@@ -169,7 +169,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     if (!st) { turn.textContent = "Waiting for the computer to share a game…"; clocksEl.hidden = true; clocksEl.textContent = ""; return; }
     turn.classList.toggle("back", view !== null);
     if (view !== null) turn.textContent = view === 0 ? "Looking back: start position" : `Looking back: after ${Math.ceil(view / 2)}${view % 2 ? "." : "..."} ${st.moves[view - 1]}`;
-    else turn.textContent = st.over ? "Game over" : `${sideName(st.turn)} to move, move ${Math.floor(st.moves.length / 2) + 1}`;
+    else turn.textContent = st.over ? (st.result ? `Game over. ${st.result}` : "Game over") : `${sideName(st.turn)} to move, move ${Math.floor(st.moves.length / 2) + 1}`;
     const c = st.clocks;
     if (!c) { clocksEl.hidden = true; clocksEl.textContent = ""; return; }
     clocksEl.hidden = false;

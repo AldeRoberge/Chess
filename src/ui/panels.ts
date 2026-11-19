@@ -20,6 +20,7 @@ import { withIcon } from "./icons";
 import type { Tip, TipRow } from "./tooltip";
 import { fenPieces, looksLikeStart } from "../plugins/shared";
 import { playStatus } from "./playStatus";
+import { requestNewGame } from "../chess/savedGame";
 import { isLightSquare, pct, pieceLabel, tone } from "../plugins/hover";
 import { fmtClock } from "../clock/types";
 import { positionAt } from "../remote/protocol";
@@ -95,8 +96,11 @@ export class TablePanel {
     const drawBtn = withIcon(el("button", "", "Draw"), "people"); drawBtn.type = "button";
     drawBtn.dataset.tip = "Draw"; drawBtn.dataset.tipBody = "End the game as a draw both sides agreed.";
     drawBtn.onclick = () => { if (virtualTable.agreeDraw()) this.paintGame(); };
+    const newBtn = withIcon(el("button", "new-game", "New game"), "refresh"); newBtn.type = "button";
+    newBtn.dataset.tip = "New game"; newBtn.dataset.tipBody = "Drop the game in progress and start again from the starting position. Set the pieces up on the real board too.";
+    newBtn.onclick = () => this.startFresh();
     const actions = el("div", "cc-actions");
-    actions.append(this.flipBtn, takeback, more, el("span", "cc-gap"), resignBtn, drawBtn);
+    actions.append(this.flipBtn, takeback, more, el("span", "cc-gap"), newBtn, resignBtn, drawBtn);
     this.moves.tabIndex = 0;
     this.moves.setAttribute("aria-label", "Move list. Left and right arrows step through the game.");
     this.moves.setAttribute("aria-live", "polite");
@@ -345,8 +349,9 @@ export class TablePanel {
     rematch.onclick = () => this.startFresh();
     this.banner.replaceChildren(msg, rematch);
   }
-  /** Puts every piece back and clears a resignation or an agreed draw. */
+  /** Puts every piece back, clears a resignation or an agreed draw, and drops the stored game so a restart does not bring it back. */
   private startFresh() {
+    requestNewGame();
     this.pending = null; this.viewPly = null; this.sel = null; this.drag = null;
     this.paintPromo(); this.banner.hidden = true; this.banner.replaceChildren(); virtualTable.reset(); this.paintGame(); this.paintBoardAria();
   }
