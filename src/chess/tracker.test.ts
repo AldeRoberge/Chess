@@ -26,12 +26,18 @@ describe("PositionTracker", () => {
     expect(r.last?.san).toBe("e4");
     expect(r.events.map((e) => e.type)).toContain("move");
   });
-  it("never explains an extra occupied square as a move: a forearm or shadow on the board is waited out", () => {
+  it("never explains an extra occupied square as a move: a soft shadow leaves the position standing", () => {
     const t = new PositionTracker(), g = new Chess(); g.move("Nc3");
     const covered = settled(new Chess(), [42]); // start position + a phantom piece on c3, nothing vanished
     covered.white[42] = 1; covered.conf[42] = 0.2;
-    for (let i = 0; i < 5; i++) { const r = t.observe(covered); expect(r.status).toBe("pending"); expect(r.history).toEqual([]); }
+    for (let i = 0; i < 5; i++) { const r = t.observe(covered); expect(r.status).toBe("synced"); expect(r.history).toEqual([]); }
     expect(t.observe(settled(g)).status).toBe("pending"); expect(t.observe(settled(g)).history).toEqual(["Nc3"]); // once the arm is gone the real move is accepted
+  });
+  it("waits out a confident extra piece, which is a hand and not a lamp", () => {
+    const t = new PositionTracker();
+    const hand = settled(new Chess(), [42]);
+    hand.white[42] = 1; hand.conf[42] = 0.9;
+    for (let i = 0; i < 4; i++) { const r = t.observe(hand); expect(r.status).toBe("pending"); expect(r.history).toEqual([]); }
   });
   it("still accepts a pawn move when one soft extra square is also lit", () => {
     const t = new PositionTracker();
@@ -40,6 +46,26 @@ describe("PositionTracker", () => {
     lit.occ[42] = 1; lit.white[42] = 1; lit.conf[42] = 0.25; // c3 glows, but e2-e4 is clear
     t.observe(lit);
     expect(t.observe(lit).history).toEqual(["e4"]);
+    expect(t.observe(lit).status).toBe("synced"); // the glow stays, but the move already counted, so the reply can start
+  });
+  it("accepts a knight hop when the squares it changes are only softly read", () => {
+    const after = new Chess(); after.move("Nf3");
+    const t = new PositionTracker();
+    const soft = settled(after);
+    soft.conf[62] = 0.35; soft.conf[45] = 0.35; // g1 and f3: the hop is there, just not crisp
+    t.observe(soft);
+    expect(t.observe(soft).history).toEqual(["Nf3"]);
+  });
+  it("keeps a played knight when the picture will not settle again", () => {
+    const t = new PositionTracker();
+    const g = new Chess(); g.move("Nf3");
+    t.observe(settled(g));
+    expect(t.observe(settled(g)).history).toEqual(["Nf3"]);
+    const wobble = settled(g); wobble.settled = false;
+    const held = t.observe(wobble);
+    expect(held.status).toBe("synced"); expect(held.history).toEqual(["Nf3"]);
+    const glow = settled(g); glow.occ[42] = 1; glow.white[42] = 1; glow.conf[42] = 0.25; glow.settled = false;
+    expect(t.observe(glow).status).toBe("synced");
   });
   it("accepts a king step even when the square it lands on is only softly read", () => {
     const before = new Chess("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1");

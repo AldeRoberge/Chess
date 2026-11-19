@@ -155,7 +155,10 @@ describe("running", () => {
   });
   it("the Sit/stand control seats the virtual player in the patch", () => {
     finishSetup(); const app = boot(root); const p = [...app.graph.nodes.values()].find((n) => n.type === "sim.person")!;
-    root.querySelector<HTMLButtonElement>("#dock button")!.click(); expect(p.params.seated).toBe(true);
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "More")!.click();
+    const item = (label: string) => [...document.querySelectorAll<HTMLElement>(".cm-row")].find((r) => r.querySelector(".cm-label")?.textContent === label)!;
+    item("Table").click(); item("Sit down").click();
+    expect(p.params.seated).toBe(true);
   });
   it("start() drives the app from requestAnimationFrame", () => {
     finishSetup(); const app = boot(root); const q: ((t: number) => void)[] = []; vi.stubGlobal("requestAnimationFrame", (cb: any) => { q.push(cb); return q.length; });
