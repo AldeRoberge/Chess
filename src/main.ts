@@ -1,10 +1,11 @@
 import { boot } from "./app";
 import "./ui/theme.css";
-import { applyAppTheme, watchSystemScheme } from "./ui/appTheme";
+import { applyAppTheme, onAppTheme, watchSystemScheme } from "./ui/appTheme";
 
 import { installUiScale } from "./ui/uiScale";
 
-applyAppTheme(); watchSystemScheme(); installUiScale();
+import { syncFavicon } from "./ui/brandIcon";
+applyAppTheme(); onAppTheme(syncFavicon); syncFavicon(); watchSystemScheme(); installUiScale();
 import { startOutputPage } from "./outputPage";
 import { firstRun, showSplash } from "./ui/splash";
 import { isRemoteHash } from "./remote/protocol";
