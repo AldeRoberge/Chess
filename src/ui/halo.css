@@ -165,7 +165,8 @@
 .halo-item.has-visual{flex-wrap:wrap;row-gap:8px}
 /* Own panel, so the text stays readable whether the row above is selected (light signal gradient) or not. */
 .elo-visual{flex-basis:100%;box-sizing:border-box;padding:10px 14px 12px;margin-top:4px;background:var(--ink-1);border:1px solid var(--line);border-radius:4px;color:var(--text-dim);font:400 var(--t-xs)/1.4 var(--font-ui)}
-.elo-svg{display:block;width:100%;height:auto;overflow:visible}
+.elo-svg{display:block;width:100%;height:auto;overflow:visible;cursor:grab;touch-action:none;user-select:none}
+.elo-visual:active .elo-svg{cursor:grabbing}
 .elo-area{fill:var(--signal);opacity:.16}
 .elo-curve{stroke:var(--signal);stroke-width:1.6}
 .elo-axis{stroke:var(--line-hi);stroke-width:1}

@@ -708,7 +708,15 @@ export class SetupWizard {
           rng.oninput = () => { it.set(Number(rng.value)); txt.textContent = valueText(it); it.visual?.update(Number(rng.value)); this.deps.sfx.play("tick"); };
           rng.onchange = () => this.afterChange();
           li.append(rng, num);
-          if (it.visual) { li.classList.add("has-visual"); li.append(it.visual.el); }
+          if (it.visual) {
+            // dragging the graph moves the slider: snap to its step, clamp to its range, and run the normal input/change path
+            it.visual.onPick = (raw, final) => {
+              const v = Math.min(it.max, Math.max(it.min, Math.round(raw / it.step) * it.step));
+              if (v !== Number(rng.value)) { rng.value = String(v); rng.oninput?.(new InputEvent("input")); }
+              if (final) rng.onchange?.(new Event("change"));
+            };
+            li.classList.add("has-visual"); li.append(it.visual.el);
+          }
         } else if (it.kind === "choice") {
           // a dropdown, so any option is one pick away (←/→ on the focused row still steps through them)
           const sel = el("select", "halo-select"); sel.setAttribute("aria-label", it.label);

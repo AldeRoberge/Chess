@@ -158,92 +158,48 @@ function nudgeEdge(q: Pt[], edge: number, dist: number): Pt[] {
   return q.map((p, i) => (i === edge || i === (edge + 1) % 4 ? { x: p.x + nx * dist, y: p.y + ny * dist } : p));
 }
 
-function quadArea(c: Pt[]): number {
-  let a = 0;
-  for (let i = 0; i < 4; i++) a += c[i].x * c[(i + 1) % 4].y - c[(i + 1) % 4].x * c[i].y;
-  return Math.abs(a) / 2;
+/** Light and dark square tones inside the checker hits, and how far a pixel may sit from either and still be the board. */
+function squareTones(lum: Float32Array, W: number, H: number, pts: Pt[]): { light: number; dark: number; tol: number } {
+  const vals = pts.map((p) => lum[clamp(Math.round(p.y), 0, H - 1) * W + clamp(Math.round(p.x), 0, W - 1)]).sort((a, b) => a - b);
+  const dark = vals[Math.floor(vals.length * 0.3)], light = vals[Math.floor(vals.length * 0.7)];
+  // Tight enough that the table, even when it sits near the dark squares, does not count as a square.
+  return { light, dark, tol: Math.max(12, Math.abs(light - dark) * 0.22) };
 }
 
-/** Share of the checker hits that fall inside a clockwise quad. */
-function coverage(q: Pt[], pts: Pt[]): number {
-  let n = 0;
-  for (const p of pts) {
-    let ok = true;
-    for (let i = 0; i < 4 && ok; i++) {
-      const a = q[i], b = q[(i + 1) % 4];
-      if ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) < -2) ok = false;
-    }
-    if (ok) n++;
+const isSquare = (v: number, tone: { light: number; dark: number; tol: number }) => Math.min(Math.abs(v - tone.light), Math.abs(v - tone.dark)) <= tone.tol;
+
+/** True when the strip just inside this edge is still square-coloured, so the edge has not stepped onto the table. */
+function edgeOnBoard(lum: Float32Array, w: number, h: number, q: Pt[], edge: number, tone: { light: number; dark: number; tol: number }): boolean {
+  const a = q[edge], b = q[(edge + 1) % 4];
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+  const nx = dy / len, ny = -dx / len;
+  let ok = 0, n = 0;
+  for (const t of [0.25, 0.4, 0.5, 0.6, 0.75]) {
+    const x = Math.round(a.x + dx * t - nx * 3), y = Math.round(a.y + dy * t - ny * 3);
+    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+    n++;
+    if (isSquare(lum[y * w + x], tone)) ok++;
   }
-  return pts.length ? n / pts.length : 0;
+  return n >= 3 && ok >= n - 1;
 }
 
 /**
- * Separation alone is flat: any quad that still holds a majority of clean squares scores the same.
- * Weight it by how much of the checker it covers, and break remaining ties toward the smaller quad.
- */
-function fitness(img: ImageData, q: Pt[], ch: Channel, blob: Pt[]): number {
-  const sep = scoreOf(img, q, ch);
-  if (sep < 0.3) return sep;
-  return sep * coverage(q, blob) ** 2 - quadArea(q) * 1e-7;
-}
-
-/** Grows or shrinks each side of the hit box by a fraction of a square. One edge at a time gets stuck on a shifted alias; the grid does not. */
-function searchBox(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel, probe: Pt[]): Pt[] {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const p of blob) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-  const grow = [-0.6, 0, 0.5, 1, 1.35];
-  let best: Pt[] = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }], bestF = -1;
-  for (const t of grow) for (const r of grow) for (const b of grow) for (const l of grow) {
-    const q = [
-      { x: x0 - l * sx, y: y0 - t * sy }, { x: x1 + r * sx, y: y0 - t * sy },
-      { x: x1 + r * sx, y: y1 + b * sy }, { x: x0 - l * sx, y: y1 + b * sy },
-    ];
-    const f = fitness(img, q, ch, probe);
-    if (f > bestF) { bestF = f; best = q; }
-  }
-  return best;
-}
-
-function polish(img: ImageData, start: Pt[], ch: Channel, probe: Pt[], span: number): Pt[] {
-  const { width: W, height: H } = img;
-  let cur = start;
-  const step0 = Math.max(2, Math.round(span / 6));
-  for (let pass = 0; pass < 2; pass++) for (let e = 0; e < 4; e++) {
-    let top = cur, topS = fitness(img, cur, ch, probe);
-    for (let d = -span; d <= span; d += step0) {
-      const next = nudgeEdge(cur, e, d), s = fitness(img, next, ch, probe);
-      if (s > topS) { topS = s; top = next; }
-    }
-    cur = top;
-  }
-  for (let step = Math.max(3, Math.round(span / 8)); step >= 1; step = Math.max(1, Math.round(step / 2))) {
-    let moved = false;
-    for (let i = 0; i < 4; i++) {
-      let top = cur, topS = fitness(img, cur, ch, probe);
-      for (const dy of [-step, 0, step]) for (const dx of [-step, 0, step]) {
-        if (!dx && !dy) continue;
-        const next = cur.map((p, k) => (k === i ? { x: clamp(p.x + dx, -8, W + 8), y: clamp(p.y + dy, -8, H + 8) } : p));
-        const s = fitness(img, next, ch, probe);
-        if (s > topS + 1e-4) { topS = s; top = next; moved = true; }
-      }
-      cur = top;
-    }
-    if (step === 1) break;
-    if (!moved && step <= 2) break;
-  }
-  return cur;
-}
-
-/**
- * The checker hits stop about a square short of the far edges. A grid of grown boxes finds the board even when
- * sliding one edge at a time would settle on a shifted copy that still looks like squares; polishing then shears it.
+ * Hits stop about a square inside the far edges, and a plain contrast score is happy with any box that still
+ * covers most of the squares. Each edge is walked out (or back in) until the squares give way to the table.
  */
 function fitQuad(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel): Pt[] {
-  const probe = blob.length > 280 ? blob.filter((_, i) => i % Math.ceil(blob.length / 280) === 0) : blob;
-  const boxed = polish(img, searchBox(img, blob, sx, sy, ch, probe), ch, probe, Math.max(8, Math.round(Math.max(sx, sy) / 3)));
-  const hulled = polish(img, extremes(blob), ch, probe, Math.max(sx, sy));
-  return fitness(img, boxed, ch, probe) >= fitness(img, hulled, ch, probe) ? boxed : hulled;
+  const lum = planeOf(img, ch), tone = squareTones(lum, img.width, img.height, blob);
+  const span = Math.max(sx, sy, 12) * 1.6;
+  let q = extremes(blob);
+  for (let pass = 0; pass < 2; pass++) for (let e = 0; e < 4; e++) {
+    let best = 0, seen = false, misses = 0;
+    for (let d = -Math.round(span * 0.35); d <= span; d++) {
+      if (edgeOnBoard(lum, img.width, img.height, nudgeEdge(q, e, d), e, tone)) { best = d; seen = true; misses = 0; }
+      else if (seen && ++misses > 3) break;
+    }
+    if (seen) q = nudgeEdge(q, e, best);
+  }
+  return q;
 }
 
 /** a8 and h1 are light squares, h8 and a1 dark. That kills a 90° spin; 180° still looks the same, so rank 1 goes to the bottom of the picture. */
@@ -274,7 +230,6 @@ export function detectCornersByShape(img: ImageData): ShapeCorners | null {
   const blob = largestBlob(hits.pts);
   if (blob.length < 24) return null;
   const fitted = fitQuad(img, blob, hits.sx, hits.sy, hits.channel);
-  console.log("fitted", fitted.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "), "sx", hits.sx, "sy", hits.sy);
   const corners = orientByShade(img, fitted, hits.channel);
   const separation = scoreOf(img, corners, hits.channel);
   if (separation < 0.45) return null;

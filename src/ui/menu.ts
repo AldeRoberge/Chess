@@ -7,7 +7,7 @@ export type Item =
   | { kind: "toggle"; label: string; get(): boolean; set(v: boolean): void; hint?: string; icon?: string; verbs?: { on: string; off: string }; remove?: { label: string; run(): void } }
   | { kind: "choice"; label: string; options: { value: string; label: string }[]; get(): string; set(v: string): void; hint?: string; icon?: string; auto?: AutoAction }
   /** `visual` is a picture under the slider row, refreshed by `update` as the value moves. `auto` adds an auto-detect button to the row. */
-  | { kind: "slider"; label: string; min: number; max: number; step: number; get(): number; set(v: number): void; fmt?: (v: number) => string; hint?: string; icon?: string; auto?: AutoAction; visual?: { el: HTMLElement; update(v: number): void } }
+  | { kind: "slider"; label: string; min: number; max: number; step: number; get(): number; set(v: number): void; fmt?: (v: number) => string; hint?: string; icon?: string; auto?: AutoAction; visual?: { el: HTMLElement; update(v: number): void; onPick?: (v: number, final: boolean) => void } }
   | { kind: "text"; label: string; get(): string; set(v: string): void; hint?: string; icon?: string; /** Masks the value (API keys). */ secret?: boolean }
   /** A collapsible section: its children are listed right under it while open. `summary` shows on the closed row. `auto` is a button on the section row. */
   | { kind: "group"; label: string; icon?: string; summary?: string; get(): boolean; set(v: boolean): void; children: Item[]; auto?: AutoAction }
