@@ -309,3 +309,43 @@ export class AlignFollower {
     return this.glide(pts);
   }
 }
+
+/** Most boards aligned at the same moment. */
+export const MAX_PARALLEL_ALIGN = 8;
+
+/** How many boards to align at once: up to 8 on a machine with plenty of threads (and memory, where the browser says), fewer on a weak one. One thread is left for the page. */
+export function alignConcurrency(nav: { hardwareConcurrency?: number; deviceMemory?: number } = typeof navigator === "undefined" ? {} : navigator): number {
+  const threads = Number(nav.hardwareConcurrency) || 4;
+  let n = Math.floor(threads) - 1;
+  if (Number(nav.deviceMemory) > 0 && Number(nav.deviceMemory) < 4) n = Math.min(n, 2);
+  return clamp(n, 1, MAX_PARALLEL_ALIGN);
+}
+
+export interface AlignJob { id: string; frame: GrayFrame; start: Pt[] | null; prior?: Pt[][] }
+export interface AlignResult { id: string; corners: Pt[]; confidence: number; phase: AlignStatus["phase"]; label: string }
+
+/**
+ * Aligns many boards in one go. Up to `limit` AutoAligners are live at once and share each frame's time budget evenly;
+ * the rest wait their turn. Call `step(budgetMs)` every frame until it returns false, then read `results`.
+ */
+export class AlignBatch {
+  readonly results = new Map<string, AlignResult>();
+  private waiting: AlignJob[]; private live: { job: AlignJob; a: AutoAligner }[] = [];
+  constructor(jobs: AlignJob[], readonly limit = alignConcurrency(), private paceMs = 0, private now: () => number = () => performance.now()) { this.waiting = [...jobs]; }
+  get active() { return this.live.length; }
+  get pending() { return this.waiting.length + this.live.length; }
+  step(budgetMs = 12) {
+    while (this.live.length < this.limit && this.waiting.length) {
+      const job = this.waiting.shift()!;
+      this.live.push({ job, a: new AutoAligner(job.frame, job.start, this.paceMs, this.now, job.prior ?? []) });
+    }
+    const slice = Math.max(1, budgetMs / Math.max(1, this.live.length));
+    for (const l of this.live) l.a.step(slice);
+    this.live = this.live.filter(({ job, a }) => {
+      const r: AlignResult = { id: job.id, corners: a.corners, confidence: a.confidence, phase: a.phase, label: a.label };
+      this.results.set(job.id, r);
+      return !a.done;
+    });
+    return this.pending > 0;
+  }
+}

@@ -40,7 +40,7 @@ export function calibrationPosition(step: number) {
   return { fen: game.fen(), title, instruction: `${title}. Change the board to match: ${text}. Copy the right-hand board.` };
 }
 export interface DetectionSettings { threshold: number; shapeWeight: number; colorWeight: number; patch: number; positionWeight: number; softness: number; grid: number; legalMargin: number }
-export const calibrationDefaults: DetectionSettings = { threshold: 0.22, shapeWeight: 1, colorWeight: 1, patch: 0.6, positionWeight: 1, softness: 0.09, grid: 8, legalMargin: 0.5 };
+export const calibrationDefaults: DetectionSettings = { threshold: 0.22, shapeWeight: 1, colorWeight: 1, patch: 0.6, positionWeight: 1, softness: 0.06, grid: 8, legalMargin: 0.5 };
 /** The levers the search turns, one at a time. legalMargin is the tracker's and cannot be judged from jumps between unrelated boards, so it keeps its current value. */
 export const settingRanges: Record<keyof DetectionSettings, number[]> = { threshold: [0.12, 0.15, 0.18, 0.22, 0.27, 0.32, 0.4, 0.5], shapeWeight: [0.25, 0.5, 1, 1.5, 2], colorWeight: [0.25, 0.5, 1, 1.5, 2], patch: [0.35, 0.45, 0.6, 0.7, 0.8], positionWeight: [0, 0.5, 1, 1.5, 2], softness: [0.03, 0.045, 0.06, 0.09, 0.13], grid: [4, 6, 8], legalMargin: [] };
 export interface CalibrationSample { step: number; fen: string; cameras: { id: string; corners: Pt[]; frames: GrayFrame[] }[] }

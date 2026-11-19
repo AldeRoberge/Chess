@@ -67,7 +67,7 @@ describe("BoardSampler", () => {
 
   it("default config exposes sane tunables", () => {
     const d = defaultSamplerConfig();
-    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(6);
+    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(8);
   });
   it("is uncalibrated until it has seen the start position, and then reads every piece's colour", () => {
     const t = new VirtualTable(), s = new BoardSampler("A", cfg());

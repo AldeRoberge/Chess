@@ -15,7 +15,7 @@ export interface SamplerConfig {
 export const defaultSamplerConfig = (): SamplerConfig => ({
   corners: [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }],
   threshold: 0.22,
-  softness: 0.09,
+  softness: 0.06,
   grid: 8,
   patch: 0.6,
 });

@@ -26,6 +26,8 @@ import { detectEnv } from "./setup/system";
 import { Sfx } from "./ui/sfx";
 import { SetupWizard } from "./ui/wizard";
 import { NodeEditor } from "./ui/editor";
+import { alignAllBoards } from "./ui/alignAll";
+import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
 import { clearPrefs, loadPrefs, patchPrefs } from "./setup/prefs";
@@ -157,6 +159,7 @@ export function boot(root: HTMLElement): Boot {
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
             <button id="settings" class="rb" data-tip="Settings" data-tip-body="Cameras, projector, narration, and players.">${icon("setup", 22)}<span>Settings</span></button>
             <button id="calibrate" class="rb"><span>Calibrate</span></button>
+            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8)."><span>Align boards</span></button>
             <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
           </div><div class="rlabel">Start</div></div>
           <div class="rgroup"><div class="rbtns">
@@ -528,6 +531,15 @@ export function boot(root: HTMLElement): Boot {
     frames: camFrames,
     command: (c, now) => c.type === "calibrate" ? calibrate.command(c) : calibrate.view ? { ok: false, text: "Close Calibrate before playing." } : applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
   });
+  document.getElementById("alignall")!.onclick = async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement; if (btn.disabled) return;
+    const label = btn.querySelector("span")!, was = label.textContent; btn.disabled = true;
+    try {
+      const r = await alignAllBoards(graph, (d, t) => { label.textContent = `Aligning ${d}/${t}`; });
+      if (r.aligned) { editor.rebuild(); persist(); }
+      notify(r.total ? `Aligned ${r.aligned} of ${r.total} board${r.total === 1 ? "" : "s"}, up to ${alignConcurrency()} at a time.` : "No camera with a live picture and a board grid was found.", [], r.aligned === r.total && r.total ? "info" : "warn", { title: "Align boards" });
+    } finally { label.textContent = was; btn.disabled = false; }
+  };
   document.getElementById("phone")!.onclick = () => {
     if (remote.available === false) notify("The phone connection could not be opened. Reload this page to retry. If it still fails, the server’s phone bridge may be unavailable.", [], "warn", { title: "Phone remote is not running" });
     else if (remote.available === null) notify("Still checking for the phone connection. Try again in a second.", [], "info", { title: "Phone remote" });
