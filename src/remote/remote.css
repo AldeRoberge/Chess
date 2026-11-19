@@ -70,9 +70,10 @@ body.remote #app{display:block;height:auto}
 .rm-panel h2{margin:16px 2px 6px;font:600 var(--t-md)/1.2 var(--font-ui)}
 .rm-lines{margin:0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;line-height:1.4}
 
-/* join screen */
-.rm-join{display:flex;flex-direction:column;gap:12px;padding-top:12vh}
+/* join popup: a card over the page, with a large code field */
+.rm-join-pop{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--ink-0) 72%,transparent)}
+.rm-join{display:flex;flex-direction:column;gap:12px;width:min(420px,100%);padding:18px;border:1px solid var(--line-hi);border-radius:12px;background:var(--ink-1);box-shadow:0 20px 60px -10px var(--shadow)}
 .rm-join h1{margin:0;font:700 var(--t-xl)/1.1 var(--font-ui)}
 .rm-lead{margin:0;color:var(--text-dim);line-height:1.5}
-.rm-join input{min-height:52px;padding:0 14px;border:1px solid var(--line-hi);border-radius:var(--radius);background:var(--ink-0);color:var(--text);font:600 24px/1 var(--font-mono);letter-spacing:.2em}
+.rm-join input{min-height:64px;padding:0 14px;border:1px solid var(--line-hi);border-radius:var(--radius);background:var(--ink-0);color:var(--text);font:600 32px/1 var(--font-mono);letter-spacing:.28em;text-align:center}
 .rm-err{margin:0;min-height:1.4em;color:var(--bad)}

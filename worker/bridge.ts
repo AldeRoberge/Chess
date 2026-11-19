@@ -125,7 +125,7 @@ export class GameBridge {
       if (route.startsWith("api/frame/") && req.method === "GET") {
         const f = this.frames.get(route.slice("api/frame/".length).replace(/\.jpg$/, ""));
         if (!f || !this.fresh(now)) return json({ error: "No picture from that camera yet." }, 404);
-        return new Response(f.jpeg, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
+        return new Response(f.jpeg as unknown as BodyInit, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
       }
       if (route === "api/cmd" && req.method === "POST") {
         const raw = await req.text();
@@ -149,9 +149,9 @@ interface BridgeEnv { BRIDGE?: BridgeNamespace; KEYS?: { get(k: string): Promise
 /** Sends /chess/remote/* to the live room. Returns null when the URL is not a remote route. */
 export async function handleRemote(req: Request, env: BridgeEnv, url: URL): Promise<Response | null> {
   if (!url.pathname.startsWith("/chess/remote/")) return null;
-  if (!env.BRIDGE) return json({ error: "Phone bridge is not configured on this worker." }, 503);
   const code = url.searchParams.get("code") ?? "";
   if (!/^\d{4,8}$/.test(code)) return json({ error: "Wrong or missing join code. Check the code on the computer." }, 401);
+  if (!env.BRIDGE) return json({ error: "Phone bridge is not configured on this worker." }, 503);
   const ip = req.headers.get("CF-Connecting-IP") || "unknown";
   if (env.KEYS) {
     const minute = Math.floor(Date.now() / 60000);

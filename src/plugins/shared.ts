@@ -67,8 +67,8 @@ export const confColor = (c: number, a = 1) => `hsla(${Math.round(Math.max(0, Ma
  * Does the reading look like a game that has just begun (both back ranks and pawn rows full, right colours, middle empty)?
  * Used when no tracked position exists yet, so the pieces can be assumed to stand where they start.
  */
-export function looksLikeStart(b: { occ: ArrayLike<number>; white: ArrayLike<number> } | null | undefined): boolean {
-  if (!b) return false;
+export function looksLikeStart(b: { occ?: ArrayLike<number> | null; white?: ArrayLike<number> | null } | null | undefined): boolean {
+  if (!b?.occ || !b.white) return false;
   let ok = 0;
   for (let i = 0; i < 64; i++) {
     const pc = START_PIECES[i], seen = b.occ[i] > 0.5;

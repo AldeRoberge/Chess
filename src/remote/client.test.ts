@@ -21,7 +21,7 @@ describe("phone page", () => {
   it("asks for the code when the address has none, and keeps the player on that screen until one is typed", async () => {
     const f = vi.fn(() => json({ rev: 0, clients: 1, waiting: true }));
     start(f, "#/remote");
-    expect(q("h1").textContent).toBe("Join the game");
+    expect(q("h1").textContent).toBe("Join the game"); expect(q(".rm-join-pop").getAttribute("role")).toBe("dialog");
     q<HTMLFormElement>(".rm-join").dispatchEvent(new Event("submit", { cancelable: true })); expect(q(".rm-err").textContent).toContain("Type the code");
     q<HTMLInputElement>(".rm-join input").value = "9999"; q<HTMLFormElement>(".rm-join").dispatchEvent(new Event("submit", { cancelable: true })); await flush();
     expect(String((f.mock.calls as unknown[][])[0][0])).toContain("code=9999"); expect(q(".rm-turn").textContent).toContain("Waiting for the computer");
@@ -149,5 +149,11 @@ describe("phone page", () => {
     q('[aria-label="Takeback"]').click(); q('[aria-label="Resign"]').click(); q('[aria-label="Draw"]').click(); await flush();
     expect(posts).toEqual([{ type: "takeback" }, { type: "resign" }, { type: "draw" }]);
     expect(q(".rm-notice").textContent).toContain("Sending draw");
+  });
+  it("opens the join popup from the header so the code can be typed again", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state() }))); await flush();
+    expect(document.querySelector(".rm-join-pop")).toBeNull();
+    q('[aria-label="Join with a code"]').click();
+    expect(q(".rm-join-pop").getAttribute("role")).toBe("dialog"); expect(q(".rm-join input")).toBeTruthy();
   });
 });
