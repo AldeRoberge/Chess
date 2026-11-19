@@ -35,6 +35,7 @@ import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
 import { virtualTable } from "./sim/virtualTable";
 import { RemoteHost, applyRemoteCommand, playMode, snapshot } from "./remote/host";
+import { drawFrame } from "./plugins/shared";
 import type { GrayFrame } from "./vision/types";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
@@ -260,6 +261,15 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("graph")!.append(tools);
 
   const table = new TablePanel(); tips.add(table.tips);
+  const inputPreview = document.createElement("section"); inputPreview.className = "simple-input";
+  const inputHeader = document.createElement("div"); inputHeader.className = "simple-input-header";
+  const inputTitle = document.createElement("strong"); inputTitle.textContent = "Input webcam";
+  const adjustCorners = document.createElement("button"); adjustCorners.type = "button"; adjustCorners.textContent = "Adjust corners";
+  adjustCorners.onclick = () => go({ page: "settings", step: "board" });
+  const inputCanvas = document.createElement("canvas"); inputCanvas.width = 480; inputCanvas.height = 360;
+  inputCanvas.setAttribute("aria-label", "Input webcam preview");
+  inputHeader.append(inputTitle, adjustCorners); inputPreview.append(inputHeader, inputCanvas);
+  table.root.querySelector(".cc-side")!.prepend(inputPreview);
   const world = new WorldPanel(graph), log = new LogPanel(); tips.add(log.tips);
   const perf = new PerfPanel(graph, { reveal: (id) => editor.reveal(id), setHeat: (on) => setHeat(on), heatOn: () => editor.heatOn });
   tips.add(perf.tips);
@@ -530,7 +540,16 @@ export function boot(root: HTMLElement): Boot {
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
     profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {
-      if (active === 0) table.frame(now);
+      if (active === 0) {
+        table.frame(now);
+        if (document.body.classList.contains("simple")) {
+          const webcams = [...graph.nodes.values()].filter((n) => n.type === "source.webcam");
+          const source = webcams.find((n) => n.params.online !== false) ?? webcams[0];
+          const state = source ? graph.states.get(source.id) as { frame?: GrayFrame | null; err?: string } | undefined : undefined;
+          const ctx = inputCanvas.getContext("2d");
+          if (ctx) drawFrame(ctx, 480, 360, source?.params.online === false ? null : state?.frame, state?.err || (source ? "Webcam offline" : "Add a webcam in Settings / Cameras"));
+        }
+      }
       else if (active === 1) world.frame(now);
       else if (active === 2) log.frame();
       else if (active === 3) perf.frame(now);

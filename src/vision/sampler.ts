@@ -46,6 +46,7 @@ export class BoardSampler {
   /** Texture of an empty square (std-dev of its middle) as measured at calibration; NaN until learned. */
   spreadGate = NaN;
   /** (ln dark end, ln bright end) of the middle relative to the empty square, for white and black pieces on light [0] and dark [1] squares, learned from the start position. */
+  private spreadByColor = [NaN, NaN];
   private tone: { w: [number, number][]; b: [number, number][] } | null = null;
   leanU = 0;
   leanV = 0;
@@ -209,6 +210,16 @@ export class BoardSampler {
     for (let sq = 16; sq < 48; sq++) if (Number.isFinite(spread[sq])) flat.push(spread[sq]);
     flat.sort((a, b) => a - b);
     this.spreadGate = flat.length >= 8 ? Math.max(flat[Math.floor(flat.length * 0.9)] * 2.2, flat[Math.floor(flat.length * 0.9)] + 7) : NaN;
+    // Dark squares often carry more sensor noise than light squares. Keep their
+    // noise floors separate so one colour cannot hide pieces on the other.
+    for (let k = 0; k < 2; k++) {
+      const samples: number[] = [];
+      for (let sq = 16; sq < 48; sq++)
+        if ((sq % 8 + Math.floor(sq / 8)) % 2 === k && Number.isFinite(spread[sq])) samples.push(spread[sq]);
+      samples.sort((a, b) => a - b);
+      const noise = samples[Math.floor(samples.length * 0.9)];
+      this.spreadByColor[k] = samples.length >= 8 ? Math.max(noise * 2.2, noise + 7) : this.spreadGate;
+    }
     // What a white and a black piece look like next to an empty square, per square colour: the pieces' own start squares.
     const ln = (v: number, ref: number) => Math.log(Math.max(1, v) / Math.max(1, ref));
     const med = (xs: number[]) => { xs.sort((a, b) => a - b); return xs.length ? xs[xs.length >> 1] : NaN; };
@@ -250,6 +261,9 @@ export class BoardSampler {
 
   calibrateEmpty(frame: GrayFrame) {
     const { crown, rim } = this.squares(frame);
+    this.spreadGate = NaN;
+    this.spreadByColor = [NaN, NaN];
+    this.tone = null;
     this.ref.set(crown);
     this.rimRef.set(rim);
   }
@@ -276,7 +290,8 @@ export class BoardSampler {
         if (v <= 3) bad++;
         let zBright = (Math.abs(drive) - gate) / soft;
         // Texture: an empty square is flat, a piece is not. A king's cross is this kind of evidence, and a smooth shadow is not.
-        const zTex = Number.isFinite(this.spreadGate) && Number.isFinite(spread[sq]) ? (spread[sq] - this.spreadGate) / Math.max(1.5, this.spreadGate * 0.25) : -Infinity;
+        const textureGate = this.spreadByColor[(sq % 8 + Math.floor(sq / 8)) % 2] ?? this.spreadGate;
+        const zTex = Number.isFinite(textureGate) && Number.isFinite(spread[sq]) ? (spread[sq] - textureGate) / Math.max(1.5, textureGate * 0.25) : -Infinity;
         if (this.tone && v > 3 && Number.isFinite(lo[sq])) {
           const k = ((sq % 8) + Math.floor(sq / 8)) % 2, d = Math.log(Math.max(1, lo[sq]) / Math.max(1, ref)), u = Math.log(Math.max(1, hi[sq]) / Math.max(1, ref));
           const dw = Math.hypot(d - this.tone.w[k][0], u - this.tone.w[k][1]), db = Math.hypot(d - this.tone.b[k][0], u - this.tone.b[k][1]);

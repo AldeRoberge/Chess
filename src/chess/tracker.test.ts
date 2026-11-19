@@ -206,3 +206,27 @@ describe("full vision pipeline on 3D camera feeds", () => {
     expect(last.fidelity).toBeGreaterThan(0.5);
   });
 });
+
+ describe("five-second detection deadline", () => {
+  it("guesses from partial evidence after five seconds and logs a later correction", () => {
+    const tracker = new PositionTracker();
+    const g = new Chess(); g.move("e4");
+    const partial = settled(g);
+    partial.occ[52] = 1; // e2 is still misread as occupied
+    partial.conf[52] = 0.2;
+    partial.t = 100;
+    expect(tracker.observe(partial).status).not.toBe("moved");
+    partial.t = 5099;
+    expect(tracker.observe(partial).status).not.toBe("moved");
+    partial.t = 5100;
+    const guess = tracker.observe(partial);
+    expect(guess.history).toEqual(["e4"]);
+    expect(guess.events.some((e) => e.type === "detection-guess")).toBe(true);
+    const actual = new Chess(); actual.move("d4");
+    const clear = settled(actual); clear.t = 5200;
+    tracker.observe(clear); clear.t = 5300;
+    const corrected = tracker.observe(clear);
+    expect(corrected.history).toEqual(["d4"]);
+    expect(corrected.events.find((e) => e.type === "detection-correction")?.data?.previous).toBe("e4");
+  });
+ });

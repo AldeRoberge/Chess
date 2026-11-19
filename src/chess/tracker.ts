@@ -61,6 +61,10 @@ const START_GRID = gridOf(new Chess()).join(",");
 export class PositionTracker {
   game = new Chess();
   cfg: TrackerConfig;
+  private urgencyAt: number | null = null;
+  private provisional: { fen: string; ply: number; san: string; cost: number } | null = null;
+  private correctionKey = "";
+  private correctionN = 0;
   private cand = "";
   private candN = 0;
   private lastMove: MoveInfo | null = null;
@@ -76,6 +80,8 @@ export class PositionTracker {
 
   reset(fen?: string) {
     this.game = fen ? new Chess(fen) : new Chess();
+    this.urgencyAt = null; this.provisional = null;
+    this.correctionKey = ""; this.correctionN = 0;
     this.cand = "";
     this.candN = 0;
     this.lastMove = null;
@@ -153,6 +159,29 @@ export class PositionTracker {
   observe(b: BoardBelief): TrackResult {
     const events: ExperienceEvent[] = [];
     const obsGrid = Array.from({ length: 64 }, (_, i) => (b.occ[i] > 0.5 ? (b.white[i] > 0.5 ? "w" : "b") : ""));
+    // A provisional guess can be replaced by a repeatedly observed exact legal alternative,
+    // only until another move has been played.
+    const pending = this.provisional;
+    if (pending && this.game.history().length !== pending.ply) this.provisional = null;
+    if (pending && this.provisional && b.settled && !b.handOver && b.cams > 0) {
+      const before = new Chess(pending.fen);
+      let replacement: Move | null = null;
+      for (const m of before.moves({ verbose: true })) {
+        before.move(m);
+        if (m.san !== pending.san && gridOf(before).every((v, i) => v === obsGrid[i]) && b.conf.every((v) => v >= this.cfg.minConf)) replacement = m;
+        before.undo();
+      }
+      this.correctionN = replacement && replacement.san === this.correctionKey ? this.correctionN + 1 : replacement ? 1 : 0;
+      this.correctionKey = replacement?.san ?? "";
+      if (replacement && this.correctionN >= this.cfg.confirm) {
+        this.game.undo(); this.ver++;
+        this.commit(replacement, b.t, b.fidelity, events);
+        events.push({ type: "detection-correction", t: b.t, data: { previous: pending.san, corrected: replacement.san, beforeFen: pending.fen, previousCost: pending.cost, occupancy: Array.from(b.occ), white: Array.from(b.white), confidence: Array.from(b.conf), cameras: b.cams, fidelity: b.fidelity } });
+        this.provisional = null; this.urgencyAt = null; this.acceptedExtras.clear();
+        this.moveFid = b.fidelity;
+        return this.base("moved", [], events, b.fidelity);
+      }
+    }
     const exp = gridOf(this.game);
     // Retain only unchanged extra blobs on empty squares. Never learn a newly appearing
     // hand here, or hide a missing piece, a colour change, or a real occupied square.
@@ -165,6 +194,8 @@ export class PositionTracker {
       this.cand = ""; this.candN = 0;
       return this.base("synced", diff, events, b.fidelity);
     }
+    if (!diff.length) this.urgencyAt = null;
+    else if (b.cams > 0 && !b.handOver && this.urgencyAt === null) this.urgencyAt = b.t;
     const firm = diff.some((i) => b.conf[i] >= this.cfg.minConf);
     // The settle timer only gates a new move. A picture that already matches the game, or disagrees
     // only where the cameras are unsure, is the position we have: the opponent can play.
@@ -228,16 +259,28 @@ export class PositionTracker {
       const own = new Set(touched(fits[0])), stray = diff.filter((i) => !own.has(i)), mover = this.game.turn();
       if (stray.length <= 2 && !stray.some((i) => exp[i] === mover && !obsGrid[i] && b.conf[i] >= this.cfg.minConf)) sole = fits[0];
     }
-    const chosen = ok && (best.unsure === 0 || exactStep) ? best : sole;
+    const urgent = this.urgencyAt !== null && b.t - this.urgencyAt >= 5000 && !b.handOver && b.cams > 0;
+    // Require evidence of a destination and an improvement over doing nothing.
+    // A lifted piece alone must never turn into an arbitrary legal move.
+    const guess = urgent ? cands.find((c) => c.moves.length === 1 && c.cost < this.cost(exp, obsGrid, b.conf)
+      && touched(c).some((i) => c.grid[i] && c.grid[i] !== exp[i] && obsGrid[i] === c.grid[i])) : undefined;
+    const normal = ok && (best.unsure === 0 || exactStep) ? best : sole;
+    const chosen = normal ?? guess;
     if (!chosen) {
       if (ok) { this.cand = ""; this.candN = 0; return this.base("pending", diff, events, b.fidelity); }
     } else {
       const key = chosen.key;
       this.candN = this.cand === key ? this.candN + 1 : 1;
       this.cand = key;
-      if (this.candN >= this.cfg.confirm) {
+      if (this.candN >= this.cfg.confirm || (!normal && guess)) {
+        const beforeFen = this.game.fen();
         const fid = Math.exp(-chosen.cost);
         for (const m of chosen.moves) this.commit(m, b.t, fid, events);
+        if (!normal) {
+          this.provisional = { fen: beforeFen, ply: this.game.history().length, san: chosen.moves[0].san, cost: chosen.cost };
+          events.push({ type: "detection-guess", t: b.t, data: { reason: "five-second deadline", beforeFen, selected: chosen.moves.map((m) => m.san), cost: chosen.cost, alternatives: cands.slice(0, 5).map((c) => ({ moves: c.moves.map((m) => m.san), cost: c.cost })), occupancy: Array.from(b.occ), white: Array.from(b.white), confidence: Array.from(b.conf), cameras: b.cams, fidelity: b.fidelity } });
+        } else this.provisional = null;
+        this.urgencyAt = null;
         this.acceptedExtras.clear();
         for (let i = 0; i < 64; i++) {
           if (!chosen.grid[i] && obsGrid[i]) this.acceptedExtras.set(i, obsGrid[i]);

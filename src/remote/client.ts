@@ -110,6 +110,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     const targets = sel ? targetsFrom(fen, sel) : [];
     boardEl.style.setProperty("--light", theme.light); boardEl.style.setProperty("--dark", theme.dark); boardEl.style.setProperty("--hi", theme.hi);
     const cells: HTMLElement[] = [];
+    const images = new Map(Array.from(boardEl.querySelectorAll<HTMLButtonElement>("button[data-sq]")).map((cell) => [cell.dataset.sq, cell.querySelector("img")]));
     for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
       const file = flipped ? 7 - c : c, rank = flipped ? r : 7 - r, name = "abcdefgh"[file] + (rank + 1);
       const pc = g.get(name as never);
@@ -119,7 +120,13 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       if (view === null && st?.hint && (st.hint.from === name || st.hint.to === name)) b.classList.add("hint");
       if (targets.includes(name)) b.classList.add("target");
       b.setAttribute("aria-label", `${name}, ${pc ? `${pc.color === "w" ? "white" : "black"} ${PIECES[pc.type]}` : "empty"}${targets.includes(name) ? ", legal move" : ""}`);
-      if (pc) { const im = el("img"); im.alt = ""; im.draggable = false; im.src = `${deps.base ?? baseUrl()}pieces/${set}/${pc.color}${pc.type}.svg`; b.append(im); }
+      if (pc) {
+        const im = images.get(name) ?? el("img");
+        im.alt = ""; im.draggable = false;
+        const src = `${deps.base ?? baseUrl()}pieces/${set}/${pc.color}${pc.type}.svg`;
+        if (im.getAttribute("src") !== src) im.src = src;
+        b.append(im);
+      }
       if (c === 0) { const n = el("i", "rm-coord rank", String(rank + 1)); n.setAttribute("aria-hidden", "true"); b.append(n); }
       if (r === 7) { const n = el("i", "rm-coord file", "abcdefgh"[file]); n.setAttribute("aria-hidden", "true"); b.append(n); }
       b.onclick = () => tapSquare(name, fen);
