@@ -61,8 +61,8 @@ export class GroupLayer {
     dot.onclick = (e) => { e.stopPropagation(); this.swatches(g, el, dot); };
     del.onpointerdown = (e) => e.stopPropagation();
     del.onclick = (e) => { e.stopPropagation(); this.o.graph.groups = this.groups.filter((x) => x.id !== g.id); this.render(); this.o.changed(); };
-    name.ondblclick = (e) => { e.stopPropagation(); this.rename(g, name); };
-    bar.ondblclick = (e) => e.stopPropagation(); // never opens the node palette
+    // double-click anywhere on the title bar renames (never opens the node palette)
+    bar.ondblclick = (e) => { e.stopPropagation(); if ((e.target as HTMLElement).closest("button,input")) return; this.rename(g, bar.querySelector<HTMLElement>(".ne-gname") ?? name); };
 
     bar.addEventListener("pointerdown", (e) => {
       if (e.button > 0 || (e.target as HTMLElement).closest("button,input")) return;

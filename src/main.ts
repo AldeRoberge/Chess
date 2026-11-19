@@ -8,4 +8,8 @@ import { firstRun, showSplash } from "./ui/splash";
 
 const out = new URLSearchParams(location.search).get("output");
 if (out !== null) startOutputPage(Number(out) || 0);
-else { boot(document.getElementById("app")!).start(); if (firstRun()) void showSplash(); }
+// Splash: once per browser session (a reload in the same tab skips it). Shown before boot so a slow or failing boot cannot hide it.
+else {
+  if (firstRun(sessionStorage)) void showSplash();
+  boot(document.getElementById("app")!).start();
+}

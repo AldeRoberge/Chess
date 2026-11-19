@@ -33,6 +33,12 @@ describe("sections in the editor", () => {
     document.querySelector(".ne-gname")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     input().value = "  "; input().dispatchEvent(new Event("blur")); expect(g.groups[0].title).toBe("New section");
   });
+  it("double-clicking anywhere on the title bar (not just the text) starts renaming", () => {
+    ed.organize(); const bar = sections()[0].querySelector(".ne-gt")!;
+    bar.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    const input = document.querySelector(".ne-gedit") as HTMLInputElement; expect(input).toBeTruthy();
+    input.value = "Renamed"; input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" })); expect(g.groups[0].title).toBe("Renamed");
+  });
   it("dragging the title moves the section with the nodes inside it, not the others", () => {
     ed.organize(); const before = { a: { ...g.nodes.get("a")! }, b: { ...g.nodes.get("b")! }, s: { ...g.groups[0] } };
     const bar = sections()[0].querySelector(".ne-gt")!;
