@@ -204,7 +204,17 @@ export function boot(root: HTMLElement): Boot {
 
   const tips = installTooltips().add(editorTips(graph));
   // ---- ribbon: tab headers switch panes; "File" dropdown closes on outside click / Escape
+  // Clicking the tab that is already open folds the ribbon away (Office-style); any tab click brings it back. Remembered between visits.
+  const headerEl = app.querySelector("header")!;
+  const setRibbonCollapsed = (c: boolean, save = true) => {
+    headerEl.classList.toggle("ribbon-collapsed", c);
+    for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) o.setAttribute("aria-expanded", String(!c));
+    if (save) patchPrefs({ ribbonCollapsed: c || undefined });
+  };
+  setRibbonCollapsed(!!loadPrefs().ribbonCollapsed, false);
   for (const t of app.querySelectorAll<HTMLElement>("[data-rtab]")) t.onclick = () => {
+    if (t.classList.contains("on")) { setRibbonCollapsed(!headerEl.classList.contains("ribbon-collapsed")); return; }
+    if (headerEl.classList.contains("ribbon-collapsed")) setRibbonCollapsed(false);
     for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) { const on = o === t; o.classList.toggle("on", on); o.setAttribute("aria-selected", String(on)); }
     for (const p of app.querySelectorAll<HTMLElement>("[data-rpane]")) p.classList.toggle("on", p.dataset.rpane === t.dataset.rtab);
   };
