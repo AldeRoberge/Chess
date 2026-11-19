@@ -150,11 +150,6 @@ function extremes(pts: Pt[]): Pt[] {
   return [tl, tr, br, bl];
 }
 
-function scaled(c: Pt[], k: number): Pt[] {
-  const cx = (c[0].x + c[1].x + c[2].x + c[3].x) / 4, cy = (c[0].y + c[1].y + c[2].y + c[3].y) / 4;
-  return c.map((p) => ({ x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k }));
-}
-
 /** Slides one edge of a clockwise quad along its outward normal, both corners together. */
 function nudgeEdge(q: Pt[], edge: number, dist: number): Pt[] {
   const a = q[edge], b = q[(edge + 1) % 4];
