@@ -2,11 +2,17 @@
 export type V3 = [number, number, number];
 export interface Capsule3D { a: V3; b: V3; r: number; /** IR luminance 0..255 (skin is bright, sleeves dark) */ tone: number }
 export type Hand = "L" | "R";
-export interface ArmPose { side: 1 | -1; hand: Hand; active: boolean; shoulder: V3; elbow: V3; wrist: V3; stretched: boolean; capsules: Capsule3D[] }
+/** How the fingers close: around a piece between thumb and index, or into a fist. */
+export type GripStyle = "pinch" | "fist";
+export interface ArmPose {
+  side: 1 | -1; hand: Hand; active: boolean; shoulder: V3; elbow: V3; wrist: V3; stretched: boolean; capsules: Capsule3D[];
+  /** unit direction the open fingers point in (wrist -> knuckles), for the skinned hand mesh */
+  fingerDir: V3; grasp: number; grip: GripStyle;
+}
 
 export const UPPER = 0.3, FORE = 0.27, PALM = 0.085, FINGER = 0.075;
 export const SHOULDER_Y = 1.05, SHOULDER_Z = 0.62, SHOULDER_X = 0.19;
-const TONE_SKIN = 205, TONE_FOREARM = 185, TONE_SLEEVE = 70;
+export const TONE_SKIN = 205, TONE_FOREARM = 185, TONE_SLEEVE = 70;
 
 const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -42,6 +48,8 @@ export interface ArmOpts {
   active: boolean;
   /** swing the forearm up (+) or down (-) about the elbow, in radians */
   pivot?: number;
+  /** pinch a piece (default fist) when `grasp` closes the hand */
+  grip?: GripStyle;
 }
 
 /** A full arm for one hand: shoulder (leaning toward far squares), IK elbow and wrist, palm, four fingers and a thumb. */
@@ -80,5 +88,5 @@ export function armPose(o: ArmOpts): ArmPose {
   const thumbSide = hand === "R" ? -1 : 1; // thumb faces the other hand
   const tb = add(add(w, rightV, 0.026 * thumbSide), fdir(0.2), 0.02);
   caps.push({ a: tb, b: add(add(tb, rightV, 0.02 * thumbSide * (1 - grasp)), fdir(0.35 + grasp * 0.5), 0.055), r: 0.013, tone: TONE_SKIN });
-  return { side, hand, active: o.active, shoulder, elbow: ik.elbow, wrist: w, stretched: ik.stretched, capsules: caps };
+  return { side, hand, active: o.active, shoulder, elbow: ik.elbow, wrist: w, stretched: ik.stretched, capsules: caps, fingerDir: fdir(0.2), grasp, grip: o.grip ?? "fist" };
 }

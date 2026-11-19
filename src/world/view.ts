@@ -5,6 +5,8 @@ import { bus } from "../core/bus";
 import type { MappingConfig } from "../mapping/store";
 import { SceneRenderer } from "../scene/renderer";
 import { virtualTable } from "../sim/virtualTable";
+import { TONE_SKIN } from "../sim/arm";
+import { HandRig, loadHandAssets } from "../hand/rig";
 import { LIGHT } from "../sim/shadow";
 import { BONES } from "../vision/triangulate";
 import { boardTheme, onBoardTheme, type BoardTheme } from "../ui/boardThemes";
@@ -40,6 +42,10 @@ export class WorldView {
   private arms = new THREE.Group();
   private armGeo = new Map<string, THREE.CapsuleGeometry>();
   private armKey = "";
+  /** skinned Oculus hands (same meshes as Hexalt) that replace the palm and finger capsules once the GLBs load */
+  private hands = new THREE.Group();
+  private handRigs: HandRig[] = [];
+  private handAssets: Awaited<ReturnType<typeof loadHandAssets>> = null;
   private skin = new THREE.MeshStandardMaterial({ color: 0xd9a98a, roughness: 0.6 });
   private sleeve = new THREE.MeshStandardMaterial({ color: 0x3a4a63, roughness: 0.85 });
   private overlayCanvas = document.createElement("canvas");
@@ -88,9 +94,10 @@ export class WorldView {
     this.applySettings(); onViewSettings(() => this.applySettings());
     this.fxCanvas.width = this.fxCanvas.height = 14 * 48;
     this.fxTex = new THREE.CanvasTexture(this.fxCanvas); this.fxTex.colorSpace = THREE.SRGBColorSpace;
-    this.scene.add(this.room, this.frusta, this.beams, this.pieces, this.people, this.arms);
+    this.scene.add(this.room, this.frusta, this.beams, this.pieces, this.people, this.arms, this.hands);
     this.buildTable();
     this.setMapping(cfg);
+    void loadHandAssets().then((a) => { this.handAssets = a; this.armKey = ""; }); // until (or unless) the GLBs load, the capsule hands stay
   }
 
   setMapping(cfg: MappingConfig) {
@@ -210,8 +217,10 @@ export class WorldView {
 
   /** Arms and hands from the same inverse-kinematics pose the virtual cameras see. */
   private syncArms() {
-    const caps = virtualTable.arms().flatMap((a) => a.capsules);
-    const key = caps.map((c) => `${c.b[0].toFixed(3)},${c.b[1].toFixed(3)},${c.b[2].toFixed(3)}`).join("|");
+    const poses = virtualTable.arms(), meshHands = this.handAssets !== null;
+    // with the skinned hands loaded only the sleeve and forearm capsules are drawn; the palm and fingers are the GLB
+    const caps = poses.flatMap((a) => a.capsules).filter((c) => !meshHands || c.tone !== TONE_SKIN);
+    const key = (meshHands ? "m" : "c") + caps.map((c) => `${c.b[0].toFixed(3)},${c.b[1].toFixed(3)},${c.b[2].toFixed(3)}`).join("|") + poses.map((a) => `${a.wrist.map((v) => v.toFixed(3))};${a.grasp.toFixed(2)}`).join("|");
     if (key === this.armKey) return;
     this.armKey = key;
     while (this.arms.children.length > caps.length) this.arms.remove(this.arms.children[this.arms.children.length - 1]);
@@ -227,7 +236,22 @@ export class WorldView {
       m.geometry = g; m.material = c.tone < 150 ? this.sleeve : this.skin;
       m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(Y, b.sub(a).normalize());
     });
+    this.syncHands(poses);
     this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  /** One skinned hand per arm pose, recreated only when an arm swaps sides (left/right meshes differ). */
+  private syncHands(poses: ReturnType<typeof virtualTable.arms>) {
+    const assets = this.handAssets;
+    if (!assets) return;
+    while (this.handRigs.length > poses.length) { const r = this.handRigs.pop()!; this.hands.remove(r.root); r.dispose(); }
+    poses.forEach((a, i) => {
+      const side = a.hand === "R" ? "right" : "left";
+      let rig = this.handRigs[i];
+      if (rig && rig.handedness !== side) { this.hands.remove(rig.root); rig.dispose(); rig = undefined as unknown as HandRig; }
+      if (!rig) { rig = new HandRig(assets[side], side, this.skin); this.handRigs[i] = rig; this.hands.add(rig.root); }
+      rig.place(a);
+    });
   }
 
   private syncPeople() {
