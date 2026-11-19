@@ -194,7 +194,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       };
       const g = new Chess();
       for (const san of st?.moves ?? []) try { g.move(san); } catch { break; }
-      const copies = el("div", "rm-copies"); copies.append(copy("Copy PGN", g.pgn() || "*"), copy("Copy FEN", g.fen()));
+      const copies = el("div", "rm-copies"); copies.append(copy("Copy PGN", g.pgn()), copy("Copy FEN", g.fen()));
       panel.append(dl, copies);
       if (st?.lines.length) { const l = el("ul", "rm-lines"); for (const x of [...st.lines].reverse()) { const li = el("li"); li.append(el("b", "", x.name), document.createTextNode(` ${x.text}`)); l.append(li); } panel.append(el("h2", "", "Narration"), l); }
     }

@@ -50,7 +50,23 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const meterBar = document.createElement("div"); meterBar.className = "qe-meter-bar"; const meterFill = document.createElement("i"); meterBar.append(meterFill);
   const meterText = document.createElement("span"); meterText.setAttribute("role", "status"); meterBox.append(meterBar, meterText);
   const meter = new AlignmentMeter();
-  box.append(head, hint, cv, meterBox, bar, opts); back.append(box); document.body.append(back);
+  // auto-align readout at the bottom: how far the search has got, and how sure we are of the result
+  const mkRow = (name: string) => {
+    const row = document.createElement("div"); row.className = "qe-auto-row";
+    const lab = document.createElement("span"); lab.className = "qe-auto-name"; lab.textContent = name;
+    const track = document.createElement("div"); track.className = "qe-auto-bar"; const fill = document.createElement("i"); track.append(fill);
+    const val = document.createElement("span"); val.className = "qe-auto-val"; row.append(lab, track, val);
+    return { row, fill, val };
+  };
+  const autoBox = document.createElement("div"); autoBox.className = "qe-auto"; autoBox.hidden = o.grid <= 1;
+  const progRow = mkRow("Progress"), confRow = mkRow("Confidence"); autoBox.append(progRow.row, confRow.row);
+  let follow = true; const followBtn = btn("Follow camera: on");
+  followBtn.title = "When the camera is nudged, move the grid to keep it on the board";
+  followBtn.onclick = () => { follow = !follow; followBtn.textContent = `Follow camera: ${follow ? "on" : "off"}`; follower.unlock(); };
+  opts.append(followBtn); followBtn.hidden = o.grid <= 1;
+  const follower = new AlignFollower();
+  let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
+  box.append(head, hint, cv, meterBox, autoBox, bar, opts); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;
@@ -63,7 +79,28 @@ export function openQuadEditor(o: QuadEditorOpts) {
     // How well the grid sits on the squares decides its colour: orange while it is off, green once it fits.
     const fr = o.frame();
     if (o.grid > 1 && fr) meter.feed(scoreAlignment(fr, m));
-    const live = o.grid > 1 && !!fr, color = live ? alignColor(meter.q) : "#35e0b4";
+    // The auto-aligner works a few milliseconds per frame and shows each layout it tries; the follower re-fits after a camera nudge.
+    if (aligner) {
+      aligner.step(10);
+      if (aligner.changed) { aligner.changed = false; pts = aligner.corners.map((p) => ({ ...p })); emit(); }
+      progress = aligner.progress; status = aligner.label; doneConf = aligner.confidence;
+      if (aligner.done) { if (aligner.phase === "done") follower.lock(fr ?? o.frame()!, pts); aligner = null; auto.textContent = "Auto detect"; }
+    } else if (o.grid > 1 && fr && follow) {
+      if (!follower.locked) { if (meter.good) follower.lock(fr, pts); }
+      else {
+        const fixed = follower.tick(fr, pts);
+        if (fixed) { pts = fixed; emit(); status = "Camera moved: grid adjusted"; }
+        else if (follower.status === "adjusting") status = "Camera moved: re-fitting…";
+        else if (follower.status === "lost") { follower.unlock(); startAuto(); }
+      }
+    }
+    const live = o.grid > 1 && !!fr;
+    if (!autoBox.hidden) {
+      const running = !!aligner, conf = running ? doneConf : live ? Math.min(meter.q, doneConf || 1) : 0;
+      progRow.fill.style.width = `${Math.round((running ? progress : progress || 0) * 100)}%`; progRow.val.textContent = status || "Idle";
+      confRow.fill.style.width = `${Math.round(conf * 100)}%`; confRow.fill.style.background = alignColor(conf); confRow.val.textContent = `${Math.round(conf * 100)}%`;
+    }
+    const color = live ? alignColor(meter.q) : "#35e0b4";
     if (!meterBox.hidden) {
       meterFill.style.width = `${Math.round((live ? meter.q : 0) * 100)}%`; meterFill.style.background = color;
       const text = live ? meter.label : "No camera picture to check against."; if (meterText.textContent !== text) meterText.textContent = text;
@@ -101,6 +138,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
     const p = at(e); let best = 0, bd = Infinity;
     pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = i; } });
     sel = best; cv.setPointerCapture(e.pointerId); cv.focus();
+    aligner = null; auto.textContent = "Auto detect"; follower.unlock(); status = "";
     pts[sel] = clamp(p); emit();
     const move = (ev: PointerEvent) => { pts[sel] = clamp(at(ev)); emit(); };
     const up = () => { cv.removeEventListener("pointermove", move); cv.removeEventListener("pointerup", up); };
@@ -118,7 +156,19 @@ export function openQuadEditor(o: QuadEditorOpts) {
   back.addEventListener("pointerdown", (e) => { if (e.target === back) close(false); });
   ok.onclick = () => close(true); cancel.onclick = () => close(false);
   let autoTimer = 0;
-  auto.onclick = () => {
+  const startAuto = () => {
+    const fr = o.frame();
+    if (fr && o.names.length === 4 && o.names[0] === "a8" && o.names[1] === "h8" && o.names[2] === "h1" && o.names[3] === "a1") {
+      let seed: Pt[] | null = null;
+      try { const q = findCheckerCorners(fr); seed = q ? orientBoardCorners(fr, q) : null; } catch { seed = null; }
+      follower.unlock(); progress = 0; doneConf = 0;
+      aligner = new AutoAligner(fr, seed ?? pts); auto.textContent = "Stop";
+      return;
+    }
+    legacyAuto();
+  };
+  auto.onclick = () => { if (aligner) { aligner = null; status = "Stopped"; auto.textContent = "Auto detect"; } else startAuto(); };
+  const legacyAuto = () => {
     const fr = o.frame();
     // Board corners are a8, h8, h1, a1. A clock box is just a busy rectangle and keeps the older finder.
     const chess = o.names.length === 4 && o.names[0] === "a8" && o.names[1] === "h8" && o.names[2] === "h1" && o.names[3] === "a1";

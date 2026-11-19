@@ -394,3 +394,8 @@ aside{container-type:inline-size}
 .qe-meter-bar{flex:0 0 140px;height:8px;border-radius:4px;background:var(--ink-3);overflow:hidden;border:1px solid var(--line)}
 .qe-meter-bar i{display:block;height:100%;width:0;transition:width .15s,background .15s}
 .qe-meter.good{color:var(--ok)}
+.qe-auto{display:grid;gap:4px;margin:2px 0;font-size:var(--t-xs);color:var(--text-dim)}.qe-auto[hidden]{display:none}
+.qe-auto-row{display:grid;grid-template-columns:78px 1fr minmax(90px,auto);align-items:center;gap:10px}
+.qe-auto-bar{height:8px;border-radius:4px;background:var(--ink-3);overflow:hidden;border:1px solid var(--line)}
+.qe-auto-bar i{display:block;height:100%;width:0;background:var(--signal,#35e0b4);transition:width .12s,background .15s}
+.qe-auto-val{text-align:right;white-space:nowrap}

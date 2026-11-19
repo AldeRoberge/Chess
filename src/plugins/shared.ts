@@ -95,7 +95,7 @@ export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number
   return { reads, start };
 }
 
-interface SqAnim { score: number; piece: string | null; white: boolean; pa: number; ga: number; da: number }
+interface SqAnim { score: number; piece: string | null; white: boolean; pa: number; ga: number; da: number; fa: number }
 const anims = new WeakMap<CanvasRenderingContext2D, { t: number; sq: SqAnim[] }>();
 const smoothstep = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 /** Opacity for a guess of this confidence: below ~10% it is nearly invisible, above ~65% it is solid. */
@@ -116,7 +116,7 @@ export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b
   // per-square animation state lives with the canvas: everything eases toward its target instead of popping
   const now = typeof performance !== "undefined" ? performance.now() : Date.now();
   let st = anims.get(ctx); const fresh = !st;
-  if (!st) { st = { t: now, sq: Array.from({ length: 64 }, () => ({ score: 1, piece: null, white: false, pa: 0, ga: 0, da: 0 })) }; anims.set(ctx, st); }
+  if (!st) { st = { t: now, sq: Array.from({ length: 64 }, () => ({ score: 1, piece: null, white: false, pa: 0, ga: 0, da: 0, fa: 0 })) }; anims.set(ctx, st); }
   const k = fresh ? 1 : 1 - Math.exp(-Math.min(0.25, Math.max(0, (now - st.t) / 1000)) / 0.14); st.t = now;
   const ease = (v: number, to: number) => v + (to - v) * k;
   for (let i = 0; i < 64; i++) {
@@ -128,6 +128,9 @@ export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b
     if (pc) an.piece = pc;
     if (disc && b) an.white = b.white[i] > 0.5;
     an.score = ease(an.score, r.score);
+    const faint = !pc && !r.seen && !!b && b.occ[i] > 0.04 ? b.occ[i] : 0; // below the line but not zero: a ghost that fades in with how likely it is
+    if (faint > 0) an.white = b!.white[i] > 0.5;
+    an.fa = ease(an.fa, faint);
     an.pa = ease(an.pa, shown ? 1 : 0); an.ga = ease(an.ga, ghost ? 1 : 0); an.da = ease(an.da, disc ? 1 : 0);
     const vis = b ? lowConfAlpha(an.score) : 1; // a very doubtful guess fades almost away
     if (b) { ctx.fillStyle = confColor(an.score, 0.1 + 0.18 * (1 - an.score)); ctx.fillRect(x, y, s, s); } // low-confidence squares glow red
@@ -142,6 +145,12 @@ export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b
         ctx.fillStyle = white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = white ? "#3b3a37" : "#0d0d0d"; ctx.lineWidth = white ? 1.4 : 0.8;
         const g = GLYPH[pcs.toLowerCase()]; ctx.strokeText(g, cx, cy + s * 0.04); ctx.fillText(g, cx, cy + s * 0.04);
       }
+      ctx.globalAlpha = 1;
+    }
+    if (an.fa > 0.02 && b) { // faint ghost: unsure there is anything here, so only a hint of a disc, no ring, no "?"
+      ctx.globalAlpha = Math.min(0.4, an.fa * 0.8);
+      ctx.fillStyle = an.white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = an.white ? "#3b3a37" : "#0d0d0d";
+      ctx.beginPath(); ctx.arc(cx, cy, s * 0.26, 0, 7); ctx.fill(); ctx.stroke();
       ctx.globalAlpha = 1;
     }
     if (an.da > 0.01 && b) {

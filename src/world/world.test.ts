@@ -79,9 +79,9 @@ describe("table overlay", () => {
     expect(fill).toHaveBeenCalledTimes(5); expect(stroke).toHaveBeenCalledTimes(2); expect(line).toHaveBeenCalled();
     drawTableOverlay(c, 40, 3, { game: game({ status: "illegal", diff: [1] }), director: null, hint: null }, 0); // illegal squares only when illegal
     stroke.mockClear(); drawTableOverlay(c, 40, 3, { game: game({ status: "synced", diff: [1] }), director: null, hint: null }, 0); expect(stroke).not.toHaveBeenCalled();
-    const flipped = ctx(), fill2 = vi.spyOn(flipped, "fillRect");
+    const flipped = ctx(), fill2 = vi.spyOn(flipped, "fillRect"), stroke2 = vi.spyOn(flipped, "strokeRect");
     drawTableOverlay(flipped, 40, 3, { game: game({ last: { from: "e2", to: "e4" } as any, status: "illegal", diff: [52] }), director: null, hint: null, flip: true }, 0);
-    expect(fill2).toHaveBeenCalled(); expect(vi.spyOn(flipped, "strokeRect").mock.calls.length).toBeGreaterThan(0);
+    expect(fill2).toHaveBeenCalled(); expect(stroke2).toHaveBeenCalled();
   });
   it("draws the hover menu with progress rings, rotated labels, and multi-word captions; only in the menu phase", () => {
     const c = ctx(), text = vi.spyOn(c, "fillText"), arc = vi.spyOn(c, "arc");

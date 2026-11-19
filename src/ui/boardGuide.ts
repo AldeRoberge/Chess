@@ -41,17 +41,17 @@ const FAR = 0.15;
  * brightness step across it at a range of offsets, takes the median over the stretches (pieces cover only a few), and
  * returns the offset where the step peaks. For a lined-up grid that is 0, whatever the blur of the lens.
  */
-function lineError(f: GrayFrame, m: BoardMap, alongU: boolean, k: number): number | null {
-  const prof: number[] = [], h = HALF / 8;
+function lineError(f: GrayFrame, m: BoardMap, alongU: boolean, k: number): { at: number; per: number[] } | null {
+  const prof: number[] = [], h = HALF / 8, grid: number[][] = []; // grid[offset][stretch], NaN where unreadable
   for (const s of OFFSETS) {
-    const steps: number[] = [];
+    const steps: number[] = [], row: number[] = [];
     for (let j = 0; j < 8; j++) {
       const t = (j + 0.5) / 8, c = k / 8 + s / 8;
       const a = luma(f, alongU ? m(c - h, t) : m(t, c - h)), b = luma(f, alongU ? m(c + h, t) : m(t, c + h));
-      if (a !== null && b !== null) steps.push(Math.abs(b - a));
+      if (a !== null && b !== null) { steps.push(Math.abs(b - a)); row.push(Math.abs(b - a)); } else row.push(NaN);
     }
     if (steps.length < 4) return null; // the line leaves the picture
-    prof.push(median(steps));
+    prof.push(median(steps)); grid.push(row);
   }
   let best = 0; for (let i = 1; i < prof.length; i++) if (prof[i] > prof[best]) best = i;
   let at = OFFSETS[best];
@@ -59,7 +59,13 @@ function lineError(f: GrayFrame, m: BoardMap, alongU: boolean, k: number): numbe
     const l = prof[best - 1], c = prof[best], r = prof[best + 1], den = l - 2 * c + r;
     if (den < 0) at += (STEP * 0.5 * (l - r)) / den;
   }
-  return Math.abs(at);
+  // where each stretch's own edge is: the median above hides a corner that is off, this does not
+  const per: number[] = [];
+  for (let j = 0; j < 8; j++) {
+    let bi = -1; for (let i = 0; i < grid.length; i++) if (Number.isFinite(grid[i][j]) && (bi < 0 || grid[i][j] > grid[bi][j])) bi = i;
+    if (bi >= 0 && grid[bi][j] > 4) per.push(Math.abs(OFFSETS[bi]));
+  }
+  return { at: Math.abs(at), per };
 }
 
 /**
@@ -68,10 +74,10 @@ function lineError(f: GrayFrame, m: BoardMap, alongU: boolean, k: number): numbe
  * separately: a1 is a dark square, so a grid with the colours the wrong way round is probably rotated or mirrored.
  */
 export function scoreAlignment(f: GrayFrame, m: BoardMap): Alignment {
-  const errs: number[] = [], polarity: number[] = [];
-  for (let k = 1; k < 8; k++) for (const alongU of [true, false]) { const e = lineError(f, m, alongU, k); if (e !== null) errs.push(e); }
+  const errs: number[] = [], polarity: number[] = [], perAll: number[] = [];
+  for (let k = 1; k < 8; k++) for (const alongU of [true, false]) { const e = lineError(f, m, alongU, k); if (e !== null) { errs.push(e.at); perAll.push(...e.per); } }
   const outer: number[] = [];
-  for (const k of [0, 8]) for (const alongU of [true, false]) { const e = lineError(f, m, alongU, k); if (e !== null) outer.push(e); }
+  for (const k of [0, 8]) for (const alongU of [true, false]) { const e = lineError(f, m, alongU, k); if (e !== null) { outer.push(e.at); perAll.push(...e.per); } }
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const u = (c + 0.5) / 8, v = (r + 0.5) / 8;
     // neighbours are the other colour; a1 is dark, i.e. file + rank odd, and rank = 8 - r
@@ -79,7 +85,7 @@ export function scoreAlignment(f: GrayFrame, m: BoardMap): Alignment {
     if (mid !== null && nb.length >= 2) polarity.push(((c + 8 - r) % 2 === 1 ? -1 : 1) * (mid - nb.reduce((x, y) => x + y, 0) / nb.length));
   }
   if (errs.length < 10 || polarity.length < 30) return { q: 0, flipped: false, contrast: 0, error: REACH, outside: 0, fine: REACH }; // most of the grid is outside the picture
-  const all = [...errs, ...outer].sort((a, b) => a - b), kept = all.slice(0, Math.max(4, Math.ceil(all.length * 0.8))), fine = kept.reduce((a, b) => a + b, 0) / kept.length;
+  const all = perAll.length >= 20 ? perAll.sort((a, b) => a - b) : [...errs, ...outer].sort((a, b) => a - b), kept = all.slice(0, Math.max(4, Math.ceil(all.length * 0.75))), fine = kept.reduce((a, b) => a + b, 0) / kept.length;
   const error = median(errs), signed = median(polarity), contrast = Math.abs(signed);
   // Does the checker pattern carry on just outside the grid? Then the grid sits inside the board (smaller or shifted) and the interior lines alone cannot tell.
   const side = (cells: [number, number][]) => {

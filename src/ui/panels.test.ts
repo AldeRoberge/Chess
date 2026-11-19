@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.stubGlobal("BroadcastChannel", FakeChannel); FakeChannel.all = []; view.made.length = 0; localStorage.clear();
   resetViewSettings(); setPieceSet("chessnut");
   virtualTable.reset(); virtualTable.seated = false; virtualTable.pointer = null;
-  Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [] });
+  Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [], botColor: null });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -77,6 +77,7 @@ describe("TablePanel", () => {
     expect(write).toHaveBeenCalledWith(expect.stringContaining("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"));
     Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
     btns.find((b) => b.textContent === "Copy PGN")!.click();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => { throw new Error("denied"); }) }, configurable: true });
     virtualTable.reset(); p.frame(16);
     btns.find((b) => b.textContent === "Copy PGN")!.click();
   });
@@ -84,10 +85,12 @@ describe("TablePanel", () => {
     const p = new TablePanel(), cv = p.root.querySelector("canvas")!; rect(cv);
     const flip = [...p.root.querySelectorAll("button")].find((b) => b.textContent === "Flip")!;
     flip.click(); expect(viewSettings().display.flip).toBe(true); expect(flip.classList.contains("on")).toBe(true);
-    click(cv, 3, 1); click(cv, 3, 3); expect(virtualTable.busy).toBe(true); // visual top is White's e-file from Black's side: e2-e4
-    virtualTable.reset();
+    at(cv, "mousemove", 1, 1); expect(virtualTable.pointer!.x).toBeCloseTo(7); expect(virtualTable.pointer!.y).toBeCloseTo(7);
+    click(cv, 3, 1); p.frame(0); // selected e2, legal dots remapped
+    click(cv, 3, 3); expect(virtualTable.busy).toBe(true); // visual top is White's e-file from Black's side: e2-e4
+    virtualTable.reset(); virtualTable.hand = { x: 4, y: 6 }; virtualTable.carried = 52; bus.botColor = "b"; p.frame(16);
     cv.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
-    setDisplay({ flip: false });
+    setDisplay({ flip: false }); bus.botColor = null; virtualTable.carried = null; virtualTable.hand = null;
   });
   it("picks a piece set and a colour-blind board look, and announces the winner", () => {
     const p = new TablePanel();
@@ -98,6 +101,10 @@ describe("TablePanel", () => {
     virtualTable.game.load("4k3/4Q3/4K3/8/8/8/8/8 b - - 0 1"); p.frame(0);
     expect(p.root.querySelector(".over-banner")!.hidden).toBe(false);
     expect(p.root.querySelector(".over-banner")!.textContent).toBe("White wins");
+    virtualTable.game.load("4K3/4q3/4k3/8/8/8/8/8 w - - 0 1"); p.frame(8);
+    expect(p.root.querySelector(".over-banner")!.textContent).toBe("Black wins");
+    virtualTable.game.load("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"); p.frame(16);
+    expect(p.root.querySelector(".over-banner")!.textContent).toBe("Draw");
     p.root.querySelectorAll("button")[1].click(); expect(p.root.querySelector(".over-banner")!.hidden).toBe(true);
     setBoardTheme("green"); setPieceSet("chessnut");
   });

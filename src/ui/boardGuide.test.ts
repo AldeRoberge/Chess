@@ -47,10 +47,10 @@ describe("alignment score", () => {
 
 describe("alignment meter and colours", () => {
   it("smooths the score and says what to do", () => {
-    const m = new AlignmentMeter(); expect(m.feed({ q: 0, flipped: false, contrast: 0, error: 0 })).toBe(0); expect(m.label).toMatch(/Can't see/);
-    m.feed({ q: 1, flipped: false, contrast: 90, error: 0 }); expect(m.q).toBeCloseTo(0.25); expect(m.good).toBe(false); expect(m.label).toMatch(/Not lined up/);
-    m.feed({ q: 0.6, flipped: false, contrast: 90, error: 0 }, 1); expect(m.label).toMatch(/closer/); m.feed({ q: 0.95, flipped: false, contrast: 90, error: 0 }, 1); expect(m.good).toBe(true); expect(m.label).toBe("Nicely aligned");
-    m.feed({ q: 0.4, flipped: true, contrast: 90, error: 0 }, 1); expect(m.good).toBe(false); expect(m.label).toMatch(/flipped/);
+    const m = new AlignmentMeter(); expect(m.feed({ q: 0, flipped: false, contrast: 0, error: 0, outside: 0, fine: 0 })).toBe(0); expect(m.label).toMatch(/Can't see/);
+    m.feed({ q: 1, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0 }); expect(m.q).toBeCloseTo(0.25); expect(m.good).toBe(false); expect(m.label).toMatch(/Not lined up/);
+    m.feed({ q: 0.6, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0 }, 1); expect(m.label).toMatch(/closer/); m.feed({ q: 0.95, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0 }, 1); expect(m.good).toBe(true); expect(m.label).toBe("Nicely aligned");
+    m.feed({ q: 0.4, flipped: true, contrast: 90, error: 0, outside: 0, fine: 0 }, 1); expect(m.good).toBe(false); expect(m.label).toMatch(/flipped/);
   });
   it("goes from orange to green", () => {
     expect(alignColor(0)).toBe("hsl(28 92% 54%)"); expect(alignColor(1)).toBe("hsl(130 92% 54%)"); expect(alignColor(-3)).toBe(alignColor(0)); expect(alignColor(9, 40)).toBe("hsl(130 92% 40%)");

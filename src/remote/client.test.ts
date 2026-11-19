@@ -87,4 +87,30 @@ describe("phone page", () => {
     expect(q(".rm-turn").textContent).toBe("Game over"); q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click(); expect(q(".rm-info").textContent).toContain("weird");
   });
   it("lets the page be taken down", () => { const f = vi.fn(() => json({ rev: 0, clients: 0, waiting: true })); start(f); stop(); expect(document.body.classList.contains("remote")).toBe(false); });
+  it("asks which piece to promote to, and cancels if the board is tapped again", async () => {
+    const posts: unknown[] = [];
+    const f = vi.fn((_u: string, init?: RequestInit) => { if (init?.method === "POST") posts.push(JSON.parse(String(init.body))); return json({ rev: 1, clients: 1, state: state({ turn: "w", fen: "8/4P3/8/8/8/8/8/k6K w - - 0 1", moves: [] }) }); });
+    start(f); await flush();
+    q('[data-sq="e7"]').click(); q('[data-sq="e8"]').click(); expect(q(".rm-promo").hidden).toBe(false);
+    q('[data-sq="h1"]').click(); expect(q(".rm-promo").hidden).toBe(true); expect(posts).toHaveLength(0);
+    q('[data-sq="e7"]').click(); q('[data-sq="e8"]').click(); q('[aria-label="Promote to Knight"]').click(); await flush();
+    expect(posts).toEqual([{ type: "move", from: "e7", to: "e8", promotion: "n" }]);
+  });
+  it("copies PGN and FEN from the game info tab", async () => {
+    const write = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ moves: ["e4", "e5"] }) }))); await flush();
+    q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click();
+    [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
+    [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy FEN")!.click();
+    expect(write.mock.calls.length).toBe(2);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => { throw new Error("denied"); }) }, configurable: true });
+    [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
+    stop(); start(vi.fn(() => json({ rev: 1, clients: 1, state: state({ moves: [] }) }))); await flush();
+    q<HTMLButtonElement>(".rm-tabs button:nth-child(3)").click();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
+    expect(String(write.mock.calls.at(-1)?.[0])).toContain("[Result");
+  });
 });

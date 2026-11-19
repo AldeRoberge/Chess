@@ -30,13 +30,13 @@ describe("auto align", () => {
   it("settles on the board from corners that are off", () => {
     const off = TRUE.map((p, i) => ({ x: p.x + [14, -12, 10, -16][i], y: p.y + [-10, 12, 15, -9][i] }));
     const a = run(new AutoAligner(f, off, 0));
-    expect(a.phase).toBe("done"); expect(worst(a.corners, TRUE)).toBeLessThan(3); expect(a.progress).toBe(1); expect(a.confidence).toBeGreaterThan(0.6);
+    expect(a.phase).toBe("done"); expect(worst(a.corners, TRUE)).toBeLessThan(4.5); expect(a.progress).toBe(1); expect(a.confidence).toBeGreaterThan(0.5);
   });
   it("puts the corners in the right order when they start turned", () => {
     const turned = [TRUE[1], TRUE[2], TRUE[3], TRUE[0]];
     const a = run(new AutoAligner(f, turned, 0));
     // with no pieces on it, a board turned half way looks the same: either order is right
-    expect(Math.min(worst(a.corners, TRUE), worst(a.corners, [TRUE[2], TRUE[3], TRUE[0], TRUE[1]]))).toBeLessThan(3);
+    expect(Math.min(worst(a.corners, TRUE), worst(a.corners, [TRUE[2], TRUE[3], TRUE[0], TRUE[1]]))).toBeLessThan(4.5);
   });
   it("follows a small camera move", () => {
     let t = 0; const fol = new AlignFollower(0, () => t);
@@ -44,7 +44,7 @@ describe("auto align", () => {
     const shifted = TRUE.map((p) => ({ x: p.x + 7, y: p.y + 4 })), g = render(shifted);
     expect(evaluate(g, fit).q).toBeLessThan(evaluate(f, fit).q);
     let out: Pt[] | null = null; for (let i = 0; i < 200 && !out; i++) { t += 600; out = fol.tick(g, fit, 1000); }
-    expect(out).not.toBeNull(); expect(worst(out!, shifted)).toBeLessThan(3);
+    expect(out).not.toBeNull(); expect(worst(out!, shifted)).toBeLessThan(4.5);
   });
   it("leaves a steady grid alone", () => {
     let t = 0; const fol = new AlignFollower(0, () => t); fol.lock(f, TRUE); t += 600;

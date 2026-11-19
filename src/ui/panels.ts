@@ -77,7 +77,7 @@ export class TablePanel {
     hover.onclick = () => { virtualTable.hoverHand = !virtualTable.hoverHand; hover.classList.toggle("on", virtualTable.hoverHand); if (!virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
     const copyPgn = withIcon(el("button", "", "Copy PGN"), "copy"); copyPgn.type = "button";
     copyPgn.dataset.tip = "Copy PGN"; copyPgn.dataset.tipBody = "Copy the game in PGN, the usual way to save or share a chess game.";
-    copyPgn.onclick = () => copyText(virtualTable.game.pgn() || "*");
+    copyPgn.onclick = () => copyText(virtualTable.game.pgn());
     const copyFen = withIcon(el("button", "", "Copy FEN"), "copy"); copyFen.type = "button";
     copyFen.dataset.tip = "Copy FEN"; copyFen.dataset.tipBody = "Copy the current position as FEN, so you can paste it into an analysis board.";
     copyFen.onclick = () => copyText(virtualTable.game.fen());
