@@ -134,7 +134,7 @@ describe("PositionTracker", () => {
     expect(t.observe(reply).status).toBe("synced");
     // Once the blob clears, a new object in that square must be checked again.
     expect(t.observe(settled(g)).status).toBe("synced");
-    expect(t.observe(reply).status).toBe("pending");
+    expect(t.observe(reply)).toMatchObject({ status: "synced", uncertain: [44], history: ["Nf3", "e5"] });
     t.reset();
     expect(t.observe(seen).history).toEqual([]);
   });
@@ -145,6 +145,29 @@ describe("PositionTracker", () => {
     const seen = settled(g); seen.occ[0] = 0; seen.conf[0] = 0.9; // a8 rook misread as gone: a square the move does not touch, not the mover's
     t.observe(seen);
     expect(t.observe(seen).history.at(-1)).toBe("exd5");
+  });
+  it("retains a counted position through small uncertain readings and reconciles the next legal move", () => {
+    const g = new Chess(), tracker = new PositionTracker();
+    for (const move of ["e4", "c5"]) { g.move(move); tracker.observe(settled(g)); tracker.observe(settled(g)); }
+    const noisy = settled(g); noisy.occ[8] = 0; noisy.conf[8] = 0.65;
+    for (const isSettled of [true, false]) {
+      noisy.settled = isSettled;
+      expect(tracker.observe(noisy)).toMatchObject({ status: "synced", uncertain: [8], history: ["e4", "c5"] });
+    }
+    expect(tracker.observe(settled(g))).toMatchObject({ status: "synced", uncertain: [] });
+    g.move("Nf3"); tracker.observe(settled(g));
+    expect(tracker.observe(settled(g))).toMatchObject({ status: "moved", history: ["e4", "c5", "Nf3"] });
+  });
+  it("does not turn tolerated extra blobs into guessed moves after a long wait", () => {
+    const g = new Chess(), tracker = new PositionTracker(); g.move("e4");
+    tracker.observe(settled(g)); tracker.observe(settled(g));
+    const noisy = settled(g); noisy.occ[18] = 1; noisy.white[18] = 0;
+    for (const t of [100, 6000, 12000]) {
+      noisy.t = t;
+      expect(tracker.observe(noisy)).toMatchObject({ status: "synced", uncertain: [18], history: ["e4"], events: [] });
+    }
+    noisy.handOver = true;
+    expect(tracker.observe(noisy).status).toBe("pending");
   });
   it("does not guess when another piece of the mover's also vanished", () => {
     const g = new Chess(); g.move("Nf3");

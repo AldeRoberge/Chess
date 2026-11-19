@@ -8,6 +8,7 @@ export type TrackStatus = "pending" | "synced" | "lifted" | "illegal" | "moved" 
 const MAX_MOVE_SQUARES = 6;
 /** Settled readings in a row that must disagree before a position is called illegal: one noisy frame is not a mistake. */
 const ILLEGAL_AFTER = 3;
+const MAX_UNCERTAIN_SQUARES = 2, UNCERTAIN_CONFIDENCE = 0.75;
 
 export interface MoveInfo {
   san: string;
@@ -33,6 +34,7 @@ export interface TrackResult {
   last: MoveInfo | null;
   history: string[];
   diff: number[]; // squares where observation != expectation
+  uncertain?: number[]; // tolerated camera disagreement; the tracked position is retained
   lifted?: string; // square of a piece currently in hand
   fidelity: number; // overall confidence in the tracked state (0..1)
   moveFidelity: number; // fidelity of the last accepted move
@@ -119,7 +121,7 @@ export class PositionTracker {
     return {
       status, fen: m.fen, turn: m.turn, ply: m.history.length,
       over: m.over, last: this.lastMove, history: m.history.slice(),
-      diff, lifted, fidelity: fid, moveFidelity: this.moveFid, events,
+      diff, uncertain: status === "synced" ? diff.slice() : [], lifted, fidelity: fid, moveFidelity: this.moveFid, events,
     };
   }
 
@@ -190,6 +192,12 @@ export class PositionTracker {
     }
     const diff: number[] = [];
     for (let i = 0; i < 64; i++) if (exp[i] !== obsGrid[i]) diff.push(i);
+    const extraOnly = diff.every((i) => !exp[i] && !!obsGrid[i]);
+    if (!b.handOver && b.cams > 0 && this.game.history().length > 0
+      && diff.length > 0 && diff.length <= MAX_UNCERTAIN_SQUARES && extraOnly) {
+      this.cand = ""; this.candN = 0;
+      return this.base("synced", diff, events, b.fidelity);
+    }
     if (!b.handOver && diff.length && diff.every((i) => this.acceptedExtras.get(i) === obsGrid[i])) {
       this.cand = ""; this.candN = 0;
       return this.base("synced", diff, events, b.fidelity);
@@ -197,9 +205,11 @@ export class PositionTracker {
     if (!diff.length) this.urgencyAt = null;
     else if (b.cams > 0 && !b.handOver && this.urgencyAt === null) this.urgencyAt = b.t;
     const firm = diff.some((i) => b.conf[i] >= this.cfg.minConf);
+    const minorUncertainty = diff.length <= MAX_UNCERTAIN_SQUARES && diff.every((i) => b.conf[i] < Math.max(this.cfg.minConf, UNCERTAIN_CONFIDENCE));
     // The settle timer only gates a new move. A picture that already matches the game, or disagrees
     // only where the cameras are unsure, is the position we have: the opponent can play.
     if (!b.settled) {
+      if (!b.handOver && b.cams > 0 && minorUncertainty) { this.cand = ""; this.candN = 0; return this.base("synced", diff, events, b.fidelity); }
       if (!firm) { this.cand = ""; this.candN = 0; return this.base("synced", [], events, b.fidelity); }
       return this.base("pending", [], events, b.fidelity);
     }
@@ -303,6 +313,13 @@ export class PositionTracker {
       return this.base("synced", [], events, b.fidelity);
     }
     this.cand = ""; this.candN = 0;
+    // Keep the accepted position through a small amount of noise. Do not erase the
+    // disagreement: re-evaluate it on every reading so a clear legal move still wins.
+    // Extra blobs alone cannot be a move, even if the camera is confident about them.
+    if (!b.handOver && b.cams > 0 && diff.length <= MAX_UNCERTAIN_SQUARES
+      && (minorUncertainty || (this.game.history().length > 0 && extraOnly))) {
+      return this.base("synced", diff, events, b.fidelity);
+    }
     // No legal move explained the picture. Extra squares the cameras are unsure about are a lamp or a shadow:
     // they are not a move, and they must not keep a move that already counted from standing.
     if (surplus && diff.every((i) => b.conf[i] < this.cfg.minConf)) return this.base("synced", diff, events, b.fidelity);
