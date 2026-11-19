@@ -67,8 +67,8 @@ export const confColor = (c: number, a = 1) => `hsla(${Math.round(Math.max(0, Ma
  * Does the reading look like a game that has just begun (both back ranks and pawn rows full, right colours, middle empty)?
  * Used when no tracked position exists yet, so the pieces can be assumed to stand where they start.
  */
-export function looksLikeStart(b: { occ: ArrayLike<number>; white: ArrayLike<number> } | null | undefined): boolean {
-  if (!b) return false;
+export function looksLikeStart(b: { occ?: ArrayLike<number> | null; white?: ArrayLike<number> | null } | null | undefined): boolean {
+  if (!b?.occ || !b.white) return false;
   let ok = 0;
   for (let i = 0; i < 64; i++) {
     const pc = START_PIECES[i], seen = b.occ[i] > 0.5;
@@ -79,25 +79,30 @@ export function looksLikeStart(b: { occ: ArrayLike<number>; white: ArrayLike<num
 
 /** Per-square read-out used by drawBoard (exported so tests and tooltips can share the numbers). */
 export interface SquareRead { piece: string | null; seen: boolean; score: number; prior: boolean }
-export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, fen?: string): { reads: SquareRead[]; start: boolean } {
+export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, fen?: string, live = false): { reads: SquareRead[]; start: boolean } {
   let pcs = fenPieces(fen);
   const fenBoard = (fen ?? "").split(" ")[0];
-  // a just-started game: the tracked position is still the start position, or nothing is tracked yet and the cameras see one
-  const start = fenBoard === START_BOARD || (pcs.length === 0 && looksLikeStart(b));
+  // A just-started game: the tracked position is still the start position, or nothing is tracked yet and the cameras see one.
+  // A stale start FEN does not keep the assumption once the cameras have left that position, and an empty board with no reading is not assumed.
+  const start = (fenBoard === START_BOARD && (!b || looksLikeStart(b))) || (pcs.length === 0 && looksLikeStart(b));
   if (!pcs.length && start) pcs = START_PIECES;
   const reads: SquareRead[] = [];
   for (let i = 0; i < 64; i++) {
-    const piece = pcs[i] ?? null;
+    let piece = pcs[i] ?? null;
     if (!b) { reads.push({ piece, seen: !!piece, score: 1, prior: false }); continue; }
     const conf = b.conf?.[i] ?? 1, occ = b.occ[i], seen = occ > 0.5;
+    // The camera view follows the pieces. A pawn that has stepped off its home square is gone from
+    // that square, even while the recorded game is still the start position.
+    if (live && piece && !seen) piece = null;
     const white = b.white[i];
     // how likely is it that the square really holds what we show (this piece, this colour, or nothing)?
     let agree = piece ? occ : 1 - occ;
     if (piece && seen) agree = Math.min(agree, piece === piece.toUpperCase() ? white : 1 - white);
     if (!piece && seen) agree = Math.min(agree, 0.5 + Math.abs(white - 0.5)); // unidentified piece: only occupancy/colour certainty
     let score = Math.min(conf, Math.max(agree, 0));
-    // the start position is a strong prior: a square that agrees with it needs far less evidence
-    const prior = start && agree > 0.5;
+    // the start position is a strong prior: a square that agrees with it needs far less evidence.
+    // A square we just cleared (the piece has left) does not get that boost.
+    const prior = start && agree > 0.5 && piece === (pcs[i] ?? null);
     if (prior) score = 1 - (1 - score) * 0.3;
     reads.push({ piece, seen, score: Math.max(0, Math.min(1, score)), prior });
   }
@@ -115,12 +120,12 @@ export const lowConfAlpha = (score: number) => 0.06 + 0.94 * smoothstep(0.1, 0.6
  * confidence ring around it and the square's 0..100 confidence in the corner. Pieces seen but not identified show as "?".
  * Pieces expected but not seen are ghosted with a dashed red ring.
  */
-export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, opts: { diff?: number[]; lifted?: string; fen?: string } = {}) {
+export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, opts: { diff?: number[]; lifted?: string; fen?: string; live?: boolean } = {}) {
   const th = boardTheme();
   ctx.fillStyle = th.surround; ctx.fillRect(0, 0, w, h);
   const s = Math.min(w, h) / 8;
   const ox = (w - s * 8) / 2;
-  const { reads, start } = readSquares(b, opts.fen);
+  const { reads, start } = readSquares(b, opts.fen, opts.live);
   const labels = !!b && s >= 20;
   // per-square animation state lives with the canvas: everything eases toward its target instead of popping
   const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -137,10 +142,9 @@ export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b
     if (pc) an.piece = pc;
     if (disc && b) an.white = b.white[i] > 0.5;
     an.score = ease(an.score, r.score);
-    const faint = !pc && !r.seen && !!b && b.occ[i] > 0.04 ? b.occ[i] : 0; // below the line but not zero: a ghost that fades in with how likely it is
-    if (faint > 0) an.white = b!.white[i] > 0.5;
-    an.fa = ease(an.fa, faint);
+    an.fa = ease(an.fa, 0);
     an.pa = ease(an.pa, shown ? 1 : 0); an.ga = ease(an.ga, ghost ? 1 : 0); an.da = ease(an.da, disc ? 1 : 0);
+    if (!pc && an.pa < 0.02 && an.ga < 0.02) an.piece = null;
     const vis = b ? lowConfAlpha(an.score) : 1; // a very doubtful guess fades almost away
     if (b) { ctx.fillStyle = confColor(an.score, 0.1 + 0.18 * (1 - an.score)); ctx.fillRect(x, y, s, s); } // low-confidence squares glow red
     const pcs = an.piece;

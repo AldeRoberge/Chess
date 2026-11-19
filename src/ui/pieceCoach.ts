@@ -70,7 +70,7 @@ export function placementMoves(f: GrayFrame, corners: Pt[]): PieceMove[] | null 
   return movesFromReading(obs.occ, obs.white);
 }
 
-export const COACH_LABEL = "You played your pieces on the board. Move them like this:";
+export const COACH_LABEL = "These pieces are off their starting squares. Move each one to the square named at the end of its line.";
 
 const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔", bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚" };
 

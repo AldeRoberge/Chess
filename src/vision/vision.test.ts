@@ -198,6 +198,23 @@ describe("BoardSampler", () => {
     expect(o.occ[glareSq]).toBeLessThan(0.6); // undecided, not a confident white piece
     expect(o.occ[calm]).toBeLessThan(0.15);
   });
+  it("does not treat a lamp flicker as a hand, and does not vote a washed-out square empty", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
+    const empty = (sq: number) => (light(sq) ? 160 : 50);
+    const knight = sqIndex("g1");
+    const paint = (bright: boolean) => boardPaint(corners, (sq, _u, _v) => {
+      const bg = empty(sq);
+      return bright && sq === knight ? 230 : bg; // the lamp flattens the knight's square
+    });
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateEmpty(paint(false));
+    s.read(paint(false));
+    const o = s.read(paint(true));
+    expect(o.occ[knight]).toBeGreaterThan(0.4);
+    expect(o.occ[knight]).toBeLessThan(0.6);
+    expect(o.motion).toBe(0);
+  });
   it("does not invent pieces on the near and far ranks just because the lamp falls off", () => {
     const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
     const tone = (sq: number, row: number) => (((sq % 8) + row) % 2 === 0 ? 80 + row * 16 : 30 + row * 8);
@@ -247,6 +264,16 @@ describe("Fusion", () => {
   it("silences an occluded camera but still flags the hand", () => {
     const b = new Fusion().fuse([obs("A", 0.05, 0.5, { motion: 0.5 }), obs("B", 0.95, 0.9)], 1000);
     expect(b.handOver).toBe(true); expect(b.occ[0]).toBeGreaterThan(0.8);
+  });
+  it("does not freeze the board for a lamp that only flickers a couple of squares", () => {
+    const b = new Fusion().fuse([obs("A", 0.9, 0.9, { motion: 0.04 })], 1000, 500, 0.02);
+    expect(b.handOver).toBe(false);
+  });
+  it("does not keep a piece where every camera is only mildly unsure", () => {
+    // 0.62 and 0.62 used to add up, in log-odds, to a square that stayed occupied after the piece left
+    const b = new Fusion().fuse([obs("A", 0.62, 0.8), obs("B", 0.62, 0.8)], 1000);
+    expect(b.occ[0]).toBeLessThan(0.05);
+    expect(new Fusion().fuse([obs("A", 0.8, 0.8), obs("B", 0.62, 0.8)], 1000).occ[0]).toBeGreaterThan(0.7);
   });
   it("colour evidence only counts where a piece is believed present", () => {
     expect(new Fusion().fuse([obs("A", 0, 0.99)], 1000).white[0]).toBe(0.5); // no piece anywhere: colour unknown

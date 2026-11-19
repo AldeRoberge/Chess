@@ -21,7 +21,7 @@ describe("phone page", () => {
   it("asks for the code when the address has none, and keeps the player on that screen until one is typed", async () => {
     const f = vi.fn(() => json({ rev: 0, clients: 1, waiting: true }));
     start(f, "#/remote");
-    expect(q("h1").textContent).toBe("Join the game");
+    expect(q("h1").textContent).toBe("Join the game"); expect(q(".rm-join-pop").getAttribute("role")).toBe("dialog");
     q<HTMLFormElement>(".rm-join").dispatchEvent(new Event("submit", { cancelable: true })); expect(q(".rm-err").textContent).toContain("Type the code");
     q<HTMLInputElement>(".rm-join input").value = "9999"; q<HTMLFormElement>(".rm-join").dispatchEvent(new Event("submit", { cancelable: true })); await flush();
     expect(String((f.mock.calls as unknown[][])[0][0])).toContain("code=9999"); expect(q(".rm-turn").textContent).toContain("Waiting for the computer");
@@ -130,6 +130,18 @@ describe("phone page", () => {
     [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
     expect(String(write.mock.calls.at(-1)?.[0])).toContain("[Result");
   });
+  it("can watch without sending moves or takeback, and remembers that choice", async () => {
+    const bag: Record<string, string> = {}, posts: unknown[] = [];
+    const f = vi.fn((_u: string, init?: RequestInit) => { if (init?.method === "POST") posts.push(JSON.parse(String(init.body))); return json({ rev: 1, clients: 1, state: state({ turn: "b" }) }); });
+    const store = { getItem: (k: string) => bag[k] ?? null, setItem: (k: string, v: string) => { bag[k] = v; } };
+    history.replaceState({}, "", "/#/remote?code=4321");
+    stop = mountRemote(host(), { fetchFn: f as never, base: "/", poll: 5, storage: store }).stop; await flush();
+    q('[aria-label="Watch only"]').click();
+    expect(q('[aria-label="Watch only"]').getAttribute("aria-pressed")).toBe("true"); expect(q(".rm-acts").hidden).toBe(true); expect(bag["chess.remote.watch"]).toBe("1");
+    q('[data-sq="e7"]').click(); expect(document.querySelector(".target")).toBeNull(); expect(posts).toHaveLength(0);
+    stop(); stop = mountRemote(host(), { fetchFn: f as never, base: "/", poll: 5, storage: store }).stop; await flush();
+    expect(q(".rm-acts").hidden).toBe(true); expect(q('[aria-label="Watch only"]').getAttribute("aria-pressed")).toBe("true");
+  });
   it("sends takeback, resign, and draw from the action row", async () => {
     const posts: unknown[] = [];
     const f = vi.fn((_u: string, init?: RequestInit) => { if (init?.method === "POST") posts.push(JSON.parse(String(init.body))); return json({ rev: 1, clients: 1, state: state() }); });
@@ -137,5 +149,11 @@ describe("phone page", () => {
     q('[aria-label="Takeback"]').click(); q('[aria-label="Resign"]').click(); q('[aria-label="Draw"]').click(); await flush();
     expect(posts).toEqual([{ type: "takeback" }, { type: "resign" }, { type: "draw" }]);
     expect(q(".rm-notice").textContent).toContain("Sending draw");
+  });
+  it("opens the join popup from the header so the code can be typed again", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state() }))); await flush();
+    expect(document.querySelector(".rm-join-pop")).toBeNull();
+    q('[aria-label="Join with a code"]').click();
+    expect(q(".rm-join-pop").getAttribute("role")).toBe("dialog"); expect(q(".rm-join input")).toBeTruthy();
   });
 });

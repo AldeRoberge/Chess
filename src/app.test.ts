@@ -155,7 +155,10 @@ describe("running", () => {
   });
   it("the Sit/stand control seats the virtual player in the patch", () => {
     finishSetup(); const app = boot(root); const p = [...app.graph.nodes.values()].find((n) => n.type === "sim.person")!;
-    root.querySelector<HTMLButtonElement>("#dock button")!.click(); expect(p.params.seated).toBe(true);
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "More")!.click();
+    const item = (label: string) => [...document.querySelectorAll<HTMLElement>(".cm-row")].find((r) => r.querySelector(".cm-label")?.textContent === label)!;
+    item("Table").click(); item("Sit down").click();
+    expect(p.params.seated).toBe(true);
   });
   it("start() drives the app from requestAnimationFrame", () => {
     finishSetup(); const app = boot(root); const q: ((t: number) => void)[] = []; vi.stubGlobal("requestAnimationFrame", (cb: any) => { q.push(cb); return q.length; });
@@ -288,7 +291,7 @@ describe("workflows", () => {
   it("the Workflows button loads a demo into the live patch, and Ctrl+Z brings the old one back", () => {
     finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
     (document.getElementById("workflows") as HTMLButtonElement).click();
-    expect(document.querySelectorAll(".wf-row")).toHaveLength(6);
+    expect(document.querySelectorAll(".wf-row")).toHaveLength(7);
     (document.querySelector(".wf-row button") as HTMLButtonElement).click();
     expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);

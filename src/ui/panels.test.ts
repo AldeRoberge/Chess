@@ -14,6 +14,7 @@ vi.mock("../world/view", () => ({ WorldView: class { showFrusta = true; showProj
 const gltf = vi.hoisted(() => ({ scene: null as any, fail: false }));
 vi.mock("three/examples/jsm/loaders/GLTFLoader.js", () => ({ GLTFLoader: class { async parseAsync() { if (gltf.fail) throw new Error("bad glb"); return { scene: gltf.scene }; } } }));
 
+import { closeContextMenu } from "./contextMenu";
 import { LogPanel, TablePanel, WorldPanel } from "./panels";
 import { resetViewSettings, setDisplay, viewSettings } from "./viewSettings";
 import { pieceSet, setPieceSet } from "./pieceSets";
@@ -27,18 +28,25 @@ beforeEach(() => {
   virtualTable.reset(); virtualTable.seated = false; virtualTable.pointer = null;
   Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [], botColor: null, clock: null });
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { closeContextMenu(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("TablePanel", () => {
   const rect = (cv: HTMLCanvasElement) => vi.spyOn(cv, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 616, height: 616, right: 616, bottom: 616, x: 0, y: 0, toJSON() {} });
   const at = (cv: HTMLCanvasElement, type: string, file: number, rank: number) => cv.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: (file + 3) * 44, clientY: (rank + 3) * 44 }));
   const click = (cv: HTMLCanvasElement, col: number, row: number) => at(cv, "click", col + 0.5, row + 0.5);
+  const menuRow = (label: string) => [...document.querySelectorAll<HTMLElement>(".cm-row")].find((r) => r.querySelector(".cm-label")?.textContent === label);
+  const openMenu = (p: TablePanel, ...path: string[]) => {
+    closeContextMenu();
+    [...p.root.querySelectorAll("button")].find((b) => b.textContent === "More")!.click();
+    for (const label of path) menuRow(label)!.click();
+  };
 
   it("has sit/stand and reset controls and a help line", () => {
     const p = new TablePanel(), seat = vi.fn(); p.seatCb = seat;
-    const [sit, reset] = p.root.querySelectorAll("button");
+    openMenu(p, "Table");
+    const sit = menuRow("Sit down")!;
     sit.click(); expect(virtualTable.seated).toBe(true); expect(seat).toHaveBeenCalledWith(true); sit.click(); expect(seat).toHaveBeenLastCalledWith(false);
-    virtualTable.game.move("e4"); reset.click(); expect(virtualTable.game.fen()).toBe(new Chess().fen());
+    virtualTable.game.move("e4"); menuRow("Reset table")!.click(); expect(virtualTable.game.fen()).toBe(new Chess().fen());
     expect(p.root.querySelector(".muted")!.textContent).toContain("Click a piece");
     new TablePanel().seatCb(true); // default callback is a no-op
   });
@@ -85,19 +93,19 @@ describe("TablePanel", () => {
   it("copies the PGN and FEN, even when the clipboard is missing, and lists every move", () => {
     const p = new TablePanel();
     virtualTable.game.move("e4"); virtualTable.game.move("e5"); p.frame(0);
-    expect(p.root.querySelector(".moves")!.textContent).toContain("1. e4 e5");
-    expect(p.root.querySelector(".gamebar")!.getAttribute("aria-live")).toBe("polite");
+    const sheet = p.root.querySelector(".moves")!;
+    expect(sheet.textContent).toContain("e4"); expect(sheet.textContent).toContain("e5"); expect(sheet.textContent).toContain("Live");
+    expect(sheet.getAttribute("aria-live")).toBe("polite");
     const write = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
-    const btns = [...p.root.querySelectorAll("button")];
-    btns.find((b) => b.textContent === "Copy PGN")!.click();
-    btns.find((b) => b.textContent === "Copy FEN")!.click();
+    const share = (label: string) => { openMenu(p, "Share"); menuRow(label)!.click(); };
+    share("Copy PGN"); share("Copy FEN");
     expect(write).toHaveBeenCalledWith(expect.stringContaining("e4"));
     expect(write).toHaveBeenCalledWith(expect.stringContaining("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"));
     Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
-    btns.find((b) => b.textContent === "Copy PGN")!.click();
+    share("Copy PGN");
     Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => { throw new Error("denied"); }) }, configurable: true });
     virtualTable.reset(); p.frame(16);
-    btns.find((b) => b.textContent === "Copy PGN")!.click();
+    share("Copy PGN");
   });
   it("flips the board so Black sits at the bottom, and plays from the flipped squares", () => {
     const p = new TablePanel(), cv = p.root.querySelector("canvas")!; rect(cv);
@@ -114,10 +122,10 @@ describe("TablePanel", () => {
   });
   it("picks a piece set and a colour-blind board look, and announces the winner", () => {
     const p = new TablePanel();
-    const [look, pieces] = p.root.querySelectorAll<HTMLSelectElement>("select");
-    look.value = "cb"; look.dispatchEvent(new Event("change")); expect(boardTheme().id).toBe("cb");
-    look.value = "hc"; look.dispatchEvent(new Event("change")); expect(boardTheme().id).toBe("hc");
-    pieces.value = "fantasy"; pieces.dispatchEvent(new Event("change")); expect(pieceSet().id).toBe("fantasy");
+    const pick = (group: string, label: string) => { openMenu(p, "Board", group); menuRow(label)!.click(); };
+    pick("Board look", "○  Blue-orange"); expect(boardTheme().id).toBe("cb");
+    pick("Board look", "○  High contrast"); expect(boardTheme().id).toBe("hc");
+    pick("Piece set", "○  Fantasy"); expect(pieceSet().id).toBe("fantasy");
     virtualTable.game.load("4k3/4Q3/4K3/8/8/8/8/8 b - - 0 1"); p.frame(0);
     expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(false);
     expect(p.root.querySelector(".over-msg")!.textContent).toBe("White wins");
@@ -125,14 +133,15 @@ describe("TablePanel", () => {
     expect(p.root.querySelector(".over-msg")!.textContent).toBe("Black wins");
     virtualTable.game.load("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"); p.frame(16);
     expect(p.root.querySelector(".over-msg")!.textContent).toBe("Draw");
-    p.root.querySelectorAll("button")[1].click(); expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
+    [...p.root.querySelectorAll("button")].find((b) => b.textContent === "Rematch")!.click(); expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
     setBoardTheme("green"); setPieceSet("chessnut");
   });
   it("takes back a ply, resigns, agrees a draw, and the scoresheet jumps to a past position", () => {
     const p = new TablePanel();
     const btn = (label: string) => [...p.root.querySelectorAll("button")].find((b) => b.textContent === label)!;
     virtualTable.game.move("e4"); virtualTable.game.move("e5"); p.frame(0);
-    expect(p.root.querySelector(".moves")!.textContent).toContain("1. e4 e5");
+    expect(p.root.querySelector(".moves")!.textContent).toContain("e4");
+    expect(p.root.querySelector(".moves")!.textContent).toContain("e5");
     expect(p.root.querySelector(".moves")!.textContent).toContain("Live");
     [...p.root.querySelectorAll<HTMLButtonElement>(".moves button")].find((b) => b.textContent === "e4")!.click();
     p.frame(8); expect([...p.root.querySelectorAll(".moves button")].find((b) => b.textContent === "e4")!.getAttribute("aria-current")).toBe("true");
@@ -163,7 +172,7 @@ describe("TablePanel", () => {
     virtualTable.game.move("e4");
     const url = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pgn");
     const saveClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    btn("Download PGN").click();
+    openMenu(p, "Share"); menuRow("Download PGN")!.click();
     expect(url).toHaveBeenCalled(); expect(saveClick).toHaveBeenCalled();
     expect((saveClick.mock.instances[0] as HTMLAnchorElement).download).toBe("chess-xp.pgn");
     url.mockRestore(); saveClick.mockRestore();
@@ -172,9 +181,10 @@ describe("TablePanel", () => {
     btn("Rematch").click();
     expect(virtualTable.game.fen()).toBe(new Chess().fen()); expect(virtualTable.ended).toBeNull();
     expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
-    const hints = btn("Hints"), dots = btn("Legal dots");
+    openMenu(p, "Board");
+    const hints = menuRow("Hints")!, dots = menuRow("Legal dots")!;
     expect(hints.classList.contains("on")).toBe(true); expect(dots.classList.contains("on")).toBe(true);
-    hints.click(); expect(viewSettings().display.hints).toBe(false); expect(hints.classList.contains("on")).toBe(false); expect(hints.getAttribute("aria-pressed")).toBe("false");
+    hints.click(); expect(viewSettings().display.hints).toBe(false); expect(hints.classList.contains("on")).toBe(false); expect(hints.getAttribute("aria-checked")).toBe("false");
     dots.click(); expect(viewSettings().display.legalMoves).toBe(false); expect(dots.classList.contains("on")).toBe(false);
     hints.click(); dots.click();
     click(cv, 4, 6);
@@ -193,7 +203,27 @@ describe("TablePanel", () => {
     const p = new TablePanel();
     bus.clock = { t: 0, white: { ms: 300000, sigmaMs: 0, conf: 1, src: "model" }, black: { ms: 59000, sigmaMs: 0, conf: 1, src: "model" }, running: "w", control: { baseMs: 300000, incMs: 0, delayMs: 0, mode: "fischer" }, flagged: null, lastRead: null };
     p.frame(0);
-    expect(p.root.querySelector(".turn")!.textContent).toContain("5:00"); expect(p.root.querySelector(".turn")!.textContent).toContain("0:59");
+    const clocks = [...p.root.querySelectorAll<HTMLElement>(".cc-clock")];
+    expect(clocks.map((c) => c.textContent)).toEqual(["0:59", "5:00"]);
+    expect(clocks[1].classList.contains("run")).toBe(true);
+  });
+  it("shows the latest narration under the board, and [ ] steps through the scoresheet", () => {
+    const p = new TablePanel(), cv = p.root.querySelector("canvas")!;
+    expect(p.root.querySelector(".muted")!.textContent).toContain("[ and ]");
+    expect(p.root.querySelector<HTMLElement>(".table-caption")!.hidden).toBe(true);
+    bus.lines = [{ speaker: "A", name: "Jean", text: "Bonjour", t: 1, priority: 1 }]; p.frame(0);
+    expect(p.root.querySelector(".table-caption")!.textContent).toBe("Jean: Bonjour");
+    virtualTable.game.move("e4"); virtualTable.game.move("e5"); p.frame(8);
+    cv.dispatchEvent(new KeyboardEvent("keydown", { key: "[", bubbles: true }));
+    expect([...p.root.querySelectorAll(".moves button")].find((b) => b.textContent === "e4")!.getAttribute("aria-current")).toBe("true");
+    const moves = p.root.querySelector(".moves")!;
+    moves.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    expect(p.root.querySelector('[aria-label="Follow the live game"]')!.getAttribute("aria-pressed")).toBe("true");
+    cv.dispatchEvent(new KeyboardEvent("keydown", { key: "[", bubbles: true }));
+    cv.dispatchEvent(new KeyboardEvent("keydown", { key: "[", bubbles: true }));
+    expect([...p.root.querySelectorAll(".moves button")].find((b) => b.textContent === "e4")!.getAttribute("aria-current")).toBe("true");
+    cv.dispatchEvent(new KeyboardEvent("keydown", { key: "]", bubbles: true }));
+    expect(p.root.querySelector('[aria-label="Follow the live game"]')!.getAttribute("aria-pressed")).toBe("true");
   });
 });
 
@@ -224,6 +254,16 @@ describe("WorldPanel", () => {
     frusta.checked = false; frusta.dispatchEvent(new Event("change")); expect(v.showFrusta).toBe(false);
     content.checked = false; content.dispatchEvent(new Event("change")); expect(v.showProjection).toBe(false); expect(v.mappings.length).toBe(1);
     btn(p, "Default room").click(); expect(v.mappings.length).toBe(2); expect(loadMapping().surfaces).toHaveLength(6); expect(FakeChannel.all[0].sent.at(-1)).toEqual({ type: "mapping" });
+  });
+  it("blackouts every projector, and can send a test pattern to one head", () => {
+    const { p, ch } = make();
+    btn(p, "Blackout").click(); expect(ch.sent.at(-1)).toEqual({ type: "calib", cmd: { kind: "black" } });
+    btn(p, "All live").click(); expect(ch.sent.at(-1)).toEqual({ type: "calib", cmd: { kind: "end" } });
+    const exact = (t: string, n = 0) => [...p.root.querySelectorAll("button")].filter((b) => b.textContent === t)[n];
+    exact("White").click(); expect(ch.sent.at(-1)).toEqual({ type: "calib", cmd: { kind: "white", head: 0 } });
+    exact("Grid", 1).click(); expect(ch.sent.at(-1)).toEqual({ type: "calib", cmd: { kind: "grid", head: 1 } });
+    exact("Black").click(); expect(ch.sent.at(-1)).toEqual({ type: "calib", cmd: { kind: "black", head: 0 } });
+    exact("Live").click(); expect(ch.sent.at(-1)).toEqual({ type: "calib", cmd: { kind: "end", head: 0 } });
   });
   it("opens an output window per projector and relays messages through the channel", () => {
     const open = vi.spyOn(window, "open").mockReturnValue({ closed: false } as any); const { p, ch } = make();

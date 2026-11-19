@@ -229,20 +229,35 @@ function edgeAlternates(data: Uint8ClampedArray, w: number, h: number, q: Pt[], 
   close();
   let flips = 0;
   for (let i = 1; i < levels.length; i++) if ((levels[i] - mid) * (levels[i - 1] - mid) < 0) flips++;
-  return levels.length >= 4 && flips >= 3;
+  // A real edge crosses nearly every square. A few accidental flips in the table grain do not.
+  return levels.length >= 6 && flips >= 5;
 }
 
 function fitChecker(data: Uint8ClampedArray, w: number, h: number, q: Pt[], period: number, mid: number, gap: number): Pt[] {
-  const reach = Math.round(period * 4), minRun = Math.max(4, period * 0.22);
+  // Positive moves an edge outward. Grow from the squares already found and stop at the first break,
+  // so a lamp or the speckled table beyond the board cannot pull the corner across the picture.
+  const reach = Math.round(period * 2), minRun = Math.max(4, period * 0.22);
+  const ok = (cur: Pt[], e: number, d: number) => {
+    const moved = nudgeEdge(cur, e, d);
+    return clockwise(moved) && edgeAlternates(data, w, h, moved, e, minRun, gap, mid);
+  };
   let cur = q;
   for (let pass = 0; pass < 3; pass++) for (let e = 0; e < 4; e++) {
-    let best: number | null = null, streak = 0;
-    for (let d = -reach; d <= reach; d++) {
-      const moved = nudgeEdge(cur, e, d);
-      if (clockwise(moved) && edgeAlternates(data, w, h, moved, e, minRun, gap, mid)) { streak++; if (streak >= 2) best = d; }
-      else streak = 0;
+    let start = 0;
+    if (!ok(cur, e, 0)) {
+      let found = false;
+      for (let d = 1; d <= period; d++) {
+        if (ok(cur, e, -d)) { start = -d; found = true; break; }
+        if (ok(cur, e, d)) { start = d; found = true; break; }
+      }
+      if (!found) continue;
     }
-    if (best !== null) cur = nudgeEdge(cur, e, best);
+    let best = start;
+    for (let d = start + 1; d <= reach; d++) {
+      if (!ok(cur, e, d)) break;
+      best = d;
+    }
+    if (best !== 0) cur = nudgeEdge(cur, e, best);
   }
   return cur;
 }

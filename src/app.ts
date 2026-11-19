@@ -483,9 +483,16 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("phone")!.onclick = () => {
     if (remote.available === false) notify("Phone access is built into the dev server. Start the app with npm run dev (or start-chess), then open it on this computer as localhost.", [], "warn", { title: "Phone remote is not running" });
     else if (remote.available === null) notify("Still checking for the phone connection. Try again in a second.", [], "info", { title: "Phone remote" });
-    else notify(`On a phone using the same Wi-Fi, open the address below and enter the join code ${remote.code} if asked. ${remote.clients ? `${remote.clients} phone${remote.clients === 1 ? " is" : "s are"} connected now.` : "No phone is connected yet."}`,
-      [{ label: "Copy address", run: () => { void navigator.clipboard?.writeText(remote.urls[0] ?? "").catch(() => {}); } }], "info",
-      { title: "Watch and play from a phone", details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
+    else {
+      const away = remote.urls.some((u) => u.includes("alderoberge.com"));
+      const lead = away
+        ? `On a phone, open an address below and enter the join code ${remote.code} if asked. The alderoberge.com address works from anywhere; a local address needs the same Wi-Fi.`
+        : `On a phone using the same Wi-Fi, open the address below and enter the join code ${remote.code} if asked.`;
+      const address = remote.urls.find((u) => u.includes("alderoberge.com")) ?? remote.urls[0] ?? "";
+      notify(`${lead} ${remote.clients ? `${remote.clients} phone${remote.clients === 1 ? " is" : "s are"} connected now.` : "No phone is connected yet."}`,
+        [{ label: "Copy address", run: () => { void navigator.clipboard?.writeText(address).catch(() => {}); } }], "info",
+        { title: "Watch and play from a phone", details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
+    }
   };
   const step = (now: number) => {
     remote.tick(now);

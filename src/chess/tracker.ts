@@ -131,12 +131,17 @@ export class PositionTracker {
 
   observe(b: BoardBelief): TrackResult {
     const events: ExperienceEvent[] = [];
-    if (!b.settled) return this.base("pending", [], events, b.fidelity);
-
     const obsGrid = Array.from({ length: 64 }, (_, i) => (b.occ[i] > 0.5 ? (b.white[i] > 0.5 ? "w" : "b") : ""));
     const exp = gridOf(this.game);
     const diff: number[] = [];
     for (let i = 0; i < 64; i++) if (exp[i] !== obsGrid[i]) diff.push(i);
+    const firm = diff.some((i) => b.conf[i] >= this.cfg.minConf);
+    // The settle timer only gates a new move. A picture that already matches the game, or disagrees
+    // only where the cameras are unsure, is the position we have: the opponent can play.
+    if (!b.settled) {
+      if (!firm) { this.cand = ""; this.candN = 0; return this.base("synced", [], events, b.fidelity); }
+      return this.base("pending", [], events, b.fidelity);
+    }
     if (!diff.length) {
       this.cand = ""; this.candN = 0;
       return this.base("synced", diff, events, b.fidelity);
@@ -177,11 +182,10 @@ export class PositionTracker {
     const ok = best && best.cost <= this.cfg.maxCost && (!rival || rival.cost - best.cost >= this.cfg.margin);
 
     // A castle that is only half-seen (the king has stepped, the rook's square is still unread) must wait.
-    // A king that has simply stepped one square is the move itself: a slightly soft square must not throw it away.
-    // cost 0 means the picture matches the step exactly; the squares are only soft, not contradictory.
-    // A half-castle still disagrees (the rook square is empty) and keeps waiting.
-    const kingStep = best?.moves.length === 1 && best.moves[0].piece === "k" && !best.moves[0].flags.includes("k") && !best.moves[0].flags.includes("q") && best.cost === 0;
-    if (ok && best.unsure > 0 && !kingStep) {
+    // A single move the picture matches exactly — a knight hop, a king step — is the move itself.
+    // cost 0 means the squares agree; they are only soft, not contradictory. A half-castle still disagrees and waits.
+    const exactStep = best?.moves.length === 1 && best.cost === 0;
+    if (ok && best.unsure > 0 && !exactStep) {
       this.cand = ""; this.candN = 0;
       return this.base("pending", diff, events, b.fidelity);
     }
@@ -201,7 +205,10 @@ export class PositionTracker {
     }
 
     this.cand = ""; this.candN = 0;
-    // No legal move explained the picture, and there are more pieces than the game has. That is a hand or a shadow, not a move.
+    // No legal move explained the picture. Extra squares the cameras are unsure about are a lamp or a shadow:
+    // they are not a move, and they must not keep a move that already counted from standing.
+    if (surplus && diff.every((i) => b.conf[i] < this.cfg.minConf)) return this.base("synced", diff, events, b.fidelity);
+    // A confident extra piece is a hand still over the board, not a move.
     if (surplus) return this.base("pending", diff, events, b.fidelity);
     // exactly one of our pieces vanished: a piece is in hand, waiting for the destination
     const gone = diff.filter((i) => exp[i] && !obsGrid[i]);

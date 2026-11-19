@@ -8,7 +8,7 @@ export const PARAM_DOCS: Record<string, string> = {
   "vision.boardReader.autoCal": "Learns what the empty squares look like automatically while the start position is on the board.",
   "vision.boardReader.learn": "Tick once with the pieces in the start position to re-learn the reference now. It un-ticks itself.",
   "vision.fuse.staleMs": "If a camera sends nothing for this long, it is dropped from the vote so a frozen feed can't mislead the board.",
-  "vision.fuse.handMotion": "Hand detector sensitivity. If more than this fraction of squares changed between frames, a hand is assumed over the board and the reading is treated as unsettled. Lower = reacts to tiny motion; higher = tolerates more movement before flagging a hand.",
+  "vision.fuse.handMotion": "Hand detector sensitivity. If more than this fraction of squares changed between frames, a hand is assumed over the board and the reading is treated as unsettled. A couple of squares of lamp flicker never count. Higher = tolerates more movement before flagging a hand.",
   "vision.stabilize.memory": "How much of the previous reading is kept each frame. High = smooth and steady but slow to react; low = fast but flickery.",
   "vision.stabilize.hysteresis": "Confidence a square must build up before it flips between empty and occupied. Higher = harder to flip, so noise can't toggle a piece on and off.",
   "vision.stabilize.settleMs": "How long the board must stay unchanged before it is called settled and a move may be read.",

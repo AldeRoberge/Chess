@@ -2,6 +2,7 @@ import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRelay, lanAddresses, remotePlugin } from "./relay";
+import { GameBridge, type BridgeState } from "../../worker/bridge";
 import type { RemoteState } from "./protocol";
 
 let server: Server | null = null;
@@ -111,6 +112,33 @@ describe("relay", () => {
       expect(logs.join("")).toContain("No network address found");
       remotePlugin().configureServer({ middlewares: { use: () => {} }, httpServer: null });
     } finally { console.log = orig; }
+  });
+  it("publishes the game to alderoberge and brings a distant phone's move back", async () => {
+    let row: { token: string; code: string; rev: number; state: string | null; queue: string; touched: number } | null = null;
+    const ctx = {
+      blockConcurrencyWhile: async (fn: () => Promise<void>) => { await fn(); },
+      storage: { sql: { exec(query: string, ...binds: unknown[]) {
+        if (query.includes("INSERT")) row = { token: String(binds[0]), code: String(binds[1]), rev: Number(binds[2]), state: binds[3] as string | null, queue: String(binds[4]), touched: Number(binds[5]) };
+        return { toArray: () => query.includes("SELECT") && row ? [row] : [] };
+      } } },
+    } as BridgeState;
+    const room = new GameBridge(ctx, {});
+    const pub = createServer(async (req, res) => {
+      const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer);
+      const body = Buffer.concat(chunks);
+      const r = await room.fetch(new Request(`https://alderoberge.com${req.url}`, { method: req.method, headers: req.headers as HeadersInit, body: body.length ? body : undefined }));
+      res.writeHead(r.status, { "content-type": r.headers.get("content-type") ?? "application/json" }); res.end(Buffer.from(await r.arrayBuffer()));
+    });
+    await new Promise<void>((r) => pub.listen(0, "127.0.0.1", r));
+    const pubPort = (pub.address() as AddressInfo).port;
+    try {
+      const { call } = await boot({ code: "4321", addresses: () => ["10.0.0.5"], bridge: `http://127.0.0.1:${pubPort}/chess/remote/` });
+      expect((await (await call("/remote/host/info")).json()).urls).toContain("https://alderoberge.com/chess/#/remote?code=4321");
+      await call("/remote/host/state", { method: "POST", body: JSON.stringify(state()) });
+      expect(await (await room.fetch(new Request("https://alderoberge.com/chess/remote/api/state?code=4321&cid=phone&rev=-1"))).json()).toMatchObject({ state: { phase: "game" } });
+      await room.fetch(new Request("https://alderoberge.com/chess/remote/api/cmd?code=4321", { method: "POST", body: JSON.stringify({ type: "move", from: "e2", to: "e4" }) }));
+      expect((await (await call("/remote/host/state", { method: "POST", body: JSON.stringify(state()) })).json()).commands).toEqual([{ type: "move", from: "e2", to: "e4" }]);
+    } finally { pub.close(); }
   });
   it("answers 'too big' bodies and broken uploads without crashing", async () => {
     const { port } = await boot();

@@ -62,6 +62,17 @@ describe("per-square confidence and the start prior", () => {
     const b = startBelief(1); b.occ[0] = 0; const { reads } = readSquares(b, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     expect(reads[0].piece).toBe("r"); expect(reads[0].seen).toBe(false); expect(reads[0].score).toBeLessThan(0.1);
   });
+  it("drops a moved piece from its old square on the live camera view", () => {
+    const b = startBelief(1);
+    const e2 = 52, e4 = 36; // a8 is 0, so e2 is rank 2 and e4 is rank 4
+    b.occ[e2] = 0; b.occ[e4] = 1; b.white[e4] = 1;
+    const { reads, start } = readSquares(b, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", true);
+    expect(start).toBe(true);
+    expect(reads[e2].piece).toBeNull(); expect(reads[e2].seen).toBe(false); expect(reads[e2].prior).toBe(false);
+    expect(reads[e4].seen).toBe(true); expect(reads[e4].piece).toBeNull();
+    expect(reads[60].piece).toBe("K");
+    expect(readSquares(b, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").reads[e2].piece).toBe("P");
+  });
 });
 
 describe("source.synthetic (3D virtual camera)", () => {

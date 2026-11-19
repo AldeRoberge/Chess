@@ -53,6 +53,6 @@ describe("piece placement coach", () => {
     c.fillText = ((text: string, x: number, y: number) => { names.push(text); return fillText(text, x, y); }) as typeof c.fillText;
     drawPlacementMoves(c, (u, v) => ({ x: u * 80, y: v * 80 }), [{ from: 40, to: 48, code: "wp" }], 0);
     expect(names).toContain("a2");
-    expect(COACH_LABEL).toMatch(/Move them like this/);
+    expect(COACH_LABEL).toMatch(/starting squares/);
   });
 });
