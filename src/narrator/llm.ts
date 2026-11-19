@@ -3,7 +3,7 @@ import type { Lang, NarrationLine } from "./narrator";
 import { vendorFetch } from "../net/vendorFetch";
 
 /** Optional AI commentary through OpenAI's chat API (small, fast, cheap model). Falls back to the built-in lines on any failure. */
-export interface LlmSettings { apiKey: string; model: string; names: [string, string]; voices: 1 | 2; lang?: Lang; timeoutMs?: number }
+export interface LlmSettings { apiKey: string; model: string; names: [string, string]; voices: 1 | 2; lang?: Lang; timeoutMs?: number; recentLines?: string[] }
 export const LLM_DEFAULT_MODEL = "gpt-4.1-nano";
 
 const STYLES_EN = `Registers to alternate depending on the moment:
@@ -26,7 +26,7 @@ Montée de tension : « Il y va ! Dame h5, et soudain le roi noir semble très v
 Commentaire de coup avec analyse et anticipation (3 phrases) : « Cavalier g5 ! Il attaque le pion f7, notoirement faible en ouverture. Les noirs doivent être très prudents ; je ne serais pas surpris que les blancs préparent un sacrifice. »
 Expressions : « Quelle trouvaille ! », « Voilà qui est intéressant ! », « Oh non, il n'a pas vu ça ! », « Il donne la qualité ! », « Le roi est en échec ! », « Les noirs accumulent la pression sur l'aile roi. », « C'est le seul coup qui tienne la position. », « C'est à peu près équilibré, il reste beaucoup à jouer. », « Il ne lui reste que quinze secondes ! », « Un mat en trois est sur l'échiquier ! ».`;
 
-type Voices = Pick<LlmSettings, "names" | "voices" | "lang">;
+type Voices = Pick<LlmSettings, "names" | "voices" | "lang" | "recentLines">;
 
 const SYSTEM_EN = (s: Voices) => `You are ${s.voices === 2 ? `two live chess commentators, ${s.names[0]} (A, play-by-play) and ${s.names[1]} (B, analysis, anticipation and reactions)` : `${s.names[0]}, a live chess commentator (A)`}. Speak English, like real commentators: natural, lively, never robotic.
 ${STYLES_EN}
@@ -35,9 +35,9 @@ Rules: at most 3 lines in total, 1 to 3 short sentences each; fewer for an ordin
 export const buildMessages = (events: ExperienceEvent[], history: string[], s: Voices) => [
   {
     role: "system" as const,
-    content: s.lang === "en" ? SYSTEM_EN(s) : `Tu es ${s.voices === 2 ? `deux commentateurs d'échecs en direct, ${s.names[0]} (A, joue-par-joue) et ${s.names[1]} (B, analyse, anticipation et réactions)` : `${s.names[0]}, commentateur d'échecs en direct (A)`}. Tu parles français, comme de vrais commentateurs : naturels, vivants, jamais robotiques.
+    content: `Vary wording, rhythm and observations. Avoid stock introductions about facing a machine. Do not repeat or paraphrase these recently spoken lines: ${JSON.stringify(s.recentLines?.slice(-16) ?? [])}. ` + (s.lang === "en" ? SYSTEM_EN(s) : `Tu es ${s.voices === 2 ? `deux commentateurs d'échecs en direct, ${s.names[0]} (A, joue-par-joue) et ${s.names[1]} (B, analyse, anticipation et réactions)` : `${s.names[0]}, commentateur d'échecs en direct (A)`}. Tu parles français, comme de vrais commentateurs : naturels, vivants, jamais robotiques.
 ${STYLES}
-Règles : au plus 3 répliques au total, 1 à 3 courtes phrases chacune ; moins pour un coup banal. Nomme les pièces et les cases, dis ce que le coup menace ou prépare, et ce que l'adversaire doit craindre. Adapte l'intensité à l'enjeu : calme au début, nerveux quand la tension monte, éclatant sur un mat. Ne parle JAMAIS de capteurs, de caméra, de « position incohérente » ni d'attendre que les pièces soient replacées. Ne décris JAMAIS ce que font les joueurs physiquement (ajuster, hésiter, réfléchir, toucher une pièce) : tu ne le vois pas, c'est une invention ; si un événement n'est pas un coup, un échec, un mat, une prise ou une nulle, ne dis rien. N'invente ni coups ni évaluations précises que tu ne peux pas déduire. Réponds uniquement en JSON : {"lines":[{"speaker":"A","text":"..."}]}.`,
+Règles : au plus 3 répliques au total, 1 à 3 courtes phrases chacune ; moins pour un coup banal. Nomme les pièces et les cases, dis ce que le coup menace ou prépare, et ce que l'adversaire doit craindre. Adapte l'intensité à l'enjeu : calme au début, nerveux quand la tension monte, éclatant sur un mat. Ne parle JAMAIS de capteurs, de caméra, de « position incohérente » ni d'attendre que les pièces soient replacées. Ne décris JAMAIS ce que font les joueurs physiquement (ajuster, hésiter, réfléchir, toucher une pièce) : tu ne le vois pas, c'est une invention ; si un événement n'est pas un coup, un échec, un mat, une prise ou une nulle, ne dis rien. N'invente ni coups ni évaluations précises que tu ne peux pas déduire. Réponds uniquement en JSON : {"lines":[{"speaker":"A","text":"..."}]}.`),
   },
   { role: "user" as const, content: s.lang === "en"
     ? `Recent moves: ${history.slice(-16).join(" ") || "none"}\nEvents: ${JSON.stringify(events.map((e) => ({ type: e.type, ...(e.data ?? {}) })))}`

@@ -130,7 +130,7 @@ export function findCheckerCorners(f: GrayFrame): Pt[] | null {
   const vals = full.map((p) => data[clampN(Math.round(p.y), 0, h - 1) * w + clampN(Math.round(p.x), 0, w - 1)]).sort((a, b) => a - b);
   const dark = vals[Math.floor(vals.length * 0.3)], light = vals[Math.floor(vals.length * 0.7)];
   if (light - dark < 12) return null;
-  const q = fitChecker(data, w, h, extremes(full), period, (light + dark) / 2, Math.max(14, (light - dark) * 0.4));
+  const q = fitCheckerGrid(f, fitChecker(data, w, h, extremes(full), period, (light + dark) / 2, Math.max(14, (light - dark) * 0.4)), period);
   const area = Math.abs(q.reduce((s, p, i) => { const n = q[(i + 1) % 4]; return s + p.x * n.y - n.x * p.y; }, 0)) / 2;
   return area > w * h * 0.02 ? q : null;
 }
@@ -341,6 +341,52 @@ function at(f: GrayFrame, c: Pt[], u: number, v: number): number {
   const x = clampN(Math.round(w00 * a.x + w10 * b.x + w11 * d.x + w01 * e.x), 0, f.width - 1);
   const y = clampN(Math.round(w00 * a.y + w10 * b.y + w11 * d.y + w01 * e.y), 0, f.height - 1);
   return f.data[y * f.width + x];
+}
+
+/** Pieces can hide the outside ranks from the period detector. Fit all eight ranks,
+ * using the corners of each square so piece centres do not pull the outline inward. */
+function fitCheckerGrid(f: GrayFrame, initial: Pt[], period: number): Pt[] {
+  const score = (q: Pt[]) => {
+    if (!clockwise(q) || q.some((p) => p.x < 0 || p.y < 0 || p.x >= f.width || p.y >= f.height)) return -Infinity;
+    let contrast = 0, noise = 0;
+    for (let row = 0; row < 8; row++) for (let col = 0; col < 8; col++) {
+      const v = [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]].map(([x, y]) => at(f, q, (col + x) / 8, (row + y) / 8));
+      const mean = v.reduce((s, n) => s + n, 0) / 4;
+      contrast += ((row + col) % 2 ? -1 : 1) * mean;
+      noise += v.reduce((s, n) => s + Math.abs(n - mean), 0) / 4;
+    }
+    return Math.abs(contrast) - noise * 0.5;
+  };
+  let best = initial, bestScore = score(best);
+  const seeds: { q: Pt[]; score: number }[] = [];
+  const search = (q: Pt[], edge: number) => {
+    if (edge === 4) {
+      const s = score(q);
+      seeds.push({ q, score: s });
+      return;
+    }
+    for (let d = -0.5; d <= 2; d += 0.5) search(nudgeEdge(q, edge, d * period), edge + 1);
+  };
+  search(initial, 0);
+  const left = Math.min(...initial.map((p) => p.x)), right = Math.max(...initial.map((p) => p.x));
+  const top = Math.min(...initial.map((p) => p.y)), bottom = Math.max(...initial.map((p) => p.y));
+  search([{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }], 0);
+  seeds.sort((a, b) => b.score - a.score);
+  let result = best, resultScore = bestScore;
+  for (const seed of seeds.slice(0, 24)) {
+    best = seed.q; bestScore = seed.score;
+    for (const step of [period / 4, period / 8, 2, 1]) {
+      for (let pass = 0; pass < 3; pass++) for (let i = 0; i < 4; i++) {
+        const origin = best;
+        for (const dx of [-step, 0, step]) for (const dy of [-step, 0, step]) {
+          const q = origin.map((p, j) => j === i ? { x: p.x + dx, y: p.y + dy } : p);
+          const s = score(q); if (s > bestScore) { best = q; bestScore = s; }
+        }
+      }
+    }
+    if (bestScore > resultScore) { result = best; resultScore = bestScore; }
+  }
+  return result;
 }
 
 /** Positive when light squares are the ones a8/h1 naming says are light. Pieces cover some centres, so each square contributes its median. */

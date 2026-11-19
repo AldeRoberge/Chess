@@ -92,7 +92,12 @@ export async function chat(messages: Msg[], o: AiOptions, doFetch: typeof fetch 
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.apiKey.trim()}` },
       body: JSON.stringify({ model: o.model || AI_DEFAULT_MODEL, messages, response_format: { type: "json_object" }, temperature: 0.2 }),
     });
-    if (!r.ok) throw new Error(r.status === 401 ? "OpenAI rejected the API key (401)." : `OpenAI error ${r.status}.`);
+    if (!r.ok) {
+      let detail = ""; try { const j = await r.json(); detail = j?.error?.message ?? ""; } catch { /* not JSON */ }
+      if (r.status === 401) throw new Error("OpenAI rejected the API key (401).");
+      const hint = r.status === 429 ? " (slow down or out of quota)" : r.status >= 500 ? " (OpenAI server problem; try again, or pick another model)" : "";
+      throw new Error(`OpenAI error ${r.status}${hint}${detail ? `: ${detail}` : ""} [model: ${o.model || AI_DEFAULT_MODEL}]`);
+    }
     const text = (await r.json())?.choices?.[0]?.message?.content;
     if (!text) throw new Error("The model returned an empty reply.");
     return String(text);

@@ -403,26 +403,101 @@ export class NodeEditor {
     return n;
   }
 
-  private applyView() { this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; }
+  private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; }
+  /** Pan and zoom gestures change the view many times a frame; the transform is written once, on the next animation frame. */
+  private viewRaf = 0;
+  private scheduleView() { if (!this.viewRaf) this.viewRaf = requestAnimationFrame(() => { this.viewRaf = 0; this.applyView(); }); }
+  /** While a pan or pinch runs the world is its own compositor layer and previews hold still, so moving the map costs no repaint. */
+  private moving = 0;
+  private setMoving(on: boolean) { this.moving = Math.max(0, this.moving + (on ? 1 : -1)); this.root.classList.toggle("moving", this.moving > 0); }
+  /** Zoom by `f` around a point in canvas pixels, keeping that point still. */
+  private zoomAt(mx: number, my: number, f: number) {
+    const k = Math.min(1.6, Math.max(0.3, this.view.k * f));
+    this.view.x = mx - ((mx - this.view.x) * k) / this.view.k; this.view.y = my - ((my - this.view.y) * k) / this.view.k; this.view.k = k;
+  }
+  private fling = 0;
+  /** A touch pan released while moving keeps gliding and slows to a stop. */
+  private glide(vx: number, vy: number) {
+    cancelAnimationFrame(this.fling);
+    if (Math.hypot(vx, vy) < 0.25) return; // px per ms
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = Math.min(48, now - last); last = now;
+      this.view.x += vx * dt; this.view.y += vy * dt; this.applyView();
+      const decay = Math.pow(0.995, dt); vx *= decay; vy *= decay;
+      this.fling = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : 0;
+      if (!this.fling) this.onView();
+    };
+    this.fling = requestAnimationFrame(step);
+  }
+  /** Pans the view with the pointer; touch and pen pans glide on after release. */
+  private pan(e: PointerEvent) {
+    cancelAnimationFrame(this.fling); this.fling = 0;
+    const sx = e.clientX, sy = e.clientY, ox = this.view.x, oy = this.view.y;
+    let vx = 0, vy = 0, lt = e.timeStamp, lx = sx, ly = sy;
+    this.setMoving(true);
+    const mv = (ev: PointerEvent) => {
+      const dt = ev.timeStamp - lt;
+      if (dt > 0) { const a = Math.min(1, dt / 50); vx += ((ev.clientX - lx) / dt - vx) * a; vy += ((ev.clientY - ly) / dt - vy) * a; } // smoothed velocity
+      lt = ev.timeStamp; lx = ev.clientX; ly = ev.clientY;
+      this.view.x = ox + ev.clientX - sx; this.view.y = oy + ev.clientY - sy; this.scheduleView();
+    };
+    this.track(this.root, e, mv, (ev) => {
+      this.setMoving(false); this.applyView();
+      if (ev && (e.pointerType === "touch" || e.pointerType === "pen") && ev.timeStamp - lt < 80) this.glide(vx, vy); else this.onView();
+    });
+  }
+  /** Fingers on the canvas, for two-finger pinch zoom. */
+  private touches = new Map<number, { x: number; y: number }>();
+  private pinch: { d: number; mx: number; my: number; x: number; y: number; k: number; left: number; top: number } | null = null;
+  private bindTouch() {
+    const spread = () => { const [a, b] = [...this.touches.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
+    this.root.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch" || (e.target as HTMLElement).closest(".ne-palette")) return;
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size !== 2) return;
+      // second finger: whatever the first one started (a pan, a node drag, a wire) gives way to a pinch
+      e.preventDefault(); e.stopPropagation(); this.endGesture?.(); cancelAnimationFrame(this.fling);
+      const r = this.root.getBoundingClientRect(), s = spread();
+      this.pinch = { ...s, x: this.view.x, y: this.view.y, k: this.view.k, left: r.left, top: r.top };
+      this.setMoving(true);
+    }, true);
+    this.root.addEventListener("pointermove", (e) => {
+      const t = this.touches.get(e.pointerId); if (!t) return;
+      t.x = e.clientX; t.y = e.clientY;
+      const p = this.pinch; if (!p || this.touches.size < 2) return;
+      e.stopPropagation();
+      const s = spread(), k = Math.min(1.6, Math.max(0.3, p.k * s.d / p.d));
+      const wx = (p.mx - p.left - p.x) / p.k, wy = (p.my - p.top - p.y) / p.k; // the map point first under the fingers stays under them
+      this.view.k = k; this.view.x = s.mx - p.left - wx * k; this.view.y = s.my - p.top - wy * k;
+      this.scheduleView();
+    }, true);
+    const lift = (e: PointerEvent) => {
+      if (!this.touches.delete(e.pointerId)) return;
+      if (this.pinch && this.touches.size < 2) { this.pinch = null; this.setMoving(false); this.applyView(); this.onView(); }
+    };
+    for (const ev of ["pointerup", "pointercancel"] as const) window.addEventListener(ev, lift, true);
+  }
 
   private bindInteraction() {
     this.applyView();
+    this.bindTouch();
     this.root.addEventListener("wheel", (e) => {
       if ((e.target as HTMLElement).closest(".ne-palette")) return;
       e.preventDefault();
       const r = this.root.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-      const k = Math.min(1.6, Math.max(0.3, this.view.k * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
-      this.view.x = mx - ((mx - this.view.x) * k) / this.view.k; this.view.y = my - ((my - this.view.y) * k) / this.view.k; this.view.k = k;
-      this.applyView(); this.onView();
+      // Proportional zoom: one mouse-wheel notch (100px) is 10%, a trackpad's many small deltas glide smoothly instead of jumping 10% each.
+      const dy = Math.max(-300, Math.min(300, e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 300 : 1)));
+      cancelAnimationFrame(this.fling); this.fling = 0;
+      this.zoomAt(mx, my, Math.pow(1.1, -dy / (e.ctrlKey ? 12 : 100))); // ctrlKey: a trackpad pinch, which sends small deltas
+      this.scheduleView(); this.onView();
     }, { passive: false });
     // middle mouse button pans from anywhere, including over nodes (capture phase so nothing underneath claims it)
     this.root.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); }, true); // no browser autoscroll
     this.root.addEventListener("pointerdown", (e) => {
       if (e.button !== 1 || (e.target as HTMLElement).closest(".ne-palette")) return;
       e.preventDefault(); e.stopPropagation(); window.getSelection()?.removeAllRanges();
-      const sx = e.clientX, sy = e.clientY, ox = this.view.x, oy = this.view.y;
-      const mv = (ev: PointerEvent) => { this.view.x = ox + ev.clientX - sx; this.view.y = oy + ev.clientY - sy; this.applyView(); };
-      this.track(this.root, e, mv, () => this.onView());
+      this.pan(e);
     }, true);
     this.root.addEventListener("pointerdown", (e) => {
       if (e.button > 0) return; // right-click opens the palette; it must not start a drag that never gets its pointerup
@@ -431,9 +506,7 @@ export class NodeEditor {
       if (t.closest(".ne-node") || t.closest(".ne-palette")) return;
       e.preventDefault(); window.getSelection()?.removeAllRanges(); // no text selection or native drag while panning
       this.palette.hidden = true; this.selected.clear(); this.refreshSel();
-      const sx = e.clientX, sy = e.clientY, ox = this.view.x, oy = this.view.y;
-      const mv = (ev: PointerEvent) => { this.view.x = ox + ev.clientX - sx; this.view.y = oy + ev.clientY - sy; this.applyView(); };
-      this.track(this.root, e, mv, () => this.onView());
+      this.pan(e);
     });
     this.root.addEventListener("dblclick", (e) => { if (!(e.target as HTMLElement).closest(".ne-node")) this.openPalette(e.clientX, e.clientY); });
     registerContextMenu(this.root, (e) => this.contextItems(e));
@@ -618,6 +691,7 @@ export class NodeEditor {
   }
 
   frame(now: number) {
+    if (this.viewRaf) this.applyView();
     if (this.dirty || now - this.lastWire > 400) {
       this.lastWire = now; this.dirty = false;
       // Wires are reconciled in place rather than rebuilt: replacing the <path> elements would restart their CSS flow animation on every refresh (the visible back-and-forth jitter).
@@ -641,7 +715,7 @@ export class NodeEditor {
       }
       this.reconcileWires(wanted);
     }
-    const doPrev = now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
+    const doPrev = !this.moving && now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
     if (doPrev) this.lastPrev = now;
     // Measure which previews are on screen before anything below writes to the DOM. Reading a node's size
     // after another node's stats were rewritten would force a fresh layout once per node, every frame.

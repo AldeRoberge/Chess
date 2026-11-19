@@ -4,11 +4,14 @@
  */
 import { Chess } from "chess.js";
 import { fmtClock } from "../clock/types";
+import { movesFromReading } from "../ui/pieceCoach";
+import { sqName } from "../vision/types";
 import type { GrayFrame } from "../vision/types";
 import { resultText, type PlayMode, type RemoteCommand, type RemoteMove, type RemoteState } from "./protocol";
 
 /** The parts of the shared bus the snapshot reads. */
 export interface BusView {
+  board?: { occ: ArrayLike<number>; white: ArrayLike<number>; cams: number; handOver: boolean } | null;
   game: { fen: string; turn: "w" | "b"; ply: number; over: boolean; status: string; history: string[]; fidelity: number; last: { from: string; to: string; san: string } | null } | null;
   director: { phase: string } | null;
   engineHint: { from: string; to: string } | null;
@@ -36,7 +39,10 @@ export function dropStaleHint(b: Pick<BusView, "game" | "engineHint">) {
 export function snapshot(b: BusView, opts: { now: number; virtualBoard: boolean; framed: ReadonlySet<string>; notice: RemoteState["notice"] }): RemoteState {
   dropStaleHint(b);
   const g = b.game;
+  const setupMoves = (g?.ply ?? 0) === 0 && b.director?.phase !== "game" && b.board && b.board.cams > 0 && !b.board.handOver
+    ? (movesFromReading(b.board.occ, b.board.white) ?? []).map((m) => ({ from: sqName(m.from), to: sqName(m.to), code: m.code })) : [];
   return {
+    setupMoves,
     v: 1, t: opts.now, phase: b.director?.phase ?? "idle", status: g?.status ?? "pending",
     fen: g?.fen ?? new Chess().fen(), turn: g?.turn ?? "w", ply: g?.ply ?? 0, over: g?.over ?? false, result: g?.over ? resultText(g.fen) : null,
     moves: g ? [...g.history] : [], last: g?.last ? { from: g.last.from, to: g.last.to, san: g.last.san } : null,
@@ -81,6 +87,7 @@ export function applyRemoteMove(cmd: RemoteMove, ctx: RemoteCtx): { ok: boolean;
 
 /** Carries out a phone command: a move, a takeback, a resignation, or an agreed draw. */
 export function applyRemoteCommand(cmd: RemoteCommand, ctx: RemoteCtx): { ok: boolean; text: string } {
+  if (cmd.type === "calibrate") return { ok: false, text: "Calibration is unavailable." };
   if (cmd.type === "move") return applyRemoteMove(cmd, ctx);
   if (cmd.type === "takeback") {
     if (ctx.table.busy) return { ok: false, text: "A move is still being played. Try again in a second." };
@@ -113,6 +120,8 @@ export async function encodeFrame(frame: GrayFrame, quality = 0.6): Promise<Blob
 export interface HostDeps {
   /** URL prefix of the relay, for example "/remote/". */
   base: string;
+  /** Production browsers allocate a room in the worker instead of using a localhost relay. */
+  cloud?: boolean;
   build(framed: ReadonlySet<string>, notice: RemoteState["notice"], now: number): RemoteState;
   frames(): { id: string; frame: GrayFrame }[];
   /** Carries out a phone's command and says what happened. */
@@ -127,6 +136,7 @@ export class RemoteHost {
   /** null until the first probe answers; false when this server has no relay (a static build). */
   available: boolean | null = null;
   code = ""; urls: string[] = []; clients = 0;
+  private token = "";
   private notice: RemoteState["notice"] = null;
   private framed = new Set<string>();
   private lastState = -Infinity; private lastFrame = -Infinity;
@@ -137,10 +147,16 @@ export class RemoteHost {
   private async probe() {
     if (this.busy.probe) return; this.busy.probe = true;
     try {
-      const r = await this.fetchFn(`${this.d.base}host/info`);
-      if (r.ok) { const j = await r.json(); this.code = String(j.code ?? ""); this.urls = j.urls ?? []; this.clients = j.clients ?? 0; this.available = true; } else this.available = false;
+      const r = await this.fetchFn(`${this.d.base}host/${this.d.cloud ? "session" : "info"}`, this.d.cloud ? { method: "POST" } : undefined);
+      if (r.ok) { const j = await r.json(); this.token = this.d.cloud ? String(j.token ?? "") : ""; this.code = String(j.code ?? ""); this.urls = j.urls ?? []; this.clients = j.clients ?? 0; this.available = true; } else this.available = false;
     } catch { this.available = false; }
     this.busy.probe = false;
+  }
+
+  private publish(path: string, body: BodyInit, type: string) {
+    const join = path.includes("?") ? "&" : "?";
+    const url = `${this.d.base}${path}${this.d.cloud ? `${join}code=${encodeURIComponent(this.code)}` : ""}`;
+    return this.fetchFn(url, { method: "POST", headers: { "Content-Type": type, ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body });
   }
 
   /** Call every animation frame; it paces itself. */
@@ -155,7 +171,7 @@ export class RemoteHost {
     this.busy.state = true;
     try {
       const body = JSON.stringify(this.d.build(this.framed, this.notice, Date.now()));
-      const r = await this.fetchFn(`${this.d.base}host/state`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      const r = await this.publish("host/state", body, "application/json");
       if (r.ok) {
         const j = await r.json(); this.clients = j.clients ?? 0; this.code = String(j.code ?? this.code);
         for (const c of (j.commands ?? []) as RemoteCommand[]) { const out = this.d.command(c, now); this.notice = { ...out, at: Date.now() }; }
@@ -170,7 +186,7 @@ export class RemoteHost {
       const enc = this.d.encode ?? encodeFrame;
       for (const { id, frame } of this.d.frames()) {
         const blob = await enc(frame); if (!blob) continue;
-        const r = await this.fetchFn(`${this.d.base}host/frame?cam=${encodeURIComponent(id)}`, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
+        const r = await this.publish(`host/frame?cam=${encodeURIComponent(id)}`, blob, "image/jpeg");
         if (r.ok) this.framed.add(id);
       }
     } catch { /* ignore: the next second tries again */ }

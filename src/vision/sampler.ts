@@ -1,25 +1,33 @@
 import { applyH, boardToImage } from "./homography";
+import { extractCrops } from "./squareCrops";
+import type { SquareCnn } from "./squareCnn";
 import { clamp, sigmoid, type GrayFrame, type Pt, type SquareObs } from "./types";
 
 export interface SamplerConfig {
+  shapeWeight?: number; // texture/edge evidence strength
+  colorWeight?: number; // brightness evidence strength
+  positionWeight?: number; // perspective correction strength
   corners: Pt[]; // [a8,h8,h1,a1] in image pixels
   threshold: number; // |delta| that counts as "piece present", as a fraction of the square's empty brightness (exposure-independent)
   softness: number; // sigmoid softness, same units
   grid: number; // sample points per axis in each square's centre patch
   patch: number; // fraction of the square sampled (0..1)
+  /** "cnn" takes occupancy and colour from the trained square classifier (when loaded); motion, hands and picture quality still come from the brightness reader. */
+  engine?: "rules" | "cnn";
 }
 
 export const defaultSamplerConfig = (): SamplerConfig => ({
   corners: [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }],
   threshold: 0.22,
   softness: 0.06,
-  grid: 6,
+  grid: 8,
   patch: 0.6,
 });
 
 const SAT = 250; // pixels at or above this are clipped glare, not a piece
 const GHOST_Z = 3; // evidence (in softness units) above which a square is clearly a piece and the ghost guard stays out of it
 const GHOST_LOOK = 0.35; // how far (ln brightness) a square's dark/bright ends may sit from both learned piece looks
+const TEX_ONLY = 0.1; // weight of texture evidence when the brightness did not move
 const RIM = 0.44; // how far from a square's centre (in square widths) the corner samples sit — outside a piece's base, inside the square
 
 /**
@@ -46,7 +54,10 @@ export class BoardSampler {
   /** Texture of an empty square (std-dev of its middle) as measured at calibration; NaN until learned. */
   spreadGate = NaN;
   /** (ln dark end, ln bright end) of the middle relative to the empty square, for white and black pieces on light [0] and dark [1] squares, learned from the start position. */
+  private spreadByColor = [NaN, NaN];
   private tone: { w: [number, number][]; b: [number, number][] } | null = null;
+  /** The trained square classifier, shared by every reader. Load it with `loadSquareCnn()` (squareModel.ts). */
+  static cnn: SquareCnn | null = null;
   leanU = 0;
   leanV = 0;
   private H: number[] = [];
@@ -57,7 +68,7 @@ export class BoardSampler {
   constructor(public cam: string, public cfg: SamplerConfig = defaultSamplerConfig()) {}
 
   private prepare() {
-    const key = JSON.stringify(this.cfg.corners) + this.cfg.grid + this.cfg.patch;
+    const key = JSON.stringify(this.cfg.corners) + this.cfg.grid + this.cfg.patch + (this.cfg.positionWeight ?? 1);
     if (key === this.key) return;
     this.key = key;
     this.H = boardToImage(this.cfg.corners);
@@ -94,8 +105,8 @@ export class BoardSampler {
     // The longer image edge is closer to the camera. Piece tops lean toward the far, shorter edge.
     const rank = (rank1 - rank8) / (rank1 + rank8 || 1);
     const file = (fileA - fileH) / (fileA + fileH || 1);
-    this.leanU = clamp(file, -1, 1) * 0.2;
-    this.leanV = clamp(-rank, -1, 1) * 0.2;
+    this.leanU = clamp(file, -1, 1) * 0.2 * (this.cfg.positionWeight ?? 1);
+    this.leanV = clamp(-rank, -1, 1) * 0.2 * (this.cfg.positionWeight ?? 1);
     return { u: this.leanU, v: this.leanV };
   }
 
@@ -174,6 +185,7 @@ export class BoardSampler {
     const useRim = Number.isFinite(rim) && Number.isFinite(rim0)
       && Math.abs(dRim) >= thrRim
       && dRef * dRim >= 0
+      && Math.abs(dRef) >= thrRim * 0.3 // the middle itself must move too: a darkened border alone is a shadow or a neighbour
       && Math.abs(dRim) > Math.abs(rim - rim0) * 0.45;
     return useRim ? { drive: dRim, gate: thrRim } : { drive: dRef, gate: thr };
   }
@@ -209,6 +221,16 @@ export class BoardSampler {
     for (let sq = 16; sq < 48; sq++) if (Number.isFinite(spread[sq])) flat.push(spread[sq]);
     flat.sort((a, b) => a - b);
     this.spreadGate = flat.length >= 8 ? Math.max(flat[Math.floor(flat.length * 0.9)] * 2.2, flat[Math.floor(flat.length * 0.9)] + 7) : NaN;
+    // Dark squares often carry more sensor noise than light squares. Keep their
+    // noise floors separate so one colour cannot hide pieces on the other.
+    for (let k = 0; k < 2; k++) {
+      const samples: number[] = [];
+      for (let sq = 16; sq < 48; sq++)
+        if ((sq % 8 + Math.floor(sq / 8)) % 2 === k && Number.isFinite(spread[sq])) samples.push(spread[sq]);
+      samples.sort((a, b) => a - b);
+      const noise = samples[Math.floor(samples.length * 0.9)];
+      this.spreadByColor[k] = samples.length >= 8 ? Math.max(noise * 2.2, noise + 7) : this.spreadGate;
+    }
     // What a white and a black piece look like next to an empty square, per square colour: the pieces' own start squares.
     const ln = (v: number, ref: number) => Math.log(Math.max(1, v) / Math.max(1, ref));
     const med = (xs: number[]) => { xs.sort((a, b) => a - b); return xs.length ? xs[xs.length >> 1] : NaN; };
@@ -250,6 +272,9 @@ export class BoardSampler {
 
   calibrateEmpty(frame: GrayFrame) {
     const { crown, rim } = this.squares(frame);
+    this.spreadGate = NaN;
+    this.spreadByColor = [NaN, NaN];
+    this.tone = null;
     this.ref.set(crown);
     this.rimRef.set(rim);
   }
@@ -270,13 +295,20 @@ export class BoardSampler {
       if (Number.isNaN(v) || !this.calibrated || !Number.isFinite(ref)) { occ[sq] = 0.5; bad++; this.prev[sq] = v; continue; }
       const { drive, gate } = this.cue(v, edge, ref, this.rimRef[sq]);
       const soft = softOf(ref);
-      const blown = v >= SAT || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
+      // Glare is light the square did not have when it was learned empty. A pale square that is bright by nature
+      // (v close to its own empty reference) is just an empty square, not a lamp wash-out.
+      const lifted = v - ref > Math.max(12, ref * 0.05);
+      // A lamp lifts the square and its border together; a piece (even a clipped white one) stands out from the wood around its base.
+      const rim0 = this.rimRef[sq], standMin = Math.max(ref * this.cfg.threshold * 0.42, 9);
+      const stands = Number.isFinite(edge) && Number.isFinite(rim0) && Math.abs(v - edge - (ref - rim0)) >= standMin;
+      const blown = (v >= SAT && lifted && !stands) || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
       if (blown) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
       else {
         if (v <= 3) bad++;
         let zBright = (Math.abs(drive) - gate) / soft;
         // Texture: an empty square is flat, a piece is not. A king's cross is this kind of evidence, and a smooth shadow is not.
-        const zTex = Number.isFinite(this.spreadGate) && Number.isFinite(spread[sq]) ? (spread[sq] - this.spreadGate) / Math.max(1.5, this.spreadGate * 0.25) : -Infinity;
+        const textureGate = this.spreadByColor[(sq % 8 + Math.floor(sq / 8)) % 2] ?? this.spreadGate;
+        const zTex = Number.isFinite(textureGate) && Number.isFinite(spread[sq]) ? (spread[sq] - textureGate) / Math.max(1.5, textureGate * 0.25) : -Infinity;
         if (this.tone && v > 3 && Number.isFinite(lo[sq])) {
           const k = ((sq % 8) + Math.floor(sq / 8)) % 2, d = Math.log(Math.max(1, lo[sq]) / Math.max(1, ref)), u = Math.log(Math.max(1, hi[sq]) / Math.max(1, ref));
           const dw = Math.hypot(d - this.tone.w[k][0], u - this.tone.w[k][1]), db = Math.hypot(d - this.tone.b[k][0], u - this.tone.b[k][1]);
@@ -291,12 +323,16 @@ export class BoardSampler {
         } else white[sq] = sigmoid(drive / (soft * 2));
         // A square flatter than bare wood is a lamp or the wood a piece just left, not a piece. Brightness
         // alone must not keep that square occupied, or the king that stepped away never leaves its home.
-        if (drive > 0 && zTex > -Infinity && zTex < -0.5) zBright = Math.min(zBright, zTex);
+        if (!stands && drive > 0 && zTex > -Infinity && zTex < -0.5) zBright = Math.min(zBright, zTex);
         // A lamp that washes the square out is not a vote. Calling it empty erases the knight under the glare
         // and outvotes the camera that can still see it. Leave it undecided.
-        const glare = v >= 220 && !(zTex > -0.5);
+        const glare = v >= 220 && lifted && !stands && !(zTex > -0.5);
         if (glare) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
-        else occ[sq] = sigmoid(Math.max(zBright, zTex));
+        else {
+          // Texture with no brightness change at all is usually a neighbour's edge or shadow falling in the patch, so it speaks softly.
+          const texOnly = Math.abs(drive) < gate * 0.3 && !stands;
+          occ[sq] = sigmoid(Math.max(zBright * (this.cfg.colorWeight ?? 1), zTex === -Infinity ? -Infinity : zTex * (this.cfg.shapeWeight ?? 1) * (texOnly && zTex > 0 ? TEX_ONLY : 1)));
+        }
       }
       const thr = Math.max(ref * this.cfg.threshold, 12);
       // Glare flickers on its own. Counting it as a hand freezes the board, so a move on those squares never lands.
@@ -307,9 +343,20 @@ export class BoardSampler {
       }
       this.prev[sq] = v;
     }
+    const net = this.cfg.engine === "cnn" ? BoardSampler.cnn : null;
+    if (net && this.cfg.corners.length === 4) {
+      const p = net.classify(extractCrops(frame, this.cfg.corners));
+      for (let sq = 0; sq < 64; sq++) {
+        const e = p[sq * 3], w = p[sq * 3 + 1], b = p[sq * 3 + 2];
+        occ[sq] = clamp(1 - e, 0.001, 0.999);
+        white[sq] = w + b > 1e-6 ? w / (w + b) : 0.5;
+      }
+    }
     return {
       cam: this.cam, t: frame.t,
-      quality: clamp(1 - (bad / 64) * 2, 0, 1),
+      // Unreadable squares reduce the vote proportionally; half a bright board
+      // must not mute the readable pieces on the other half.
+      quality: clamp(1 - bad / 64, 0, 1),
       weight, occ, white,
       motion: moving / 64,
       handSquares: hand,

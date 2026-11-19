@@ -90,10 +90,19 @@ describe("PositionTracker", () => {
   });
   it("reports a piece in hand (lifted) when it cannot decide where it will land", () => {
     const t = new PositionTracker(), g = new Chess();
-    const v = view(g, { conf: 0.05 }); v.occ[sqIndex("e2")] = 0;
+    const v = view(g); v.occ[sqIndex("e2")] = 0;
     const r = t.observe(v);
     expect(r.status).toBe("lifted"); expect(r.lifted).toBe("e2"); expect(r.diff).toEqual([sqIndex("e2")]);
     expect(r.events.map((e) => e.type)).toEqual(["lifted"]);
+  });
+  it("retains the position when a missing piece is only weakly observed", () => {
+    const t = new PositionTracker(), v = view(new Chess(), { conf: 0.05 });
+    v.occ[sqIndex("e2")] = 0;
+    const r = t.observe(v);
+    expect(r.status).toBe("synced");
+    expect(r.uncertain).toEqual([sqIndex("e2")]);
+    expect(r.history).toEqual([]);
+    expect(r.events).toEqual([]);
   });
   it("reports illegal placements with the offending squares and keeps the game unchanged", () => {
     const t = new PositionTracker(), v = view(new Chess(), { conf: 0.99 });
@@ -104,12 +113,12 @@ describe("PositionTracker", () => {
     expect(r.events[0]).toMatchObject({ type: "illegal", data: { squares: expect.arrayContaining(["e2", "e6"]) } });
     expect(r.fen).toBe(new Chess().fen());
   });
-  it("tolerates one low-confidence wrong square but not a confident one", () => {
+  it("tolerates one low-confidence wrong square, but not a confident missing piece of the side that moved", () => {
     const g = new Chess(); g.move("d4");
     const lo = view(g); lo.occ[0] = 0; lo.conf[0] = 0.2;
     const a = new PositionTracker(); a.observe(lo);
     expect(a.observe(lo).status).toBe("moved");
-    const hi = view(g); hi.occ[0] = 0; hi.conf[0] = 0.99;
+    const hi = view(g); hi.occ[56] = 0; hi.conf[56] = 0.99; // a1 rook gone too: d4 alone does not explain it
     const b = new PositionTracker(); b.observe(hi);
     expect(b.observe(hi).status).not.toBe("moved");
   });

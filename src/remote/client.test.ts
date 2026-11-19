@@ -18,6 +18,40 @@ beforeEach(() => { document.body.innerHTML = '<div id="app"></div>'; Element.pro
 afterEach(() => { stop(); history.replaceState({}, "", "/"); });
 
 describe("phone page", () => {
+  it("keeps move guides stable across polls and puts watch-only controls at the bottom", async () => {
+    start(vi.fn(() => json({ rev: 1, clients: 1, state: state() }))); await flush();
+    expect(q('.rm-head [aria-label="Chess XP"]').querySelector("svg")).not.toBeNull();
+    expect(q('.rm-head [aria-label="Join another game"]').textContent).toBe("Join another");
+    expect(q('.rm-bottom [aria-label="Watch only"]')).not.toBeNull();
+    const ghost = q(".rm-guide-ghost"), moving = q(".rm-guide-piece");
+    expect(ghost.style.left).toBe("50%"); expect(ghost.style.top).toBe("50%");
+    expect(q(".rm-guide canvas")).not.toBeNull();
+    await flush(); expect(q(".rm-guide-piece")).toBe(moving);
+    q<HTMLButtonElement>('[aria-label="Turn the board around"]').click();
+    expect(q(".rm-guide-ghost").style.left).toBe("37.5%");
+  });
+  it("animates reset instructions and clears them when the host confirms setup", async () => {
+    let current = state({ ply: 0, moves: [], last: null, phase: "idle", setupMoves: [{ from: "e4", to: "e2", code: "wp" }] });
+    let revision = 1;
+    start(vi.fn(() => json({ rev: revision, clients: 1, state: current }))); await flush();
+    expect(q(".rm-turn").textContent).toContain("follow the pieces home");
+    expect(q(".rm-guide-ghost").style.top).toBe("75%");
+    current = state({ last: null, setupMoves: [] }); revision++;
+    await flush(); expect(document.querySelector(".rm-guide-piece")).toBeNull();
+    expect(q(".rm-turn").textContent).toBe("Your turn");
+  });
+  it("renders and polls when the browser blocks access to session storage", async () => {
+    history.replaceState({}, "", "/#/remote?code=4321");
+    const getter = vi.spyOn(window, "sessionStorage", "get").mockImplementation(() => { throw new DOMException("Storage blocked", "SecurityError"); });
+    const f = vi.fn(() => json({ rev: 0, clients: 1, waiting: true }));
+    try {
+      stop = mountRemote(host(), { fetchFn: f as never, base: "/", poll: 5 }).stop;
+      expect(document.querySelectorAll(".rm-sq")).toHaveLength(64);
+      await flush();
+      expect(f).toHaveBeenCalled();
+      expect(q(".rm-conn").textContent).toBe("Waiting for the computer");
+    } finally { getter.mockRestore(); }
+  });
   it("asks for the code when the address has none, and keeps the player on that screen until one is typed", async () => {
     const f = vi.fn(() => json({ rev: 0, clients: 1, waiting: true }));
     start(f, "#/remote");
@@ -32,7 +66,9 @@ describe("phone page", () => {
   });
   it("shows the live game: turn, board, the paper score sheet and game info", async () => {
     start(vi.fn(() => json({ rev: 1, clients: 2, state: state({ moves: ["e4", "e5", "Nf3"], turn: "b", hint: { from: "g1", to: "f3" }, notice: { text: "Playing Nf3.", ok: true, at: 5 } }), frames: { A: 3 } }))); await flush();
-    expect(q(".rm-turn").textContent).toBe("Black to move, move 2"); expect(q(".rm-conn").textContent).toBe("Live");
+    expect(q(".rm-confidence").textContent).toBe("Live board confidence 90%");
+    expect(q<HTMLMeterElement>(".rm-confidence meter").value).toBe(0.9);
+    expect(q(".rm-turn").textContent).toBe("Your turn"); expect(q(".rm-conn").textContent).toMatch(/^Live · \d+ ms$/);
     expect(document.querySelectorAll(".rm-sq")).toHaveLength(64); expect(q('[data-sq="e4"]').getAttribute("aria-label")).toBe("e4, white pawn"); expect(q('[data-sq="e5"]').getAttribute("aria-label")).toBe("e5, empty");
     expect(q('[data-sq="e4"]').classList.contains("last")).toBe(true);
     expect([...document.querySelectorAll(".rm-sheet tbody tr")].map((r) => r.textContent)).toEqual(["1e4e5", "2Nf3"]);
@@ -44,8 +80,8 @@ describe("phone page", () => {
     cells()[1].click(); expect(q(".rm-turn").textContent).toBe("Looking back: after 1... e5"); expect(q('[data-sq="f3"]').getAttribute("aria-label")).toBe("f3, empty"); expect(cells()[1].getAttribute("aria-current")).toBe("true");
     q('button[aria-label="Previous move"]').click(); expect(q(".rm-turn").textContent).toBe("Looking back: after 1. e4");
     q('button[aria-label="First move"]').click(); expect(q(".rm-turn").textContent).toBe("Looking back: start position");
-    q('button[aria-label="Next move"]').click(); q('button[aria-label="Next move"]').click(); q('button[aria-label="Next move"]').click(); expect(q(".rm-turn").textContent).toBe("Black to move, move 2");
-    cells()[0].click(); q('button[aria-label="Latest move"]').click(); expect(q(".rm-turn").textContent).toBe("Black to move, move 2");
+    q('button[aria-label="Next move"]').click(); q('button[aria-label="Next move"]').click(); q('button[aria-label="Next move"]').click(); expect(q(".rm-turn").textContent).toBe("Your turn");
+    cells()[0].click(); q('button[aria-label="Latest move"]').click(); expect(q(".rm-turn").textContent).toBe("Your turn");
     cells()[0].click(); q('button[aria-label="Follow the live game"]').click(); expect(q(".rm-turn").classList.contains("back")).toBe(false);
     q('button[aria-label="Turn the board around"]').click(); expect(document.querySelector<HTMLElement>(".rm-sq")!.dataset.sq).toBe("h1");
   });
@@ -153,7 +189,7 @@ describe("phone page", () => {
   it("opens the join popup from the header so the code can be typed again", async () => {
     start(vi.fn(() => json({ rev: 1, clients: 1, state: state() }))); await flush();
     expect(document.querySelector(".rm-join-pop")).toBeNull();
-    q('[aria-label="Join with a code"]').click();
+    q('[aria-label="Join another game"]').click();
     expect(q(".rm-join-pop").getAttribute("role")).toBe("dialog"); expect(q(".rm-join input")).toBeTruthy();
   });
 });

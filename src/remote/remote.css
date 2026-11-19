@@ -2,15 +2,19 @@
  * The phone page. One column, built for a thumb: the board first, the paper score sheet under it (the one bold element here),
  * everything else quiet. Tokens come from style.css; the sheet uses the --paper set.
  */
-body.remote{overflow:auto;height:auto;min-height:100%}
-body.remote #app{display:block;height:auto}
-.rm{max-width:560px;margin:0 auto;padding:0 12px 24px;display:flex;flex-direction:column;gap:10px;min-height:100dvh}
-.rm-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 2px 0}
+html:has(body.remote){overflow-x:hidden;overflow-y:auto;height:auto;min-height:100%}
+body.remote{overflow:visible;height:auto;min-height:100dvh}
+body.remote #app{display:block;height:auto;padding-bottom:0}
+.rm{max-width:560px;margin:0 auto;padding:0 12px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;min-height:100dvh}
+.rm> *{flex-shrink:0}
+.rm-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 2px 0}
 .rm-title{font:700 var(--t-lg)/1 var(--font-ui);color:var(--signal-hi)}
 .rm-conn{font:500 var(--t-sm)/1 var(--font-ui);color:var(--ok);padding:6px 10px;border:1px solid color-mix(in srgb,var(--ok) 45%,var(--line));border-radius:var(--radius)}
 .rm-conn.off{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,var(--line))}
 .rm-turn{margin:0;font:600 var(--t-md)/1.3 var(--font-ui)}
 .rm-turn.back{color:var(--amber)}
+.rm-confidence{display:flex;align-items:center;gap:12px;margin:0;font:500 var(--t-sm)/1.4 var(--font-ui)}
+.rm-confidence meter{flex:1;min-width:60px;max-width:180px;height:12px}
 .rm-clocks{margin:0;font:600 var(--t-md)/1.3 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--signal-hi)}
 .rm-clocks[hidden]{display:none}
 .rm button{font:inherit}
@@ -22,6 +26,23 @@ body.remote #app{display:block;height:auto}
 .rm-acts[hidden]{display:none}
 
 /* board: 8x8 buttons, the square never shrinks below a finger */
+.rm{font-family:"Chakra Petch",system-ui,sans-serif;font-size:15px;letter-spacing:.01em}
+.rm-head{display:grid;grid-template-columns:auto 1fr auto;gap:12px;padding-block:16px 6px}
+.rm-title{display:flex;align-items:center}.rm-title svg{width:42px;height:42px}
+.rm-conn{justify-self:start;font:500 11px/1.2 "IBM Plex Mono",monospace;white-space:nowrap}
+.rm-head .rm-btn{font-size:13px;border-radius:999px}
+.rm-turn{font-size:clamp(20px,5vw,28px);font-weight:600;letter-spacing:-.03em;line-height:1.25;padding-block:4px}
+.rm-bottom{margin-top:auto;display:flex;justify-content:center;padding-top:20px;border-top:1px solid var(--line)}
+.rm-bottom .rm-btn{width:100%;color:var(--text-dim);background:transparent}
+.rm-board{position:relative}
+.rm-guide{position:absolute;inset:0;z-index:3;pointer-events:none}
+.rm-guide canvas{position:absolute;inset:0;width:100%;height:100%}
+.rm-guide img{position:absolute;width:12.5%;height:12.5%;object-fit:contain;padding:3px;box-sizing:border-box;filter:drop-shadow(0 2px 3px #0008)}
+.rm-guide-ghost{opacity:.3}
+.rm-guide-piece{animation:rm-piece-home 2.4s cubic-bezier(.4,0,.2,1) infinite}
+.rm-sq.guide-destination>img{opacity:.2}
+@keyframes rm-piece-home{0%,12%{transform:translate(0,0);opacity:0}20%{opacity:1}75%,90%{transform:translate(var(--dx),var(--dy));opacity:1}100%{transform:translate(var(--dx),var(--dy));opacity:0}}
+@media(prefers-reduced-motion:reduce){.rm-guide-piece{display:none}}
 .rm-board{--light:#f0d9b5;--dark:#b58863;--hi:#ffe27a;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));width:min(100%,52dvh);margin-inline:auto;aspect-ratio:1;border:1px solid var(--line-hi);border-radius:var(--radius);overflow:hidden;touch-action:manipulation}
 .rm-sq{position:relative;display:grid;place-items:center;padding:0;border:0;border-radius:0;min-width:0;min-height:0;cursor:pointer}
 .rm-sq.light{background:var(--light)}.rm-sq.dark{background:var(--dark)}
@@ -44,6 +65,8 @@ body.remote #app{display:block;height:auto}
 
 .rm-tabs{display:flex;border-bottom:1px solid var(--line)}
 .rm-tabs button{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1;min-height:44px;border:0;border-radius:0;background:transparent;color:var(--text-dim);font:500 var(--t-md)/1 var(--font-ui);cursor:pointer}
+.rm-tabs button{min-width:0;padding:0 4px;gap:5px;font:500 13px/1 var(--font-ui);white-space:nowrap}
+@media(max-width:420px){.rm-tabs button svg{display:none}}
 .rm-tabs button.on{color:var(--signal-hi);box-shadow:inset 0 -2px var(--signal)}
 .rm-panel{flex:1}
 .rm-empty{margin:12px 2px;color:var(--text-dim);line-height:1.5}
@@ -71,7 +94,7 @@ body.remote #app{display:block;height:auto}
 .rm-lines{margin:0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;line-height:1.4}
 
 /* join popup: a card over the page, with a large code field */
-.rm-join-pop{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--ink-0) 72%,transparent)}
+.rm-join-pop{position:fixed;inset:0;z-index:40;display:grid;place-items:safe center;overflow-y:auto;padding:16px;background:color-mix(in srgb,var(--ink-0) 72%,transparent)}
 .rm-join{display:flex;flex-direction:column;gap:12px;width:min(420px,100%);padding:18px;border:1px solid var(--line-hi);border-radius:12px;background:var(--ink-1);box-shadow:0 20px 60px -10px var(--shadow)}
 .rm-join h1{margin:0;font:700 var(--t-xl)/1.1 var(--font-ui)}
 .rm-lead{margin:0;color:var(--text-dim);line-height:1.5}

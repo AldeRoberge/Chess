@@ -7,6 +7,17 @@ const game = (over = false) => ({ fen: new Chess().fen(), turn: "w" as const, pl
 const bus = (o: Partial<BusView> = {}): BusView => ({ game: game(), director: { phase: "game" }, engineHint: null, botColor: null, cameras: [{ id: "A", online: true, quality: 0.8 }], lines: Array.from({ length: 7 }, (_, i) => ({ name: "Jean", text: `line ${i}` })), ...o });
 
 describe("remote host", () => {
+  it("shares reset guidance from the observed board only while setting up a new game", () => {
+    const g = new Chess(); g.move("e4");
+    const occ = new Float32Array(64), white = new Float32Array(64);
+    g.board().flat().forEach((p, i) => { occ[i] = p ? 1 : 0; white[i] = p?.color === "w" ? 1 : 0; });
+    const source = bus({ game: { ...game(), ply: 0, history: [] }, director: { phase: "idle" }, board: { occ, white, cams: 1, handOver: false } });
+    const opts = { now: 5, virtualBoard: false, framed: new Set<string>(), notice: null };
+    expect(snapshot(source, opts).setupMoves).toEqual([{ from: "e4", to: "e2", code: "wp" }]);
+    source.director = { phase: "game" }; expect(snapshot(source, opts).setupMoves).toEqual([]);
+    source.director = { phase: "idle" }; source.board!.handOver = true;
+    expect(snapshot(source, opts).setupMoves).toEqual([]);
+  });
   it("words the result of a finished game", () => {
     const mate = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
     expect(snapshot(bus({ game: { ...game(true), fen: mate } }), { now: 5, virtualBoard: true, framed: new Set(), notice: null }).result).toBe("Checkmate. Black wins.");
@@ -113,5 +124,22 @@ describe("remote host", () => {
     const d = make(down); d.host.tick(0); await flush(); d.host.tick(10); await flush(); d.host.tick(1500); await flush(); expect(d.host.available).toBe(true);
     const nope = make(vi.fn((url: string) => url.endsWith("host/info") ? reply({ code: "1", clients: 1 }) : reply({ ok: true })), { encode: async () => null }); nope.host.tick(0); await flush(); nope.host.tick(2000); await flush(); expect(nope.host.urls).toEqual([]);
   });
+  it("publishes production games with host credentials and collects phone moves", async () => {
+    const f = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith("host/session")) {
+        expect(init?.method).toBe("POST");
+        return reply({ code: "654321", token: "private-host-token", urls: ["https://alderoberge.com/chess/#/remote?code=654321"], clients: 1 });
+      }
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer private-host-token" });
+      expect(url).toContain("code=654321");
+      return reply({ clients: 1, commands: url.includes("host/state") ? [{ type: "move", from: "e2", to: "e4" }] : [] });
+    });
+    const { host, command } = make(f, { cloud: true, base: "/chess/remote/" });
+    host.tick(0); await flush(); expect(host.available).toBe(true);
+    host.tick(10); await flush();
+    expect(command).toHaveBeenCalledWith({ type: "move", from: "e2", to: "e4" }, 10);
+    expect(f.mock.calls.some(([url]) => url.includes("host/frame?cam=A&code=654321"))).toBe(true);
+  });
+
   it("uses the browser's fetch when none is injected", () => { expect(() => new RemoteHost({ base: "/", build: () => ({}) as never, frames: () => [], command: () => ({ ok: true, text: "" }) })).not.toThrow(); });
 });
