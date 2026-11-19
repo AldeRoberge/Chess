@@ -339,7 +339,8 @@ export class NodeEditor {
 
   private refreshSel() {
     for (const [id, v] of this.views) v.el.classList.toggle("sel", this.selected.has(id));
-    this.root.classList.toggle("has-sel", this.selected.size > 0); // dims the nodes that are not selected
+    this.root.classList.toggle("has-sel", this.selected.size > 0); // slightly softens the nodes that are not selected
+    this.dirty = true; // re-evaluate which wires are highlighted
     this.onSelect([...this.selected]);
   }
   /** Called whenever the selection changes; the top ribbon uses it to offer the matching actions. */
@@ -616,8 +617,9 @@ export class NodeEditor {
         const val = this.graph.outputs.get(e.from.node)?.[e.from.port];
         const live = val !== undefined && val !== null && !(Array.isArray(val) && !val.length);
         const fid = this.graph.stats.get(e.from.node)?.fidelity ?? null;
-        const cls = live ? wireClass(this.settle(e.id, t === "frame" ? undefined : val, now), fid) : "idle";
-        const tip = !live ? "No data yet" : cls === "constant" ? "Constant: has not changed" : fid == null ? "Live data" : `Certainty ${Math.round(fid * 100)}%`;
+        const hot = this.selected.has(e.from.node) || this.selected.has(e.to.node); // wires touching a selected node shine brighter
+        const cls = (live ? wireClass(this.settle(e.id, t === "frame" ? undefined : val, now), fid) : "idle") + (hot ? " hot" : "");
+        const tip = !live ? "No data yet" : cls.startsWith("constant") ? "Constant: has not changed" : fid == null ? "Live data" : `Certainty ${Math.round(fid * 100)}%`;
         wanted.set(e.id, { d: this.wirePath(a, b), stroke: PORT_COLOR[t], cls, tip, style: `pointer-events:stroke${fid != null && live ? `;opacity:${(0.5 + 0.5 * fid).toFixed(2)}` : ""}`, e: e.id });
       }
       if (this.drag) {

@@ -84,9 +84,10 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne-node.wide .ne-params{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:5px 14px}
 .ne-grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 55%,var(--line-hi) 55% 65%,transparent 65% 77%,var(--line-hi) 77% 87%,transparent 87%);border-radius:0 0 6px 0}
 .ne-node.sel{border-color:var(--signal)}.ne-node.bypass{opacity:.8}
-/* With a selection, the selected nodes stay bright and everything else is dimmed back. */
+/* With a selection, the other nodes only soften slightly; the wires touching the selection shine brighter. */
 .ne-node{transition:opacity .15s}
-.ne.has-sel .ne-node:not(.sel){opacity:.35}
+.ne.has-sel .ne-node:not(.sel){opacity:.85}
+.ne-wires path.hot{filter:brightness(1.6) saturate(1.2);stroke-width:4.5}
 .ne.has-sel .ne-node.sel{opacity:1}
 .ne-head{display:grid;grid-template-columns:26px auto 1fr;align-items:center;column-gap:8px;row-gap:3px;padding:8px 8px 7px 12px;border-radius:5px 5px 0 0;background:var(--ink-2);box-shadow:inset 3px 0 var(--cat);cursor:grab;user-select:none}
 .ne-ico{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:6px;color:var(--cat);background:color-mix(in srgb,var(--cat) 16%,transparent);border:1px solid color-mix(in srgb,var(--cat) 40%,transparent)}.ne-ico .ic{display:block}
