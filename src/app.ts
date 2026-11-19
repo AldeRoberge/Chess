@@ -474,7 +474,11 @@ export function boot(root: HTMLElement): Boot {
     base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
     build: (framed, notice, now) => {
       const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
-      if (virtualTable.over) { s.over = true; s.play = "off"; }
+      if (virtualTable.over) {
+        s.over = true; s.play = "off";
+        const e = virtualTable.ended;
+        if (e) s.result = e.kind === "draw" ? "Draw agreed." : `${e.color === "w" ? "White" : "Black"} resigns. ${e.color === "w" ? "Black" : "White"} wins.`;
+      }
       return s;
     },
     frames: camFrames,
