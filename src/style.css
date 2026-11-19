@@ -384,3 +384,10 @@ aside{container-type:inline-size}
 
 /* touch sizing must not stretch the round section dot */
 .coarse .ne-gdot{min-height:0}
+
+/* corner editor: alignment readout */
+.qe-meter{display:flex;align-items:center;gap:10px;margin:6px 0 2px;font-size:var(--t-xs);color:var(--text-dim)}
+.qe-meter[hidden]{display:none}
+.qe-meter-bar{flex:0 0 140px;height:8px;border-radius:4px;background:var(--ink-3);overflow:hidden;border:1px solid var(--line)}
+.qe-meter-bar i{display:block;height:100%;width:0;transition:width .15s,background .15s}
+.qe-meter.good{color:var(--ok)}
