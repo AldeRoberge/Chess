@@ -168,38 +168,57 @@ function squareTones(lum: Float32Array, W: number, H: number, pts: Pt[]): { ligh
 
 const isSquare = (v: number, tone: { light: number; dark: number; tol: number }) => Math.min(Math.abs(v - tone.light), Math.abs(v - tone.dark)) <= tone.tol;
 
-/** True when the strip just inside this edge is still square-coloured, so the edge has not stepped onto the table. */
-function edgeOnBoard(lum: Float32Array, w: number, h: number, q: Pt[], edge: number, tone: { light: number; dark: number; tol: number }): boolean {
+/** True when the strip just inside this edge still alternates light and dark. A solid border or the table does not. */
+function edgeOnBoard(lum: Float32Array, w: number, h: number, q: Pt[], edge: number, gap: number): boolean {
   const a = q[edge], b = q[(edge + 1) % 4];
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
   const nx = dy / len, ny = -dx / len;
-  let ok = 0, n = 0;
-  for (const t of [0.25, 0.4, 0.5, 0.6, 0.75]) {
-    const x = Math.round(a.x + dx * t - nx * 3), y = Math.round(a.y + dy * t - ny * 3);
+  let runs = 0, prev = NaN;
+  for (let dist = len * 0.06; dist < len * 0.94; dist += 2) {
+    const t = dist / len;
+    const x = Math.round(a.x + dx * t - nx * 2), y = Math.round(a.y + dy * t - ny * 2);
     if (x < 0 || y < 0 || x >= w || y >= h) continue;
-    n++;
-    if (isSquare(lum[y * w + x], tone)) ok++;
+    const v = lum[y * w + x];
+    if (Number.isNaN(prev) || Math.abs(v - prev) > gap) { runs++; prev = v; }
   }
-  return n >= 3 && ok >= n - 1;
+  return runs >= 4;
+}
+
+/** Outermost pixels that match the square tones. For a convex board this is the four corners; a printed border is solid and fails the checker score later. */
+function maskCorners(lum: Float32Array, w: number, h: number, blob: Pt[], tone: { light: number; dark: number; tol: number }, pad: number): Pt[] | null {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of blob) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  const xa = Math.max(0, Math.floor(x0 - pad)), ya = Math.max(0, Math.floor(y0 - pad));
+  const xb = Math.min(w - 1, Math.ceil(x1 + pad)), yb = Math.min(h - 1, Math.ceil(y1 + pad));
+  const pts: Pt[] = [];
+  for (let y = ya; y <= yb; y += 2) for (let x = xa; x <= xb; x += 2) if (isSquare(lum[y * w + x], tone)) pts.push({ x, y });
+  return pts.length >= 40 ? extremes(pts) : null;
 }
 
 /**
- * Hits stop about a square inside the far edges, and a plain contrast score is happy with any box that still
- * covers most of the squares. Each edge is walked out (or back in) until the squares give way to the table.
+ * Checker hits stop about a square inside the far edges, and any box that still covers most of the squares
+ * scores the same. One candidate walks each edge until the squares stop alternating (so a solid printed border
+ * is not swallowed). The other takes the outline of every pixel that is a square colour, which follows a
+ * perspective trapezoid the hits only partly covered. The one that reads as a board wins.
  */
 function fitQuad(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel): Pt[] {
   const lum = planeOf(img, ch), tone = squareTones(lum, img.width, img.height, blob);
-  const span = Math.max(sx, sy, 12) * 1.6;
-  let q = extremes(blob);
+  const gap = Math.max(10, Math.abs(tone.light - tone.dark) * 0.45);
+  const period = Math.max(sx, sy, 12);
+  let walked = extremes(blob);
+  const span = period * 2;
   for (let pass = 0; pass < 2; pass++) for (let e = 0; e < 4; e++) {
     let best = 0, seen = false, misses = 0;
-    for (let d = -Math.round(span * 0.35); d <= span; d++) {
-      if (edgeOnBoard(lum, img.width, img.height, nudgeEdge(q, e, d), e, tone)) { best = d; seen = true; misses = 0; }
+    for (let d = -Math.round(span); d <= span; d++) {
+      if (edgeOnBoard(lum, img.width, img.height, nudgeEdge(walked, e, d), e, gap)) { best = d; seen = true; misses = 0; }
       else if (seen && ++misses > 3) break;
     }
-    if (seen) q = nudgeEdge(q, e, best);
+    if (seen) walked = nudgeEdge(walked, e, best);
   }
-  return q;
+  const masked = maskCorners(lum, img.width, img.height, blob, tone, period * 6);
+  const sw = scoreOf(img, walked, ch), sm = masked ? scoreOf(img, masked, ch) : 0;
+  console.log("fit", "walk", sw.toFixed(2), walked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "), "mask", sm.toFixed(2), masked ? masked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | ") : "none", "tone", Math.round(tone.dark), Math.round(tone.light), "tol", tone.tol.toFixed(1));
+  return sm > sw ? masked! : walked;
 }
 
 /** a8 and h1 are light squares, h8 and a1 dark. That kills a 90° spin; 180° still looks the same, so rank 1 goes to the bottom of the picture. */
@@ -226,13 +245,16 @@ function orientByShade(img: ImageData, corners: Pt[], ch: Channel): Pt[] {
 /** The checkerboard quadrilateral, named a8, h8, h1, a1 as far as the squares themselves allow. Null when nothing reads as a board. */
 export function detectCornersByShape(img: ImageData): ShapeCorners | null {
   const hits = checkerHits(img);
-  if (!hits) return null;
+  if (!hits) { console.log("reject no hits"); return null; }
   const blob = largestBlob(hits.pts);
-  if (blob.length < 24) return null;
+  if (blob.length < 24) { console.log("reject blob", blob.length, "pts", hits.pts.length); return null; }
   const fitted = fitQuad(img, blob, hits.sx, hits.sy, hits.channel);
   const corners = orientByShade(img, fitted, hits.channel);
   const separation = scoreOf(img, corners, hits.channel);
-  if (separation < 0.45) return null;
+  if (separation < 0.45) {
+    console.log("reject", "hits", hits.pts.length, "blob", blob.length, "sx", hits.sx, "sy", hits.sy, "sep", separation.toFixed(2), "fit", fitted.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "));
+    return null;
+  }
   return { corners, separation, channel: hits.channel };
 }
 

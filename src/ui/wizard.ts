@@ -252,14 +252,14 @@ export class SetupWizard {
   private ensureVideo() {
     const cam = this.cfg.cameras[this.state.boardCam];
     if (!cam || cam.kind !== "webcam") { this.stopStream(); return; }
-    if (this.streamFor === cam.deviceId && this.stream) return;
+    if (this.streamFor === cam.deviceId) return; // open, or still opening: never start a second open of the same camera
     this.stopStream();
     this.streamFor = cam.deviceId;
     void this.deps.openCamera(cam.deviceId).then((s) => {
       if (this.streamFor !== cam.deviceId) { s.getTracks().forEach((t) => t.stop()); return; }
       this.stream = s;
       this.video = document.createElement("video"); this.video.muted = true; this.video.srcObject = s; void this.video.play();
-    }).catch(() => { this.stream = null; });
+    }).catch(() => { this.stream = null; if (this.streamFor === cam.deviceId) this.streamFor = ""; });
   }
   private stopStream() { this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; this.video = null; this.streamFor = ""; }
 

@@ -6,6 +6,7 @@ import { FRAME_H, FRAME_W, RIGS } from "../sim/rigs";
 import type { GrayFrame } from "../vision/types";
 import { drawFrame, withDetail } from "./shared";
 import { frameHover } from "./hover";
+import { openStream } from "../setup/devices";
 
 interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number }
 
@@ -43,7 +44,7 @@ const webcam: NodeSpec<WebcamState> = {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const want = String(params.device);
           const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: 640, height: 480 } });
+          const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: 640, height: 480 } });
           const v = document.createElement("video"); v.srcObject = stream; v.muted = true; await v.play();
           state.stream = stream; state.video = v; state.canvas = document.createElement("canvas"); state.canvas.width = 480; state.canvas.height = 360; state.err = "";
           stream.getVideoTracks()[0].onended = () => stop(); // unplugged -> camera simply goes offline
