@@ -190,7 +190,7 @@ export class NodeEditor {
   private applySize(n: NodeInstance) {
     const el = this.views.get(n.id)?.el; if (!el) return;
     el.style.width = n.w ? n.w + "px" : ""; el.style.height = n.h ? n.h + "px" : "";
-    el.classList.toggle("sized", !!n.h); el.classList.toggle("wide", (n.w ?? 0) >= 360);
+    el.classList.toggle("sized", !!n.h); el.classList.toggle("wide", (n.w ?? 0) >= 480);
     const v = this.views.get(n.id)!;
     if (n.h && !v.preview && !this.spec(n).preview) { // a node without a preview gets a live readout of its outputs once it is expanded
       v.preview = h("canvas", "ne-preview"); v.generic = true; v.preview.width = 160; v.preview.height = 100; this.watchPreview(n.id, v.preview, 160, 100);
