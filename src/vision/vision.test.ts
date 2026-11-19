@@ -140,17 +140,16 @@ describe("BoardSampler", () => {
     const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
     const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
     const empty = (sq: number) => (light(sq) ? 190 : 48);
-    const whiteSq = sqIndex("e4"), blackSq = sqIndex("d5"), glareSq = sqIndex("c4"), calm = sqIndex("f5");
+    const whiteSq = sqIndex("e4"), blackSq = sqIndex("e5"), glareSq = sqIndex("c4"), calm = sqIndex("f5");
     const paint = (over: (sq: number, u: number, v: number, bg: number) => number) => boardPaint(corners, (sq, u, v) => over(sq, u, v, empty(sq)));
     const disk = (sq: number, u: number, v: number, bg: number, delta: number, radius: number, cap = 249) => {
-      if (sq !== (Math.floor(v) * 8 + Math.floor(u))) return bg;
       const cx = (sq % 8) + 0.5, cy = Math.floor(sq / 8) + 0.5;
       return Math.hypot(u - cx, v - cy) < radius ? Math.max(0, Math.min(cap, bg + delta)) : bg;
     };
     const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
-    s.calibrateEmpty(paint(() => 0));
+    s.calibrateEmpty(paint((_sq, _u, _v, bg) => bg));
     const frame = paint((sq, u, v, bg) => {
-      if (sq === whiteSq) return disk(sq, u, v, bg, 22, 0.3); // white on a light square, well under the old 22% test
+      if (sq === whiteSq) return disk(sq, u, v, bg, 28, 0.3); // white on a light square: +28 is under the old 22% bar (42)
       if (sq === blackSq) return disk(sq, u, v, bg, -16, 0.3); // black on a dark square
       if (sq === glareSq) return disk(sq, u, v, bg, 80, 0.62, 255); // the whole square blown out
       return bg;

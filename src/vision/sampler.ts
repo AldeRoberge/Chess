@@ -119,7 +119,7 @@ export class BoardSampler {
     return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2;
   }
 
-  /** Mean-free: median brightness of each square's centre patch (what the hover and the tests read). */
+  /** Median brightness of each square's centre patch (what the hover and the tests read). */
   measure(frame: GrayFrame): Float32Array {
     this.prepare();
     const out = new Float32Array(64);
