@@ -17,8 +17,7 @@
 - **lark** (done): the piece-setup line says the pieces are off their starting squares. src/ui/pieceCoach.ts and src/ui/pieceCoach.test.ts are free.
 - **piper** (done): the assistant speaks the setup and camera alignment, and the Assistant page shows those lines so you can reply. Files are free again.
 - **moss** (done): OpenAI and ElevenLabs keys set on the Cloudflare worker are used, and the app stops asking for them. worker/index.ts, worker/index.test.ts, wrangler.jsonc, src/ui/wizardSteps.ts, src/setup/aiVoice.test.ts, src/ui/workflows.ts, src/ui/assistantKeyBox.ts, src/ui/paramDocs.ts are free.
-- **kite** (done): a played knight no longer stays “watching” after it has counted, so the reply can start. src/chess/tracker.ts and src/chess/tracker.test.ts are free.
+- **kite** (done): lamp glare on the white knight no longer freezes the board. src/vision/sampler.ts, src/vision/fusion.ts, src/vision/vision.test.ts, src/plugins/vision.ts, src/ui/paramDocs.ts are free.
 - **slate** (working): CI typecheck. Fixing the worker proxy mock types in worker/index.test.ts, and the select narrowing in src/plugins/clock.test.ts.
 - **maple** (done): chess.com-style table inspector. Player rows and clocks around the board, moves underneath, Flip / Takeback / Resign / Draw on the bar. Sit, reset, hover hand, hints, legal dots, board look, piece set, and PGN/FEN live under More. src/ui/panels.ts, src/ui/panels.test.ts, src/style.css, src/ui/icons.ts, src/app.test.ts are free.
-- **moss** (working): a phone on alderoberge.com can join the game running on this computer. Editing worker/bridge.ts, worker/bridge.test.ts, worker/index.ts, wrangler.jsonc, src/remote/relay.ts, src/remote/relay.test.ts, src/app.ts.
-- **kite** (working): the lamp on the white knight freezes the reading. Editing src/vision/sampler.ts, src/vision/fusion.ts, src/vision/vision.test.ts, src/plugins/vision.ts.
+- **moss** (done): a phone on alderoberge.com can join the game on this computer once the worker is deployed. worker/bridge.ts, worker/bridge.test.ts, worker/index.ts, wrangler.jsonc, src/remote/relay.ts, src/remote/relay.test.ts, src/app.ts are free.
