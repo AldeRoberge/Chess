@@ -48,21 +48,44 @@ export function gaussBlur(src: Float32Array, w: number, h: number, r: number): F
 /** 3x3 median via the classic 19-exchange network (a plain sort of 9 per pixel is several times slower). */
 export function median3(src: Float32Array, w: number, h: number): Float32Array {
   const out = new Float32Array(w * h);
-  const p = new Float32Array(9);
-  const ex = (i: number, j: number) => { if (p[i] > p[j]) { const t = p[i]; p[i] = p[j]; p[j] = t; } };
+  medianInto(src, w, h, out);
+  return out;
+}
+
+/**
+ * Fast exact 3x3 median, written straight into `out`. Each column of three is sorted once per row and
+ * shared by the three windows that contain it; the median of the nine is then the median of
+ * (largest low, middle middle, smallest high) of the three columns. About a third of the comparisons
+ * of the exchange network, and it works on 8-bit frames directly, so the median-only clean-up never
+ * round-trips through floats.
+ */
+function medianInto(src: ArrayLike<number>, w: number, h: number, out: { [i: number]: number }) {
+  const lo = new Float32Array(w), mid = new Float32Array(w), hi = new Float32Array(w);
   for (let y = 0; y < h; y++) {
     const ym = Math.max(0, y - 1) * w, y0 = y * w, yp = Math.min(h - 1, y + 1) * w;
     for (let x = 0; x < w; x++) {
-      const xm = Math.max(0, x - 1), xp = Math.min(w - 1, x + 1);
-      p[0] = src[ym + xm]; p[1] = src[ym + x]; p[2] = src[ym + xp];
-      p[3] = src[y0 + xm]; p[4] = src[y0 + x]; p[5] = src[y0 + xp];
-      p[6] = src[yp + xm]; p[7] = src[yp + x]; p[8] = src[yp + xp];
-      ex(1, 2); ex(4, 5); ex(7, 8); ex(0, 1); ex(3, 4); ex(6, 7); ex(1, 2); ex(4, 5); ex(7, 8);
-      ex(0, 3); ex(5, 8); ex(4, 7); ex(3, 6); ex(1, 4); ex(2, 5); ex(4, 7); ex(4, 2); ex(6, 4); ex(4, 2);
-      out[y0 + x] = p[4];
+      let a = src[ym + x], b = src[y0 + x], c = src[yp + x], t = 0;
+      if (a > b) { t = a; a = b; b = t; }
+      if (b > c) { t = b; b = c; c = t; }
+      if (a > b) { t = a; a = b; b = t; }
+      lo[x] = a; mid[x] = b; hi[x] = c;
+    }
+    for (let x = 0; x < w; x++) {
+      const xm = x > 0 ? x - 1 : 0, xp = x < w - 1 ? x + 1 : w - 1;
+      // largest of the lows, smallest of the highs, middle of the middles
+      let l = lo[xm]; if (lo[x] > l) l = lo[x]; if (lo[xp] > l) l = lo[xp];
+      let u = hi[xm]; if (hi[x] < u) u = hi[x]; if (hi[xp] < u) u = hi[xp];
+      let a = mid[xm], b = mid[x], c = mid[xp], t = 0;
+      if (a > b) { t = a; a = b; b = t; }
+      if (b > c) { b = c; }
+      if (a > b) { b = a; }
+      // median of (l, b, u)
+      if (l > b) { t = l; l = b; b = t; }
+      if (b > u) { b = u; }
+      if (l > b) { b = l; }
+      out[y0 + x] = b;
     }
   }
-  return out;
 }
 
 /** Average several frames of the same still board; the noise drops by sqrt(n). */
@@ -115,6 +138,11 @@ export function downscale(f: GrayFrame, k: number): GrayFrame {
 export function enhance(f: GrayFrame, c: EnhanceConfig): GrayFrame {
   if (c.denoise === "none" && !c.sharpen && !c.flat) return f;
   const { width: w, height: h } = f;
+  if (c.denoise === "median" && !c.sharpen && !c.flat) { // the reader's default clean-up: stay in 8 bits end to end
+    const data = new Uint8ClampedArray(w * h);
+    medianInto(f.data, w, h, data);
+    return { width: w, height: h, data, t: f.t };
+  }
   let cur: Float32Array = Float32Array.from(f.data);
   if (c.denoise === "box") cur = boxBlur(cur, w, h, 1);
   else if (c.denoise === "gauss") cur = gaussBlur(cur, w, h, 2);
