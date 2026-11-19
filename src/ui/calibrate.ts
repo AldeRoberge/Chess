@@ -109,8 +109,9 @@ export class Calibrate {
 // capture or a reload of the view never moves the board or the buttons.
 
 const CAL_CSS = `
-.cal{--cal-line:var(--line,#3a525c);--cal-ink:var(--ink-2,#1b2e37);--cal-text:var(--text,#dfebed);--cal-dim:var(--text-dim,#93aab2);--cal-accent:var(--signal,#59d9ef);--cal-on:var(--on-signal,#06222a);display:flex;flex-direction:column;gap:14px;color:var(--cal-text)}
-.cal h2{margin:0;font-size:20px}
+.cal{--cal-line:#3d5864;--cal-ink:#1e3440;--cal-text:#eaf3f5;--cal-dim:#a9bec6;--cal-accent:#4aa3ff;--cal-on:#ffffff;display:flex;flex-direction:column;gap:14px;color:var(--cal-text)}
+.cal h2{margin:0;font-size:20px;color:var(--cal-text)}
+.cal p,.cal summary,.cal div,.cal pre{color:inherit}
 .cal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:30px}
 .cal-chip{font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid var(--cal-line);color:var(--cal-dim);white-space:nowrap}
 .cal-chip[data-phase=capturing],.cal-chip[data-phase=searching]{color:var(--cal-accent);border-color:var(--cal-accent)}
@@ -134,9 +135,9 @@ const CAL_CSS = `
 @keyframes cal-glide{0%,12%{transform:translate(0,0) scale(1.08);opacity:1}62%,84%{transform:translate(calc((var(--tx) - var(--fx)) * 100%),calc((var(--ty) - var(--fy)) * 100%)) scale(1.08);opacity:1}100%{transform:translate(calc((var(--tx) - var(--fx)) * 100%),calc((var(--ty) - var(--fy)) * 100%)) scale(1);opacity:0}}
 @keyframes cal-pulse{50%{filter:brightness(1.25)}}
 .cal-side{display:flex;flex-direction:column;gap:10px;min-width:0}
-.cal-instr{min-height:5.6em;margin:0;font-size:16px;line-height:1.4}
-.cal-msg{min-height:4.2em;margin:0;color:var(--cal-dim);font-size:13px;line-height:1.4}
-.cal-last{min-height:2.8em;margin:0;font-size:12.5px;color:var(--cal-dim)}
+.cal-instr{min-height:5.6em;margin:0;font-size:16px;line-height:1.45;color:var(--cal-text)}
+.cal-msg{min-height:4.2em;margin:0;color:var(--cal-dim);font-size:14px;line-height:1.4}
+.cal-last{min-height:2.8em;margin:0;font-size:13px;color:var(--cal-dim)}
 .cal-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:10px}
 .cal .cal-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 14px;margin:0;border:1px solid var(--cal-line);border-radius:10px;background:var(--cal-ink);color:var(--cal-text);font:600 14px/1 system-ui,sans-serif;cursor:pointer}
 .cal .cal-btn svg{width:18px;height:18px;flex:none}
@@ -160,7 +161,7 @@ const ICON = {
   spin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur=".9s" repeatCount="indefinite"/></path></svg>',
 };
 const PHASE_LABEL: Record<CalibrationView["phase"], string> = { ready: "Waiting for you", capturing: "Capturing…", searching: "Analysing…", complete: "Review", applied: "Saved" };
-const IDLE_TEXT = "Teach the camera what your pieces look like. You will set up 5 different boards from famous games, each with many pieces moved at once, and the camera tunes eight detection levers from them. Align the camera corners first. Move tracking, autoplay and camera following pause meanwhile.";
+const IDLE_TEXT = "Teach the camera what your pieces look like. You will set up 5 different boards from famous games, each with many pieces moved at once, and the camera tunes seven detection levers from them. Align the camera corners first. Move tracking, autoplay and camera following pause meanwhile.";
 
 function pieceSrc(code: string): string {
   const img = pieceImage(code);
