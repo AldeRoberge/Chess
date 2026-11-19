@@ -300,17 +300,17 @@ function fitCheckerGrid(f: GrayFrame, initial: Pt[], period: number): Pt[] {
   seeds.sort((a, b) => b.score - a.score);
   let result = best, resultScore = bestScore;
   for (const seed of seeds.slice(0, 24)) {
-  best = seed.q; bestScore = seed.score;
-  for (const step of [period / 4, period / 8, 2, 1]) {
-    for (let pass = 0; pass < 3; pass++) for (let i = 0; i < 4; i++) {
-      const origin = best;
-      for (const dx of [-step, 0, step]) for (const dy of [-step, 0, step]) {
-        const q = origin.map((p, j) => j === i ? { x: p.x + dx, y: p.y + dy } : p);
-        const s = score(q); if (s > bestScore) { best = q; bestScore = s; }
+    best = seed.q; bestScore = seed.score;
+    for (const step of [period / 4, period / 8, 2, 1]) {
+      for (let pass = 0; pass < 3; pass++) for (let i = 0; i < 4; i++) {
+        const origin = best;
+        for (const dx of [-step, 0, step]) for (const dy of [-step, 0, step]) {
+          const q = origin.map((p, j) => j === i ? { x: p.x + dx, y: p.y + dy } : p);
+          const s = score(q); if (s > bestScore) { best = q; bestScore = s; }
+        }
       }
     }
-  }
-  if (bestScore > resultScore) { result = best; resultScore = bestScore; }
+    if (bestScore > resultScore) { result = best; resultScore = bestScore; }
   }
   return result;
 }
