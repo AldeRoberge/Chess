@@ -1,4 +1,6 @@
 import { applyH, boardToImage } from "./homography";
+import { extractCrops } from "./squareCrops";
+import type { SquareCnn } from "./squareCnn";
 import { clamp, sigmoid, type GrayFrame, type Pt, type SquareObs } from "./types";
 
 export interface SamplerConfig {
@@ -10,6 +12,8 @@ export interface SamplerConfig {
   softness: number; // sigmoid softness, same units
   grid: number; // sample points per axis in each square's centre patch
   patch: number; // fraction of the square sampled (0..1)
+  /** "cnn" takes occupancy and colour from the trained square classifier (when loaded); motion, hands and picture quality still come from the brightness reader. */
+  engine?: "rules" | "cnn";
 }
 
 export const defaultSamplerConfig = (): SamplerConfig => ({
@@ -52,6 +56,8 @@ export class BoardSampler {
   /** (ln dark end, ln bright end) of the middle relative to the empty square, for white and black pieces on light [0] and dark [1] squares, learned from the start position. */
   private spreadByColor = [NaN, NaN];
   private tone: { w: [number, number][]; b: [number, number][] } | null = null;
+  /** The trained square classifier, shared by every reader. Load it with `loadSquareCnn()` (squareModel.ts). */
+  static cnn: SquareCnn | null = null;
   leanU = 0;
   leanV = 0;
   private H: number[] = [];
@@ -336,6 +342,15 @@ export class BoardSampler {
         if (Number.isFinite(edge)) this.rimRef[sq] += (edge - this.rimRef[sq]) * 0.01;
       }
       this.prev[sq] = v;
+    }
+    const net = this.cfg.engine === "cnn" ? BoardSampler.cnn : null;
+    if (net && this.cfg.corners.length === 4) {
+      const p = net.classify(extractCrops(frame, this.cfg.corners));
+      for (let sq = 0; sq < 64; sq++) {
+        const e = p[sq * 3], w = p[sq * 3 + 1], b = p[sq * 3 + 2];
+        occ[sq] = clamp(1 - e, 0.001, 0.999);
+        white[sq] = w + b > 1e-6 ? w / (w + b) : 0.5;
+      }
     }
     return {
       cam: this.cam, t: frame.t,
