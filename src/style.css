@@ -10,7 +10,7 @@
   --signal:#6fd2ff;--signal-hi:#dcf4ff;
   --amber:#ffc65c;--orange:#ff9f43;--ok:#74f0b3;--bad:#ff8585;
   --font-ui:"Chakra Petch",system-ui,sans-serif;--font-mono:"IBM Plex Mono",ui-monospace,monospace;
-  --t-xs:12px;--t-sm:13px;--t-md:15px;--t-lg:20px;--t-xl:28px;
+  --u:1;--t-xs:calc(12px*var(--u));--t-sm:calc(13px*var(--u));--t-md:calc(15px*var(--u));--t-lg:calc(20px*var(--u));--t-xl:calc(28px*var(--u));
   --radius:4px;color-scheme:dark;
   --paper:#e8edf3;--paper-ink:#0a1827;--paper-dim:#4a5d75;--paper-rule:#b4c2d3;
   --shadow:#0009;--scrim:rgb(2 6 12/.6);--halo-bg:linear-gradient(170deg,#0a2038fb,#07182bfb);--track:#081a2f80;--on-signal:#02060d;
@@ -83,6 +83,7 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne-node.sized .ne-preview{aspect-ratio:auto!important;flex:1 1 40px;min-height:0;height:auto;object-fit:contain;width:calc(100% - 20px)}
 .ne-node.sized .ne-foot{flex:none}.ne-node.sized .ne-params{overflow:auto;flex:none;max-height:45%}
 .ne-node.wide .ne-params{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:5px 14px}
+.ne-node.wide .ne-param{min-width:0}
 .ne-grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 55%,var(--line-hi) 55% 65%,transparent 65% 77%,var(--line-hi) 77% 87%,transparent 87%);border-radius:0 0 6px 0}
 .ne-node.sel{border-color:var(--signal)}.ne-node.bypass{opacity:.8}
 /* With a selection, the selected nodes stay bright and everything else is dimmed back. */
@@ -288,13 +289,13 @@ body.resizing{cursor:col-resize;user-select:none}
 .ne-tools{position:absolute;left:12px;top:12px;z-index:20;display:flex;gap:6px}.ne-tools button{padding:5px 10px;font-size:var(--t-xs);background:color-mix(in srgb,var(--ink-1) 90%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 
 /* settings as a table: name | control | value share columns across rows */
-.ne-node:not(.wide) .ne-params{display:grid;grid-template-columns:max-content minmax(90px,1fr) 46px;gap:0;padding:8px 4px 4px}
+.ne-node:not(.wide) .ne-params{display:grid;grid-template-columns:fit-content(50%) minmax(90px,1fr) 46px;gap:0;padding:8px 4px 4px}
 .ne-node:not(.wide) .ne-param{grid-column:1/-1;display:grid;grid-template-columns:subgrid;column-gap:8px;padding:5px 4px;min-height:28px;border-left:2px solid transparent;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:0}
 .ne-node:not(.wide) .ne-param:nth-child(odd){background:color-mix(in srgb,var(--ink-2) 55%,transparent)}
 .ne-node:not(.wide) .ne-param:first-child{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:4px 4px 0 0}
 .ne-node:not(.wide) .ne-param:last-child{border-radius:0 0 4px 4px}
 .ne-node:not(.wide) .ne-param.changed{background:color-mix(in srgb,var(--signal) 10%,transparent)}
-.ne-node:not(.wide) .ne-pn{white-space:nowrap;color:var(--text-dim)}
+.ne-node:not(.wide) .ne-pn{white-space:normal;overflow-wrap:anywhere;color:var(--text-dim)}
 .ne-node:not(.wide) .ne-pv{min-width:0}
 .ne-node:not(.wide) .ne-param input[type=text],.ne-node:not(.wide) .ne-param select{width:100%;box-sizing:border-box}
 .ne-node{width:320px;min-width:320px}.ne-node.sized{min-height:min-content}
@@ -314,6 +315,51 @@ body.resizing{cursor:col-resize;user-select:none}
 .qe-bar{display:flex;gap:8px;justify-content:flex-end}
 .qe-btn{padding:5px 14px;border-radius:4px;border:1px solid var(--line,#2a3a52);background:transparent;color:inherit;cursor:pointer}.qe-btn.primary{background:var(--signal,#35e0b4);color:#06110e;border-color:transparent;font-weight:600}
 
+/* portrait / phone: stack the graph over the inspector, ribbon scrolls sideways, view tabs become a bottom bar */
+@media (max-aspect-ratio:1/1) and (max-width:900px){
+  #app{grid-template-rows:auto minmax(0,1fr) 30px;padding-bottom:calc(56px + env(safe-area-inset-bottom))}
+  #app>header .brand span{display:none}
+  #app>header .brand{margin:0 6px 0 8px;padding:4px 8px 4px 4px}
+  .rtabs{overflow-x:auto;scrollbar-width:none}
+  .rtabs::-webkit-scrollbar{display:none}
+  .rtabs>button{padding:6px 12px;flex:none}
+  .rtabs .chips{display:none}
+  .ribbon{min-height:0;overflow-x:auto;overflow-y:hidden;padding:4px 8px;-webkit-overflow-scrolling:touch}
+  .rpane.on{width:max-content}
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+  aside{display:flex;border-left:0;border-top:1px solid var(--line)}
+  .resize{display:none}
+  #tabs{position:fixed;left:0;right:0;bottom:0;z-index:50;height:calc(56px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--ink-1);border-top:1px solid var(--line);border-bottom:0}
+  #tabs button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 4px;font-size:var(--t-xs)}
+  #tabs button kbd{display:none}
+  #tabs button.on{box-shadow:inset 0 2px var(--signal)}
+  footer{padding:0 10px;font-size:var(--t-sm)}
+  button,.btn{min-height:36px}
+}
+
+/* short / small desktop screens (e.g. 1366x768, 1280x720): compact ribbon so the graph keeps room */
+@media (max-height:800px) and (min-aspect-ratio:1/1){
+  .ribbon{min-height:0;padding:3px 10px}
+  .ribbon .rb{height:46px;min-width:50px;padding:3px 6px}
+  .rtabs>button{padding:4px 14px}
+  .rlabel{padding-top:0;line-height:1.3}
+  #app>header .brand{font-size:var(--t-md)}
+  .panel{padding:8px;gap:8px}
+}
+@media (max-width:1280px) and (min-aspect-ratio:1/1){
+  main{grid-template-columns:minmax(0,1fr) var(--aside-w,minmax(320px,30vw))}
+  .ribbon{overflow-x:auto;overflow-y:hidden}
+  .rpane.on{width:max-content}
+}
+/* big / UHD screens: let the graph and ribbon breathe with the scaled type */
+@media (min-width:2000px){
+  #app{grid-template-rows:auto 1fr calc(36px*var(--u))}
+  .ribbon .rb{height:calc(54px*var(--u));min-width:calc(58px*var(--u))}
+  .ribbon .rb .ic{width:calc(20px*var(--u));height:calc(20px*var(--u))}
+  .brand-knight{width:calc(26px*var(--u));height:calc(26px*var(--u))}
+  main{grid-template-columns:minmax(0,1fr) var(--aside-w,minmax(calc(380px*var(--u)),30vw))}
+}
+.coarse button,.coarse .btn{min-height:40px}
 /* narrow dock: the tab key badges give way before the labels wrap; short windows tighten the wizard's step rows */
 aside{container-type:inline-size}
 @container (max-width:480px){#tabs kbd{display:none}}
