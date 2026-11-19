@@ -18,6 +18,8 @@ export const defaultSamplerConfig = (): SamplerConfig => ({
 });
 
 const SAT = 250; // pixels at or above this are clipped glare, not a piece
+const GHOST_Z = 3; // evidence (in softness units) above which a square is clearly a piece and the ghost guard stays out of it
+const GHOST_LOOK = 0.35; // how far (ln brightness) a square's dark/bright ends may sit from both learned piece looks
 const RIM = 0.44; // how far from a square's centre (in square widths) the corner samples sit — outside a piece's base, inside the square
 
 /**
@@ -275,12 +277,16 @@ export class BoardSampler {
         let z = (Math.abs(drive) - gate) / soft;
         // Texture: an empty square is flat, a piece is not, whatever its colour.
         if (Number.isFinite(this.spreadGate) && Number.isFinite(spread[sq])) z = Math.max(z, (spread[sq] - this.spreadGate) / Math.max(1.5, this.spreadGate * 0.25));
-        occ[sq] = sigmoid(z);
         if (this.tone && v > 3 && Number.isFinite(lo[sq])) {
           const k = ((sq % 8) + Math.floor(sq / 8)) % 2, d = Math.log(Math.max(1, lo[sq]) / Math.max(1, ref)), u = Math.log(Math.max(1, hi[sq]) / Math.max(1, ref));
           const dw = Math.hypot(d - this.tone.w[k][0], u - this.tone.w[k][1]), db = Math.hypot(d - this.tone.b[k][0], u - this.tone.b[k][1]);
           white[sq] = sigmoid((db - dw) / 0.3);
+          // Ghost guard: a shadow, a lamp gradient or a wobbly corner shifts the square's brightness, but it looks like neither a
+          // white nor a black piece. When the evidence is only borderline and the square matches neither learned piece look, call it empty.
+          const alike = Math.min(dw, db), empty = Math.hypot(d, u);
+          if (z < GHOST_Z && alike > GHOST_LOOK && alike > empty * 0.9) z -= (alike - GHOST_LOOK) / 0.1;
         } else white[sq] = sigmoid(drive / (soft * 2));
+        occ[sq] = sigmoid(z);
       }
       const thr = Math.max(ref * this.cfg.threshold, 12);
       if (!Number.isNaN(p) && Math.abs(v - p) > thr * 1.2) { moving++; hand[sq] = 1; }

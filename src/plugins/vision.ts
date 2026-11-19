@@ -26,7 +26,7 @@ const reader: NodeSpec<ReaderState> = {
   params: [
     { id: "cam", kind: "text", label: "Camera id", value: "A" },
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
-    { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.1, max: 0.6, step: 0.01, value: 0.22 },
+    { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.15, max: 0.6, step: 0.01, value: 0.22 },
     { id: "weight", kind: "number", label: "Trust", min: 0, max: 2, step: 0.1, value: 1 },
     { id: "clean", kind: "bool", label: "Clean up noise", value: true },
     { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
