@@ -152,6 +152,11 @@ export class GameBridge {
 
 interface BridgeEnv { BRIDGE?: BridgeNamespace; KEYS?: { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void> } }
 
+// Polling is frequent: a KV write per request exhausts the daily quota within minutes.
+// Best-effort per-isolate throttling keeps the relay independent of the API-key store.
+const requestCounts = new Map<string, number>();
+let requestMinute = -1;
+
 /** Sends /chess/remote/* to the live room. Returns null when the URL is not a remote route. */
 export async function handleRemote(req: Request, env: BridgeEnv, url: URL): Promise<Response | null> {
   if (!url.pathname.startsWith("/chess/remote/")) return null;
@@ -160,13 +165,12 @@ export async function handleRemote(req: Request, env: BridgeEnv, url: URL): Prom
   if (!session && !/^\d{4,8}$/.test(code)) return json({ error: "Wrong or missing join code. Check the code on the computer." }, 401);
   if (!env.BRIDGE) return json({ error: "Phone bridge is not configured on this worker." }, 503);
   const ip = req.headers.get("CF-Connecting-IP") || "unknown";
-  if (env.KEYS) {
-    const minute = Math.floor(Date.now() / 60000);
-    const key = `bridge:${ip}:${minute}`;
-    const n = Number((await env.KEYS.get(key)) || 0) + 1;
-    if (n > 1200) return json({ error: "rate limit: slow down" }, 429);
-    await env.KEYS.put(key, String(n), { expirationTtl: 120 });
-  }
+  const minute = Math.floor(Date.now() / 60000);
+  if (minute !== requestMinute) { requestCounts.clear(); requestMinute = minute; }
+  const key = `${session ? "session:" : "poll:"}${ip}`;
+  const n = (requestCounts.get(key) ?? 0) + 1;
+  if (n > (session ? 20 : 1200) || (!requestCounts.has(key) && requestCounts.size >= 10000)) return json({ error: "rate limit: slow down" }, 429);
+  requestCounts.set(key, n);
   if (session) {
     // Allocate a separate room per code; two host PCs must never overwrite one another.
     for (let attempt = 0; attempt < 5; attempt++) {

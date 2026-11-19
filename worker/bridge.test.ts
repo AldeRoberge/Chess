@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker, { type Env } from "./index";
 import { GameBridge, type BridgeState } from "./bridge";
 
@@ -36,7 +36,8 @@ describe("phone bridge", () => {
 
   it("connects production hosts and phones in isolated rooms", async () => {
     const rooms = new Map<string, GameBridge>();
-    const env = { BRIDGE: {
+    const kv = vi.fn(async () => { throw new Error("KV daily quota exhausted"); });
+    const env = { KEYS: { get: kv, put: kv }, BRIDGE: {
       idFromName: (name: string) => name,
       get: (id: unknown) => {
         const key = String(id);
@@ -59,6 +60,7 @@ describe("phone bridge", () => {
     expect((await worker.fetch(new Request(`${root}api/cmd?code=${a.code}`, { method: "POST", body: JSON.stringify({ type: "move", from: "e2", to: "e4" }) }), env)).status).toBe(200);
     expect((await (await publish(a.code, a.token)).json()).commands).toEqual([{ type: "move", from: "e2", to: "e4" }]);
     expect((await (await publish(b.code, b.token)).json()).commands).toEqual([]);
+    expect(kv).not.toHaveBeenCalled();
   });
 
   it("refuses a remote route with no room configured, and a code of the wrong shape", async () => {
