@@ -158,7 +158,7 @@ const ICON = {
   spin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur=".9s" repeatCount="indefinite"/></path></svg>',
 };
 const PHASE_LABEL: Record<CalibrationView["phase"], string> = { ready: "Waiting for you", capturing: "Capturing…", searching: "Analysing…", complete: "Review", applied: "Saved" };
-const IDLE_TEXT = "Teach the camera what your pieces look like. You will set up 5 different boards from famous games, each with many pieces moved at once, and the camera tunes seven detection levers from them. Align the camera corners first. Move tracking, autoplay and camera following pause meanwhile.";
+const IDLE_TEXT = "Teach the camera what your pieces look like. You will set up 5 boards: the normal start, then four quick ones with five pieces or fewer. The camera tunes seven detection levers from them. Align the camera corners first. Move tracking, autoplay and camera following pause meanwhile.";
 
 function pieceSrc(code: string): string {
   const img = pieceImage(code);

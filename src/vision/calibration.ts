@@ -3,21 +3,17 @@ import { BoardSampler, defaultSamplerConfig } from "./sampler";
 import type { GrayFrame, Pt } from "./types";
 
 export const calibrationRuntime = { active: false };
-/** Five very different boards, each from a famous game, so every step moves many pieces at once. Step 0 must be the start position: the reader learns its references from it. The last step is held out to validate. */
-export const calibrationGames: { title: string; sans: string }[] = [
-  { title: "Starting position", sans: "" },
-  { title: "Opera Game (Morphy, 1858), after 12.O-O-O", sans: "e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8" },
-  { title: "Immortal Game (Anderssen, 1851), after 20.Ke2", sans: "e4 e5 f4 exf4 Bc4 Qh4+ Kf1 b5 Bxb5 Nf6 Nf3 Qh6 d3 Nh5 Nh4 Qg5 Nf5 c6 g4 Nf6 Rg1 cxb5 h4 Qg6 h5 Qg5 Qf3 Ng8 Bxf4 Qf6 Nc3 Bc5 Nd5 Qxb2 Bd6 Bxg1 e5 Qxa1+ Ke2" },
-  { title: "Opera Game, final position", sans: "e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8 Rxd7 Rxd7 Rd1 Qe6 Bxd7+ Nxd7 Qb8+ Nxb8 Rd8#" },
-  { title: "Game of the Century (Byrne–Fischer, 1956), after 23...axb6", sans: "Nf3 Nf6 c4 g6 Nc3 Bg7 d4 O-O Bf4 d5 Qb3 dxc4 Qxc4 c6 e4 Nbd7 Rd1 Nb6 Qc5 Bg4 Bg5 Na4 Qa3 Nxc3 bxc3 Nxe4 Bxe7 Qb6 Bc4 Nxc3 Bc5 Rfe8+ Kf1 Be6 Bxb6 Bxc4+ Kg1 Ne2+ Kf1 Nxd4+ Kg1 Ne2+ Kf1 Nc3+ Kg1 axb6" },
+/** Five boards. Step 0 must be the start position: the reader learns its references from it. The other four have at most five pieces, in both colours, on light and dark squares and on the edges, so they are quick to set up. The last one is held out to validate. */
+export const calibrationGames: { title: string; fen: string }[] = [
+  { title: "Starting position", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" },
+  { title: "Board 2 of 5: five pieces", fen: "4k3/8/8/3q4/8/8/3P4/R3K3 w - - 0 1" },
+  { title: "Board 3 of 5: five pieces", fen: "6k1/5n2/8/8/2B5/8/8/4K2R w - - 0 1" },
+  { title: "Board 4 of 5: five pieces", fen: "8/2k5/8/4p3/3N4/8/5P2/4K3 w - - 0 1" },
+  { title: "Board 5 of 5: five pieces (check)", fen: "2r5/8/5k2/8/8/2K5/1B6/6Q1 w - - 0 1" },
 ];
 export const calibrationSteps = calibrationGames.length;
 const NAMES: Record<string, string> = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
-function gameAt(step: number) {
-  const g = calibrationGames[step], game = new Chess();
-  for (const san of g.sans ? g.sans.split(" ") : []) game.move(san);
-  return game;
-}
+const gameAt = (step: number) => new Chess(calibrationGames[step].fen);
 export interface PositionDiff { moves: { from: string; to: string; code: string }[]; removed: { sq: string; code: string }[]; added: { sq: string; code: string }[] }
 const grid = (fen: string) => new Chess(fen).board().flat().map((p, i) => ({ sq: `${"abcdefgh"[i % 8]}${8 - Math.floor(i / 8)}`, code: p ? p.color + p.type : "" }));
 /** What the player has to do to turn one board into the next: pieces that slide to a new square, pieces that come off, and pieces that go on. */

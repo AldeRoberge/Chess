@@ -86,7 +86,7 @@ On the production site, open **alderoberge.com/chess/** on the host PC. Its **Th
 
 ## Calibrate piece detection
 
-Open **Calibrate** in the desktop ribbon, or join with **Phone** and open the phone's **Calibrate** tab. Align the camera's board corners first. Set the physical board to the displayed starting position, remove your hands, and tap **I moved the pieces. Capture**. Then repeat for four more boards taken from famous games (Opera Game, Immortal Game, an endgame, and a held-out Game of the Century position); each one moves many pieces at once, and an animation shows every piece to move or remove. Each confirmation records three distinct still frames per camera; stale frames or hands cause the capture to wait or time out. The last capture can be repeated.
+Open **Calibrate** in the desktop ribbon, or join with **Phone** and open the phone's **Calibrate** tab. Align the camera's board corners first. Set the physical board to the displayed starting position, remove your hands, and tap **I moved the pieces. Capture**. Then repeat for four more boards with five pieces or fewer (the last one is held out); two boards side by side show what is on your board now and how to set it up. Each confirmation records three distinct still frames per camera; stale frames or hands cause the capture to wait or time out. The last capture can be repeated.
 
 Calibration pauses move tracking, scenario playback and new engine requests, and suspends camera following and automatic reference learning. Keep the camera and lighting fixed. The desktop and phone share the same session and step; delayed confirmations cannot label a later position. Close calibration and restore your game's physical position before resuming.
 

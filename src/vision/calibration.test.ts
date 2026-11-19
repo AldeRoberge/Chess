@@ -25,13 +25,15 @@ function sample(step: number): CalibrationSample {
 afterEach(() => { calibrationRuntime.active = false; vi.useRealTimers(); });
 
 describe("Calibrate", () => {
-  it("uses five distinct boards that each move many pieces, starting from the start position", () => {
+  it("uses five boards: the start position, then four with at most five pieces", () => {
     expect(calibrationSteps).toBe(5); expect(calibrationGames).toHaveLength(5);
     for (let i = 0; i < calibrationSteps; i++) expect(() => new Chess(calibrationPosition(i).fen)).not.toThrow();
-    expect(calibrationPosition(0).fen).toBe(new Chess().fen());
+    expect(calibrationPosition(0).fen.split(" ")[0]).toBe(new Chess().fen().split(" ")[0]);
     for (let i = 1; i < calibrationSteps; i++) {
+      const pieces = new Chess(calibrationPosition(i).fen).board().flat().filter(Boolean);
+      expect(pieces.length).toBeLessThanOrEqual(5);
       const d = positionDiff(calibrationPosition(i - 1).fen, calibrationPosition(i).fen);
-      expect(d.moves.length + d.removed.length + d.added.length).toBeGreaterThanOrEqual(6);
+      expect(d.moves.length + d.removed.length + d.added.length).toBeGreaterThan(0);
       expect(calibrationPosition(i).instruction).toContain("Change the board");
     }
   });
