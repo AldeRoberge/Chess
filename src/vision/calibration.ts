@@ -1,62 +1,87 @@
-import { PositionTracker } from "../chess/tracker";
 import { Chess } from "chess.js";
 import { BoardSampler, defaultSamplerConfig } from "./sampler";
 import type { GrayFrame, Pt } from "./types";
 
 export const calibrationRuntime = { active: false };
-export const calibrationMoves = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "d3", "Bc5", "O-O", "O-O", "Bxf7+"];
-export function calibrationPosition(step: number) {
-  const game = new Chess(); let instruction = "Set up the normal starting position. White pieces on ranks 1-2, black on ranks 7-8.";
-  const names: Record<string, string> = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
-  for (const san of calibrationMoves.slice(0, step)) {
-    const m = game.move(san), side = m.color === "w" ? "white" : "black";
-    instruction = `Move ${side} ${names[m.piece]} from ${m.from} to ${m.to} (${m.san}).`;
-    if (m.isKingsideCastle()) instruction += ` Also move the ${side} rook from h${m.from[1]} to f${m.from[1]}.`;
-    if (m.captured) instruction += ` Remove the captured ${names[m.captured]} from ${m.to}.`;
-    instruction += " Keep all remaining pieces in place.";
-  }
-  return { fen: game.fen(), instruction };
+/** Five very different boards, each from a famous game, so every step moves many pieces at once. Step 0 must be the start position: the reader learns its references from it. The last step is held out to validate. */
+export const calibrationGames: { title: string; sans: string }[] = [
+  { title: "Starting position", sans: "" },
+  { title: "Opera Game (Morphy, 1858), after 12.O-O-O", sans: "e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8" },
+  { title: "Immortal Game (Anderssen, 1851), after 20.Ke2", sans: "e4 e5 f4 exf4 Bc4 Qh4+ Kf1 b5 Bxb5 Nf6 Nf3 Qh6 d3 Nh5 Nh4 Qg5 Nf5 c6 g4 Nf6 Rg1 cxb5 h4 Qg6 h5 Qg5 Qf3 Ng8 Bxf4 Qf6 Nc3 Bc5 Nd5 Qxb2 Bd6 Bxg1 e5 Qxa1+ Ke2" },
+  { title: "Opera Game, final position", sans: "e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8 Rxd7 Rxd7 Rd1 Qe6 Bxd7+ Nxd7 Qb8+ Nxb8 Rd8#" },
+  { title: "Game of the Century (Byrne–Fischer, 1956), after 23...axb6", sans: "Nf3 Nf6 c4 g6 Nc3 Bg7 d4 O-O Bf4 d5 Qb3 dxc4 Qxc4 c6 e4 Nbd7 Rd1 Nb6 Qc5 Bg4 Bg5 Na4 Qa3 Nxc3 bxc3 Nxe4 Bxe7 Qb6 Bc4 Nxc3 Bc5 Rfe8+ Kf1 Be6 Bxb6 Bxc4+ Kg1 Ne2+ Kf1 Nxd4+ Kg1 Ne2+ Kf1 Nc3+ Kg1 axb6" },
+];
+export const calibrationSteps = calibrationGames.length;
+const NAMES: Record<string, string> = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
+function gameAt(step: number) {
+  const g = calibrationGames[step], game = new Chess();
+  for (const san of g.sans ? g.sans.split(" ") : []) game.move(san);
+  return game;
 }
-export interface DetectionSettings { threshold: number; shapeWeight: number; colorWeight: number; patch: number; positionWeight: number; legalMargin: number }
-export const calibrationDefaults: DetectionSettings = { threshold: 0.22, shapeWeight: 1, colorWeight: 1, patch: 0.6, positionWeight: 1, legalMargin: 0.5 };
-export const settingRanges: Record<keyof DetectionSettings, number[]> = { threshold: [0.15, 0.22, 0.32, 0.45], shapeWeight: [0.5, 1, 1.5, 2], colorWeight: [0.5, 1, 1.5, 2], patch: [0.4, 0.6, 0.8], positionWeight: [0, 1, 2], legalMargin: [0.3, 0.5, 0.8, 1.2] };
+export interface PositionDiff { moves: { from: string; to: string; code: string }[]; removed: { sq: string; code: string }[]; added: { sq: string; code: string }[] }
+const grid = (fen: string) => new Chess(fen).board().flat().map((p, i) => ({ sq: `${"abcdefgh"[i % 8]}${8 - Math.floor(i / 8)}`, code: p ? p.color + p.type : "" }));
+/** What the player has to do to turn one board into the next: pieces that slide to a new square, pieces that come off, and pieces that go on. */
+export function positionDiff(fromFen: string, toFen: string): PositionDiff {
+  const a = grid(fromFen), b = grid(toFen);
+  const removed = a.filter((x, i) => x.code && x.code !== b[i].code), added = b.filter((x, i) => x.code && x.code !== a[i].code);
+  const moves: PositionDiff["moves"] = [], left: PositionDiff["removed"] = [];
+  const file = (sq: string) => "abcdefgh".indexOf(sq[0]), rank = (sq: string) => Number(sq[1]);
+  for (const r of removed) {
+    let best = -1, bd = Infinity;
+    added.forEach((t, i) => { if (t.code !== r.code) return; const d = Math.hypot(file(t.sq) - file(r.sq), rank(t.sq) - rank(r.sq)); if (d < bd) { bd = d; best = i; } });
+    if (best >= 0) { moves.push({ from: r.sq, to: added[best].sq, code: r.code }); added.splice(best, 1); } else left.push(r);
+  }
+  return { moves, removed: left, added };
+}
+export function calibrationPosition(step: number) {
+  const game = gameAt(step), title = calibrationGames[step].title;
+  if (step === 0) return { fen: game.fen(), title, instruction: "Set up the normal starting position. White pieces on ranks 1-2, black on ranks 7-8." };
+  const d = positionDiff(gameAt(step - 1).fen(), game.fen()), parts: string[] = [];
+  if (d.moves.length) parts.push(`move ${d.moves.length} piece${d.moves.length > 1 ? "s" : ""}`);
+  if (d.removed.length) parts.push(`take ${d.removed.length} off the board`);
+  if (d.added.length) parts.push(`put ${d.added.length} back on`);
+  const text = parts.join(", ");
+  return { fen: game.fen(), title, instruction: `${title}. Rearrange the board to match: ${text}. The animation shows every piece; green squares are where they end up.` };
+}
+export interface DetectionSettings { threshold: number; shapeWeight: number; colorWeight: number; patch: number; positionWeight: number; softness: number; grid: number; legalMargin: number }
+export const calibrationDefaults: DetectionSettings = { threshold: 0.22, shapeWeight: 1, colorWeight: 1, patch: 0.6, positionWeight: 1, softness: 0.06, grid: 6, legalMargin: 0.5 };
+/** The levers the search turns, one at a time. legalMargin is the tracker's and cannot be judged from jumps between unrelated boards, so it keeps its current value. */
+export const settingRanges: Record<keyof DetectionSettings, number[]> = { threshold: [0.12, 0.15, 0.18, 0.22, 0.27, 0.32, 0.4, 0.5], shapeWeight: [0.25, 0.5, 1, 1.5, 2], colorWeight: [0.25, 0.5, 1, 1.5, 2], patch: [0.35, 0.45, 0.6, 0.7, 0.8], positionWeight: [0, 0.5, 1, 1.5, 2], softness: [0.03, 0.045, 0.06, 0.09, 0.13], grid: [4, 6, 8], legalMargin: [] };
 export interface CalibrationSample { step: number; fen: string; cameras: { id: string; corners: Pt[]; frames: GrayFrame[] }[] }
-export interface CalibrationResult { label: string; settings: DetectionSettings; accuracy: number; consistency: number; score: number; legalAccuracy: number; errors: string[] }
+export interface CalibrationResult { label: string; settings: DetectionSettings; accuracy: number; consistency: number; score: number; exactBoards: number; errors: string[] }
 /** Replay each candidate from the same labelled start frame. Never train references on a later position. */
 export function evaluateCalibration(samples: CalibrationSample[], settings: DetectionSettings, label: string, heldOutOnly = false): CalibrationResult {
-  let loss = 0, count = 0, flips = 0, pairs = 0, legalCorrect = 0, legalCount = 0; const errors = new Set<string>();
+  let loss = 0, count = 0, flips = 0, pairs = 0, exactCorrect = 0, exactCount = 0; const errors = new Set<string>();
   for (const base of samples[0]?.cameras ?? []) {
     const sampler = new BoardSampler(base.id, { ...defaultSamplerConfig(), ...settings, corners: base.corners });
     sampler.calibrateFromStart(base.frames[0]);
-    const tracker = new PositionTracker({ margin: settings.legalMargin });
     for (const sample of samples) {
       const camera = sample.cameras.find(c => c.id === base.id); if (!camera) continue;
       sampler.cfg.corners = camera.corners;
       const scored = !heldOutOnly || sample === samples[samples.length - 1];
       const truth = new Chess(sample.fen).board().flat(); let previous: number[] | null = null;
       for (const frame of camera.frames) {
-        const obs = sampler.read(frame); const map: number[] = [];
+        const obs = sampler.read(frame); const map: number[] = []; let wrong = 0;
         for (let sq = 0; sq < 64; sq++) {
           const piece = truth[sq], p = obs.occ[sq], white = obs.white[sq];
           const probability = piece ? p * (piece.color === "w" ? white : 1 - white) : 1 - p;
           if (scored) { loss += 1 - probability; count++; }
           const detected = p > 0.5 ? (white > 0.5 ? 1 : 2) : 0; map.push(detected);
           const expected = piece ? (piece.color === "w" ? 1 : 2) : 0;
+          if (detected !== expected) wrong++;
           if (scored && detected !== expected) errors.add(`${base.id}: ${"abcdefgh"[sq % 8]}${8 - Math.floor(sq / 8)}`);
           if (scored && previous) { pairs++; if (previous[sq] !== detected) flips++; }
         }
-        const conf = Float32Array.from(obs.occ, (p, i) => Math.abs(p - 0.5) * 2 * (p > 0.5 ? Math.abs(obs.white[i] - 0.5) * 2 : 1));
-        const tracked = tracker.observe({ t: frame.t, occ: obs.occ, white: obs.white, conf, fidelity: obs.quality, settled: true, handOver: false, cams: 1 });
-        if (scored && frame === camera.frames[camera.frames.length - 1]) { legalCount++; if (tracked.fen.split(" ")[0] === sample.fen.split(" ")[0]) legalCorrect++; }
+        if (scored && frame === camera.frames[camera.frames.length - 1]) { exactCount++; if (!wrong) exactCorrect++; }
         previous = map;
       }
     }
   }
   const accuracy = count ? 1 - loss / count : 0, consistency = pairs ? 1 - flips / pairs : 0;
-  const legalAccuracy = legalCount ? legalCorrect / legalCount : 0;
-  return { label, legalAccuracy, settings: { ...settings }, accuracy, consistency, score: accuracy * 0.7 + consistency * 0.15 + legalAccuracy * 0.15, errors: [...errors] };
+  const exactBoards = exactCount ? exactCorrect / exactCount : 0;
+  return { label, exactBoards, settings: { ...settings }, accuracy, consistency, score: accuracy * 0.75 + consistency * 0.1 + exactBoards * 0.15, errors: [...errors] };
 }
 export interface CalibrationView {
   session: string; step: number; phase: "ready" | "capturing" | "searching" | "complete" | "applied";
-  fen: string; instruction: string; message: string; samples: number; results: CalibrationResult[]; validation: CalibrationResult | null; lastCapture?: CalibrationResult | null;
+  fen: string; title?: string; instruction: string; message: string; samples: number; results: CalibrationResult[]; validation: CalibrationResult | null; lastCapture?: CalibrationResult | null;
 }

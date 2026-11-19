@@ -5,7 +5,7 @@ import { createRegistry } from "../plugins";
 import { parseCommand } from "../remote/protocol";
 import { Calibrate, renderCalibration } from "../ui/calibrate";
 import { BoardSampler, defaultSamplerConfig } from "./sampler";
-import { calibrationDefaults, calibrationMoves, calibrationPosition, calibrationRuntime, evaluateCalibration, type CalibrationSample } from "./calibration";
+import { calibrationDefaults, calibrationGames, calibrationSteps, calibrationPosition, positionDiff, calibrationRuntime, evaluateCalibration, type CalibrationSample } from "./calibration";
 import type { GrayFrame } from "./types";
 
 const corners = [{ x: 0, y: 0 }, { x: 320, y: 0 }, { x: 320, y: 320 }, { x: 0, y: 320 }];
@@ -25,16 +25,20 @@ function sample(step: number): CalibrationSample {
 afterEach(() => { calibrationRuntime.active = false; vi.useRealTimers(); });
 
 describe("Calibrate", () => {
-  it("guides a legal sequence including both rooks on castling and removal on capture", () => {
-    for (let i = 0; i <= calibrationMoves.length; i++) expect(() => new Chess(calibrationPosition(i).fen)).not.toThrow();
-    expect(calibrationPosition(9).instruction).toContain("h1 to f1");
-    expect(calibrationPosition(10).instruction).toContain("h8 to f8");
-    expect(calibrationPosition(11).instruction).toContain("Remove the captured pawn");
+  it("uses five distinct boards that each move many pieces, starting from the start position", () => {
+    expect(calibrationSteps).toBe(5); expect(calibrationGames).toHaveLength(5);
+    for (let i = 0; i < calibrationSteps; i++) expect(() => new Chess(calibrationPosition(i).fen)).not.toThrow();
+    expect(calibrationPosition(0).fen).toBe(new Chess().fen());
+    for (let i = 1; i < calibrationSteps; i++) {
+      const d = positionDiff(calibrationPosition(i - 1).fen, calibrationPosition(i).fen);
+      expect(d.moves.length + d.removed.length + d.added.length).toBeGreaterThanOrEqual(6);
+      expect(calibrationPosition(i).instruction).toContain("Rearrange");
+    }
   });
   it("scores real pixels against confirmed labels, preserves evidence, and isolates validation", () => {
     const samples = [sample(0), sample(1)], before = samples[0].cameras[0].frames[0].data.slice();
     const correct = evaluateCalibration(samples, calibrationDefaults, "correct");
-    const wrong = evaluateCalibration([samples[0], { ...samples[1], fen: calibrationPosition(7).fen }], calibrationDefaults, "wrong");
+    const wrong = evaluateCalibration([samples[0], { ...samples[1], fen: calibrationPosition(3).fen }], calibrationDefaults, "wrong");
     expect(correct.accuracy).toBeGreaterThan(wrong.accuracy);
     expect(correct.consistency).toBe(1); expect(wrong.errors.length).toBeGreaterThan(correct.errors.length);
     expect(samples[0].cameras[0].frames[0].data).toEqual(before);
@@ -43,7 +47,7 @@ describe("Calibrate", () => {
   });
   it("validates phone calibration commands including stale-step metadata", () => {
     expect(parseCommand({ type: "calibrate", action: "start" })).toEqual({ type: "calibrate", action: "start" });
-    expect(parseCommand({ type: "calibrate", action: "capture", session: "abc", step: 11 })).toMatchObject({ step: 11 });
+    expect(parseCommand({ type: "calibrate", action: "capture", session: "abc", step: 4 })).toMatchObject({ step: 4 });
     for (const bad of [{ action: "capture" }, { action: "unknown" }, { action: "apply", session: "a", step: -1 }, { action: "capture", session: "a", step: 0.5 }]) expect(parseCommand({ type: "calibrate", ...bad })).toBeNull();
   });
   it("requires fresh still frames, rejects stale confirmations, and permits retry without saving settings", async () => {
@@ -70,7 +74,7 @@ describe("Calibrate", () => {
     const state = graph.states.get(reader.id); state.sampler = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
     state.obs = { motion: 0 }; let timestamp = 0; state.cleaned = picture(calibrationPosition(0).fen, timestamp);
     const persist = vi.fn(), cal = new Calibrate(graph, persist); cal.command({ type: "calibrate", action: "start" });
-    for (let step = 0; step <= calibrationMoves.length; step++) {
+    for (let step = 0; step < calibrationSteps; step++) {
       expect(cal.view!.step).toBe(step);
       const command = { type: "calibrate" as const, action: "capture" as const, session: cal.view!.session, step };
       expect(cal.command(command).ok).toBe(true);

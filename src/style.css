@@ -560,6 +560,3 @@ body.simple .simple-input{display:block;flex:none;border:1px solid var(--border,
 
 .calibrate-dialog { width: min(760px, 94vw); max-height: 90vh; overflow: auto; background: #132129; color: #dfebed; border: 1px solid #52717b; padding: 24px; }
 .calibrate-dialog::backdrop { background: #0009; }
-.calibrate-dialog button { margin: 8px 8px 8px 0; padding: 12px; }
-.calibrate-board { display: grid; grid-template-columns: repeat(8, 1fr); width: min(320px, 100%); margin: 16px 0; color: #111; }
-.calibrate-board span { aspect-ratio: 1; display: grid; place-items: center; font: 28px Georgia, serif; }
