@@ -44,6 +44,8 @@ describe("phone page", () => {
   });
   it("shows the live game: turn, board, the paper score sheet and game info", async () => {
     start(vi.fn(() => json({ rev: 1, clients: 2, state: state({ moves: ["e4", "e5", "Nf3"], turn: "b", hint: { from: "g1", to: "f3" }, notice: { text: "Playing Nf3.", ok: true, at: 5 } }), frames: { A: 3 } }))); await flush();
+    expect(q(".rm-confidence").textContent).toBe("Live board confidence 90%");
+    expect(q<HTMLMeterElement>(".rm-confidence meter").value).toBe(0.9);
     expect(q(".rm-turn").textContent).toBe("Black to move, move 2"); expect(q(".rm-conn").textContent).toBe("Live");
     expect(document.querySelectorAll(".rm-sq")).toHaveLength(64); expect(q('[data-sq="e4"]').getAttribute("aria-label")).toBe("e4, white pawn"); expect(q('[data-sq="e5"]').getAttribute("aria-label")).toBe("e5, empty");
     expect(q('[data-sq="e4"]').classList.contains("last")).toBe(true);

@@ -133,7 +133,7 @@ const aiNarrator: NodeSpec<AiState> = {
         else {
           state.inflight++;
           const prio = Math.max(...base.map((l) => l.priority));
-          commentate(evs, state.history, { apiKey: key, model: String(params.aiModel || LLM_DEFAULT_MODEL), names: [String(params.nameA), String(params.nameB)], voices: params.voices === "1" ? 1 : 2, lang: langOf(params.language) }, prio)
+          commentate(evs, state.history, { apiKey: key, model: String(params.aiModel || LLM_DEFAULT_MODEL), names: [String(params.nameA), String(params.nameB)], voices: params.voices === "1" ? 1 : 2, lang: langOf(params.language), recentLines: [...state.lines, ...state.ready].slice(-16).map((l) => l.text) }, prio)
             .catch(() => base).then((ls) => { state.ready.push(...ls); }).finally(() => { state.inflight--; });
         }
       }

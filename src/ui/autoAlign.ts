@@ -189,6 +189,17 @@ export class AutoAligner implements AlignStatus {
   private set(pts: Pt[]) { this.corners = pts; this.changed = true; }
   private *run(): Generator<void, void> {
     const f = this.f;
+    // An already aligned grid is a successful detection. Do not replace it
+    // with exploratory layouts or change its established corner order.
+    if (this.start?.length === 4) {
+      const current = evaluate(f, this.start);
+      if (current.q >= GOOD && !current.flipped) {
+        this.set(this.start.map((p) => ({ ...p })));
+        this.confidence = current.q; this.progress = 1;
+        this.phase = "done"; this.label = "Kept existing alignment";
+        return;
+      }
+    }
     this.phase = "find"; this.label = "Looking for the board…"; yield;
     const cands = candidateLayouts(f, this.start, this.prior);
     if (!cands.length) { this.phase = "failed"; this.label = "No board found. Drag the corners onto it."; return; }

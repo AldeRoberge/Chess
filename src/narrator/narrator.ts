@@ -204,7 +204,7 @@ export interface NarratorConfig {
   minGapMs: number; // do not talk over ourselves
   lang?: Lang; // missing = French
 }
-export const defaultNarratorConfig = (): NarratorConfig => ({ voices: 2, names: ["Jean", "Margot"], seed: 7, minGapMs: 900, lang: "fr" });
+export const defaultNarratorConfig = (): NarratorConfig => ({ voices: 2, names: ["Jean", "Margot"], seed: Math.floor(Math.random() * 0x7fffffff), minGapMs: 900, lang: "fr" });
 
 /**
  * Real-time commentary. Two voices: A calls the action, B adds colour / reaction. Lines are
@@ -225,9 +225,12 @@ export class Narrator {
   private lastMaterialT = -1e9;
 
   private pick(xs: string[]): string {
-    const fresh = xs.filter((x) => !this.recent.includes(x)), pool = fresh.length ? fresh : xs;
-    this.n = (this.n * 1103515245 + 12345 + this.cfg.seed) & 0x7fffffff;
-    const s = pool[this.n % pool.length];
+    const fresh = xs.filter((x) => !this.recent.includes(x));
+    // Exhausted a small phrase bank? Reuse only its least recently spoken line.
+    const oldest = Math.min(...xs.map((x) => this.recent.lastIndexOf(x)));
+    const pool = fresh.length ? fresh : xs.filter((x) => this.recent.lastIndexOf(x) === oldest);
+    this.n = (Math.imul(this.n, 1664525) + 1013904223 + this.cfg.seed) >>> 0;
+    const s = pool[Math.floor((this.n / 0x100000000) * pool.length)];
     this.recent.push(s); if (this.recent.length > 24) this.recent.shift();
     return s;
   }

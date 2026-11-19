@@ -24,6 +24,14 @@ const run = (a: AutoAligner) => { for (let i = 0; i < 5000 && a.step(50); i++); 
 
 describe("auto align", () => {
   const f = render(TRUE);
+  it("retains an already good alignment without exploring replacement layouts", () => {
+    expect(evaluate(f, TRUE).q).toBeGreaterThanOrEqual(0.7);
+    const a = new AutoAligner(f, TRUE, 0);
+    run(a);
+    expect(a.phase).toBe("done");
+    expect(a.corners).toEqual(TRUE);
+    expect(a.label).toBe("Kept existing alignment");
+  });
   it("guesses from the picture and from earlier alignments, not from shifted copies", () => {
     const c = candidateLayouts(f, TRUE);
     expect(c.length).toBeGreaterThan(0);

@@ -65,6 +65,10 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   watchBtn.onclick = () => { watch = !watch; write("chess.remote.watch", watch ? "1" : "0"); draw(); };
   head.append(title, joinBtn, watchBtn, conn);
   const turn = el("p", "rm-turn"); turn.setAttribute("aria-live", "polite");
+  const confidence = el("p", "rm-confidence");
+  const confidenceMeter = el("meter"); confidenceMeter.min = 0; confidenceMeter.max = 1;
+  confidenceMeter.setAttribute("aria-label", "Live board confidence");
+  const confidenceText = el("span"); confidence.append(confidenceText, confidenceMeter);
   const clocksEl = el("p", "rm-clocks"); clocksEl.hidden = true;
   const boardEl = el("div", "rm-board"); boardEl.setAttribute("role", "group"); boardEl.setAttribute("aria-label", "Chess board");
   const nav = el("div", "rm-nav");
@@ -87,7 +91,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const tabBtns = (["moves", "camera", "info"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info" }[t]), { moves: "list", camera: "camera", info: "info" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
-  function build() { page.replaceChildren(head, turn, clocksEl, boardEl, promoEl, nav, acts, notice, tabs, panel); draw(); }
+  function build() { page.replaceChildren(head, turn, clocksEl, boardEl, confidence, promoEl, nav, acts, notice, tabs, panel); draw(); }
   const markTabs = () => tabBtns.forEach((b, i) => { const on = (["moves", "camera", "info"] as Tab[])[i] === tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
 
   const total = () => st?.moves.length ?? 0;
@@ -241,6 +245,10 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   }
 
   function draw() {
+    const fid = st && Number.isFinite(st.fidelity) ? Math.max(0, Math.min(1, st.fidelity)) : null;
+    confidenceText.textContent = !online || fid === null ? "Board confidence unavailable" : `Live board confidence ${Math.round(fid * 100)}%`;
+    confidenceMeter.hidden = !online || fid === null;
+    confidenceMeter.value = fid ?? 0;
     drawTurn(); drawNav(); drawBoard(); drawPromo(); drawPanel(); markTabs();
     acts.hidden = watch; watchBtn.classList.toggle("on", watch); watchBtn.setAttribute("aria-pressed", String(watch));
     conn.textContent = online ? (st ? "Live" : "Waiting") : "Offline, retrying…"; conn.classList.toggle("off", !online);

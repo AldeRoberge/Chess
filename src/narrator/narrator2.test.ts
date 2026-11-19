@@ -7,7 +7,7 @@ const say = (n: Narrator, type: string, data: Record<string, any> = {}, t = 1000
 const texts = (l: { text: string }[]) => l.map((x) => x.text).join(" | ");
 
 describe("Narrator", () => {
-  it("has two French default commentators with a minimum gap", () => { expect(defaultNarratorConfig()).toEqual({ voices: 2, names: ["Jean", "Margot"], seed: 7, minGapMs: 900, lang: "fr" }); });
+  it("has two French default commentators with a minimum gap", () => { expect(defaultNarratorConfig()).toEqual({ voices: 2, names: ["Jean", "Margot"], seed: expect.any(Number), minGapMs: 900, lang: "fr" }); });
   it("narrates in English when the language is set to en, same events and speakers", () => {
     const n = new Narrator({ ...defaultNarratorConfig(), minGapMs: 0, lang: "en" });
     expect(say(n, "seat")[0]).toMatchObject({ speaker: "A", name: "Jean", priority: 3 });
@@ -130,4 +130,15 @@ describe("variety", () => {
     const lead = say(n, "capture", { color: "w", piece: "n", captured: "n", to: "f6" }, 200000);
     expect(lead[1].text).toMatch(/points|\+7/);
   });
+});
+
+it("does not repeat the previous engine introduction after exhausting its phrase bank", () => {
+  const n = new Narrator({ ...defaultNarratorConfig(), seed: 7, minGapMs: 0 });
+  let previous = "";
+  for (let i = 0; i < 40; i++) {
+    const line = say(n, "mode", { mode: "engine", elo: 1500 }, i * 10000).find((l) => l.speaker === "B")!;
+    expect(line.text).not.toBe(previous);
+    expect(line.text).not.toContain("Face à la machine");
+    previous = line.text;
+  }
 });
