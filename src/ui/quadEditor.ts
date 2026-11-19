@@ -44,7 +44,11 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const bar = document.createElement("div"); bar.className = "qe-bar";
   const btn = (t: string, cls = "") => { const b = document.createElement("button"); b.className = "qe-btn " + cls; b.textContent = t; return b; };
   const reset = btn("Reset"), cancel = btn("Cancel"), ok = btn("Done", "primary");
-  bar.append(reset, cancel, ok);
+  let negative = true;
+  const neg = btn("Negative grid: on");
+  neg.title = "Draw the grid as the inverse of the camera picture so it stays visible on light and dark squares";
+  neg.onclick = () => { negative = !negative; neg.textContent = `Negative grid: ${negative ? "on" : "off"}`; };
+  bar.append(neg, reset, cancel, ok);
   box.append(head, hint, cv, bar); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
@@ -55,13 +59,17 @@ export function openQuadEditor(o: QuadEditorOpts) {
     if (closed) return;
     drawFrame(ctx, W, H, o.frame(), "no camera frame yet — connect a camera to this node");
     const m = squareToQuad(pts), P = (u: number, v: number) => { const p = m(u, v); return { x: p.x * sx, y: p.y * sy }; };
-    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(53,224,180,.55)";
+    // Negative mode: white lines under "difference" blending give the inverse of the picture beneath them.
+    ctx.save();
+    if (negative) { ctx.globalCompositeOperation = "difference"; ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; }
+    else { ctx.lineWidth = 1; ctx.strokeStyle = "rgba(53,224,180,.55)"; }
     for (let i = 0; i <= o.grid && o.grid > 1; i++) {
       const t = i / o.grid;
       for (const [a, b] of [[P(t, 0), P(t, 1)], [P(0, t), P(1, t)]]) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
     }
-    ctx.lineWidth = 2; ctx.strokeStyle = "#35e0b4"; ctx.beginPath();
+    ctx.lineWidth = 2; ctx.strokeStyle = negative ? "#fff" : "#35e0b4"; ctx.beginPath();
     pts.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy))); ctx.closePath(); ctx.stroke();
+    ctx.restore();
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
     pts.forEach((p, i) => {
       const x = p.x * sx, y = p.y * sy;
