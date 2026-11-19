@@ -8,6 +8,8 @@ export const BOARD_THEMES: BoardTheme[] = [
   { id: "tan", name: "Tan", light: "#ecdab9", dark: "#ae8a68", hi: "rgba(255,255,51,.5)", surround: "#2b231b" },
   { id: "slate", name: "Slate", light: "#c8c8c8", dark: "#5f6670", hi: "rgba(255,230,80,.55)", surround: "#1d2025" },
   { id: "red", name: "Red", light: "#f1e0d6", dark: "#b25454", hi: "rgba(255,255,51,.5)", surround: "#2e1f1f" },
+  { id: "cb", name: "Blue-orange", light: "#f4d6a8", dark: "#3a6ea5", hi: "rgba(255,210,80,.55)", surround: "#1c2430" },
+  { id: "hc", name: "High contrast", light: "#f7f7f7", dark: "#171717", hi: "rgba(255,220,60,.6)", surround: "#000000" },
 ];
 
 const KEY = "chess-board-theme";

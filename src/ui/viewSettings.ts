@@ -2,7 +2,7 @@ import { loadPrefs, patchPrefs } from "../setup/prefs";
 
 /** Render quality and display helpers for the game previews (table board, 3D view, node board previews). */
 export interface RenderSettings { scale: number; fps: number; aa: boolean; shadows: "off" | "low" | "high"; quality: "low" | "medium" | "high" | "custom" }
-export interface DisplaySettings { coords: boolean; legalMoves: boolean; hints: boolean; lastMove: boolean; frusta: boolean }
+export interface DisplaySettings { coords: boolean; legalMoves: boolean; hints: boolean; lastMove: boolean; frusta: boolean; flip: boolean }
 export interface ViewSettings { render: RenderSettings; display: DisplaySettings }
 
 export const PRESETS: Record<"low" | "medium" | "high", Omit<RenderSettings, "quality">> = {
@@ -13,7 +13,7 @@ export const PRESETS: Record<"low" | "medium" | "high", Omit<RenderSettings, "qu
 export const SHADOW_MAP: Record<RenderSettings["shadows"], number> = { off: 0, low: 512, high: 2048 };
 export const DEFAULTS: ViewSettings = {
   render: { ...PRESETS.high, scale: 1.5, quality: "high" },
-  display: { coords: true, legalMoves: true, hints: true, lastMove: true, frusta: false },
+  display: { coords: true, legalMoves: true, hints: true, lastMove: true, frusta: false, flip: false },
 };
 
 let cur: ViewSettings = merge(loadPrefs().view2);

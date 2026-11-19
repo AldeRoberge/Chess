@@ -30,6 +30,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   let view: number | null = null; // null follows the live game; a number is a half-move being looked at
   let sel: string | null = null, tab: Tab = "moves", cam = "", flipped = false, online = false, stopped = false, timer = 0;
   let sent = "";
+  let promo: { from: string; to: string; fen: string } | null = null;
 
   document.body.classList.add("remote");
   root.replaceChildren();
@@ -59,17 +60,18 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const next = navBtn("next", "", "Next move", () => go((view ?? total()) + 1)), last = navBtn("last", "", "Latest move", () => go(null));
   const live = navBtn("live", "Live", "Follow the live game", () => go(null), "live"), flip = navBtn("flip", "Flip", "Turn the board around", () => { flipped = !flipped; draw(); });
   nav.append(first, prev, next, last, live, flip);
+  const promoEl = el("div", "rm-promo"); promoEl.hidden = true;
   const notice = el("p", "rm-notice"); notice.setAttribute("role", "status");
   const tabs = el("div", "rm-tabs"); tabs.setAttribute("role", "tablist");
   const tabBtns = (["moves", "camera", "info"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info" }[t]), { moves: "list", camera: "camera", info: "info" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
-  function build() { page.replaceChildren(head, turn, boardEl, nav, notice, tabs, panel); draw(); }
+  function build() { page.replaceChildren(head, turn, boardEl, promoEl, nav, notice, tabs, panel); draw(); }
   const markTabs = () => tabBtns.forEach((b, i) => { const on = (["moves", "camera", "info"] as Tab[])[i] === tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
 
   const total = () => st?.moves.length ?? 0;
   function go(p: number | null) {
-    sel = null;
+    sel = null; promo = null;
     if (p === null || p >= total()) view = null; else view = Math.max(0, p);
     draw();
   }
@@ -107,14 +109,30 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
 
   function tapSquare(name: string, fen: string) {
     if (!canPlay() || !st) return;
+    if (promo) { promo = null; sel = null; draw(); return; }
     const g = new Chess(fen), pc = g.get(name as never);
-    if (sel && sel !== name && targetsFrom(fen, sel).includes(name)) { void sendMove(sel, name, fen); sel = null; draw(); return; }
+    if (sel && sel !== name && targetsFrom(fen, sel).includes(name)) {
+      if (needsPromotion(fen, sel, name)) { promo = { from: sel, to: name, fen }; sel = null; draw(); return; }
+      void sendMove(sel, name); sel = null; draw(); return;
+    }
     sel = pc && pc.color === st.turn && name !== sel ? name : null;
     drawBoard();
   }
 
-  async function sendMove(from: string, to: string, fen: string) {
-    const body = { type: "move", from, to, ...(needsPromotion(fen, from, to) ? { promotion: "q" } : {}) };
+  function drawPromo() {
+    promoEl.replaceChildren();
+    const p = promo; promoEl.hidden = !p;
+    if (!p) return;
+    promoEl.append(el("span", "", "Promote to"));
+    for (const [ch, name] of [["q", "Queen"], ["r", "Rook"], ["b", "Bishop"], ["n", "Knight"]] as const) {
+      const b = el("button", "rm-btn", name); b.type = "button"; b.setAttribute("aria-label", `Promote to ${name}`);
+      b.onclick = () => { const cur = promo!; promo = null; void sendMove(cur.from, cur.to, ch); draw(); };
+      promoEl.append(b);
+    }
+  }
+
+  async function sendMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
+    const body = { type: "move", from, to, ...(promotion ? { promotion } : {}) };
     sent = `${from}${to}`; showNotice(`Sending ${from} to ${to}…`, true);
     try {
       const r = await fetchFn(`${api}cmd?code=${encodeURIComponent(code)}&cid=${cid}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -169,13 +187,21 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
         for (const c of st.cameras) row(`Camera ${c.id}`, `${c.online ? "online" : "offline"}, picture quality ${Math.round(c.quality * 100)}%`);
         row("Phones watching", String(clients));
       } else row("Status", "Waiting for the computer");
-      panel.append(dl);
+      const copy = (label: string, text: string) => {
+        const b = withIcon(el("button", "rm-btn", label), "copy", 18); b.type = "button";
+        b.onclick = () => { void navigator.clipboard?.writeText(text).catch(() => {}); };
+        return b;
+      };
+      const g = new Chess();
+      for (const san of st?.moves ?? []) try { g.move(san); } catch { break; }
+      const copies = el("div", "rm-copies"); copies.append(copy("Copy PGN", g.pgn() || "*"), copy("Copy FEN", g.fen()));
+      panel.append(dl, copies);
       if (st?.lines.length) { const l = el("ul", "rm-lines"); for (const x of [...st.lines].reverse()) { const li = el("li"); li.append(el("b", "", x.name), document.createTextNode(` ${x.text}`)); l.append(li); } panel.append(el("h2", "", "Narration"), l); }
     }
   }
 
   function draw() {
-    drawTurn(); drawNav(); drawBoard(); drawPanel(); markTabs();
+    drawTurn(); drawNav(); drawBoard(); drawPromo(); drawPanel(); markTabs();
     conn.textContent = online ? (st ? "Live" : "Waiting") : "Offline, retrying…"; conn.classList.toggle("off", !online);
     if (st?.notice && `${st.notice.at}` !== lastNotice) { lastNotice = `${st.notice.at}`; if (sent) showNotice(st.notice.text, st.notice.ok); }
   }

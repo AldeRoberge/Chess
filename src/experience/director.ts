@@ -17,8 +17,8 @@ export const defaultDirectorConfig = (): DirectorConfig => ({ dwellMs: 1500, int
 /** Lays the options out on the player's side of the table, rotated to face them. */
 export function layoutMenu(seat: Seat, elos: number[]): MenuButton[] {
   const items: Omit<MenuButton, "x" | "y">[] = [
-    ...elos.map((e) => ({ id: `elo${e}`, label: `Ordinateur ${e}`, r: 0.55, mode: "engine" as const, elo: e })),
-    { id: "human", label: "Deux joueurs", r: 0.55, mode: "human" as const },
+    ...elos.map((e) => ({ id: `elo${e}`, label: `Computer ${e}`, r: 0.55, mode: "engine" as const, elo: e })),
+    { id: "human", label: "Two players", r: 0.55, mode: "human" as const },
   ];
   // the seat may be far from the table: anchor the menu on the table edge nearest the player
   const clampT = (v: number) => Math.min(10.5, Math.max(-2.5, v));

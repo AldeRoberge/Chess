@@ -34,6 +34,9 @@ body.remote #app{display:block;height:auto}
 .rm-nav{display:grid;grid-template-columns:repeat(4,1fr) 1.5fr 1.2fr;gap:6px}
 .rm-notice{margin:0;min-height:1.4em;font:400 var(--t-sm)/1.4 var(--font-ui);color:var(--text-dim)}
 .rm-notice.bad{color:var(--bad)}
+.rm-promo{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.rm-promo[hidden]{display:none}
+.rm-copies{display:flex;flex-wrap:wrap;gap:8px;margin:12px 2px}
 
 .rm-tabs{display:flex;border-bottom:1px solid var(--line)}
 .rm-tabs button{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1;min-height:44px;border:0;border-radius:0;background:transparent;color:var(--text-dim);font:500 var(--t-md)/1 var(--font-ui);cursor:pointer}

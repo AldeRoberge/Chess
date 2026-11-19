@@ -23,6 +23,10 @@ import { fmtClock } from "../clock/types";
 
 const o2 = (n: string) => sqIndex(n);
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+const copyText = (s: string) => { void navigator.clipboard?.writeText(s).catch(() => {}); };
+const flipped = () => viewSettings().display.flip;
+const visSq = (sq: number) => (flipped() ? 63 - sq : sq);
+const tableXY = (q: { x: number; y: number }) => (flipped() ? { x: 8 - q.x, y: 8 - q.y } : q);
 const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔", bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚" };
 
 /** The virtual table: play moves with the mouse (a simulated hand carries the piece past the cameras), hover menu buttons to test dwell selection. */
@@ -42,32 +46,50 @@ export class TablePanel {
   private cursor = 52;
   private pending: { from: string; to: string; choices: ("q" | "r" | "b" | "n")[] } | null = null;
   private seat = el("button", "", "Sit down");
+  private flipBtn = withIcon(el("button", "", "Flip"), "flip");
+  private lookSel = el("select", "board-look");
+  private pieceSel = el("select", "board-look");
+  private banner = el("div", "over-banner");
   private gameKey = "";
 
   constructor() {
     this.cv.width = this.cv.height = (8 + this.margin * 2) * this.px;
     this.cv.className = "table-cv"; this.cv.dataset.tipLive = "1"; this.cv.tabIndex = 0;
     this.cv.setAttribute("role", "application");
-    this.cv.setAttribute("aria-label", "Chessboard. Arrow keys move the cursor. Enter or Space selects and moves. q, r, b or n chooses a promotion.");
+    this.cv.setAttribute("aria-label", "Chessboard. Arrow keys move the cursor. Enter or Space selects and moves. q, r, b or n chooses a promotion. Flip turns the board so Black plays from the bottom.");
     const bar = el("div", "bar");
     const reset = withIcon(el("button", "", "Reset table"), "undo"); reset.type = "button"; reset.dataset.tip = "Reset table"; reset.dataset.tipBody = "Puts every piece back on its starting square.";
-    reset.onclick = () => { this.pending = null; this.paintPromo(); virtualTable.reset(); };
+    reset.onclick = () => { this.pending = null; this.paintPromo(); this.banner.hidden = true; virtualTable.reset(); };
     this.seat.type = "button"; withIcon(this.seat, "people");
     this.seat.dataset.tip = "Sit / stand"; this.seat.dataset.tipBody = "Seats or removes the virtual player, so the cameras and tracking see a person at the table.";
     this.seat.onclick = () => { virtualTable.seated = !virtualTable.seated; this.paintSeat(); this.seatCb(virtualTable.seated); };
     this.paintSeat();
-    const look = el("select", "board-look"); look.title = "Board look";
-    for (const t of BOARD_THEMES) { const o = el("option", "", t.name); o.value = t.id; look.append(o); }
-    look.value = boardTheme().id; look.onchange = () => setBoardTheme(look.value);
+    this.lookSel.title = "Board look"; this.lookSel.setAttribute("aria-label", "Board look");
+    for (const t of BOARD_THEMES) { const o = el("option", "", t.name); o.value = t.id; this.lookSel.append(o); }
+    this.lookSel.value = boardTheme().id; this.lookSel.onchange = () => setBoardTheme(this.lookSel.value);
+    this.pieceSel.title = "Piece set"; this.pieceSel.setAttribute("aria-label", "Piece set");
+    for (const s of PIECE_SETS) { const o = el("option", "", s.name); o.value = s.id; this.pieceSel.append(o); }
+    this.pieceSel.value = pieceSet().id; this.pieceSel.onchange = () => setPieceSet(this.pieceSel.value);
+    this.flipBtn.type = "button"; this.flipBtn.dataset.tip = "Flip board"; this.flipBtn.dataset.tipBody = "Turn the board around so Black plays from the bottom.";
+    this.flipBtn.onclick = () => { setDisplay({ flip: !flipped() }); this.paintFlip(); };
+    this.paintFlip();
     const hover = withIcon(el("button", "", "Hover hand"), "hand"); hover.title = "Hold a simulated hand over the board under your mouse, to test what the cameras do when squares are covered";
     hover.onclick = () => { virtualTable.hoverHand = !virtualTable.hoverHand; hover.classList.toggle("on", virtualTable.hoverHand); if (!virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
-    bar.append(this.seat, reset, hover, look);
+    const copyPgn = withIcon(el("button", "", "Copy PGN"), "copy"); copyPgn.type = "button";
+    copyPgn.dataset.tip = "Copy PGN"; copyPgn.dataset.tipBody = "Copy the game in PGN, the usual way to save or share a chess game.";
+    copyPgn.onclick = () => copyText(virtualTable.game.pgn() || "*");
+    const copyFen = withIcon(el("button", "", "Copy FEN"), "copy"); copyFen.type = "button";
+    copyFen.dataset.tip = "Copy FEN"; copyFen.dataset.tipBody = "Copy the current position as FEN, so you can paste it into an analysis board.";
+    copyFen.onclick = () => copyText(virtualTable.game.fen());
+    bar.append(this.seat, reset, hover, this.flipBtn, this.lookSel, this.pieceSel, copyPgn, copyFen);
     this.promo.hidden = true;
-    this.root.append(bar, this.gamebar, this.promo, this.cv, this.info);
+    this.gamebar.setAttribute("aria-live", "polite");
+    this.banner.hidden = true; this.banner.setAttribute("role", "status");
+    this.root.append(bar, this.gamebar, this.banner, this.promo, this.cv, this.info);
     this.info.textContent = "Click a piece, then a square. Hover a menu button to test dwell selection. Arrow keys and Enter play too.";
     const pos = (e: MouseEvent) => { const r = this.cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * (8 + 2 * this.margin) - this.margin, y: ((e.clientY - r.top) / r.height) * (8 + 2 * this.margin) - this.margin }; };
     this.cv.onmousemove = (e) => {
-      const q = pos(e); virtualTable.pointer = q;
+      const q = tableXY(pos(e)); virtualTable.pointer = q;
       const c = Math.floor(q.x), r = Math.floor(q.y); this.over = c >= 0 && c < 8 && r >= 0 && r < 8 ? r * 8 + c : null; this.overMargin = this.over === null ? q : null;
       if (virtualTable.hoverHand && !virtualTable.busy) { virtualTable.hand = { ...virtualTable.pointer }; virtualTable.carried = null; virtualTable.setHoverHand(); }
     };
@@ -75,14 +97,14 @@ export class TablePanel {
       this.suppressClick = false;
       if (this.takeover()) { this.suppressClick = true; return; } // two bots are playing: the click asks to take control instead of moving a piece
       virtualTable.pointerDown = true;
-      const p = pos(e), c = Math.floor(p.x), r = Math.floor(p.y), pc = c >= 0 && c < 8 && r >= 0 && r < 8 ? virtualTable.game.board()[r][c] : null;
+      const p = tableXY(pos(e)), c = Math.floor(p.x), r = Math.floor(p.y), pc = c >= 0 && c < 8 && r >= 0 && r < 8 ? virtualTable.game.board()[r][c] : null;
       if (pc && !virtualTable.busy && pc.color === virtualTable.game.turn() && this.sideOk(pc.color)) { this.drag = { from: r * 8 + c, was: this.sel === r * 8 + c }; this.sel = r * 8 + c; } // grab: drag it to a square, or release to keep it selected
     };
     this.cv.onmouseup = (e) => {
       virtualTable.pointerDown = false;
       const d = this.drag; this.drag = null;
       if (!d) return;
-      const p = pos(e), c = Math.floor(p.x), r = Math.floor(p.y), to = c >= 0 && c < 8 && r >= 0 && r < 8 ? r * 8 + c : null;
+      const p = tableXY(pos(e)), c = Math.floor(p.x), r = Math.floor(p.y), to = c >= 0 && c < 8 && r >= 0 && r < 8 ? r * 8 + c : null;
       this.suppressClick = true; // the mouseup handled it; the click that follows must not act again
       if (to === null) { this.sel = null; return; }
       if (to === d.from) { this.sel = d.was ? null : to; return; } // released where it started: a plain click toggles the selection
@@ -91,7 +113,7 @@ export class TablePanel {
     this.cv.onmouseleave = () => { virtualTable.pointer = null; virtualTable.pointerDown = false; this.drag = null; this.over = null; this.overMargin = null; if (virtualTable.hoverHand && !virtualTable.busy) virtualTable.hand = null; };
     this.cv.onclick = (e) => {
       if (this.suppressClick) { this.suppressClick = false; return; }
-      const p = pos(e); const c = Math.floor(p.x), r = Math.floor(p.y);
+      const p = tableXY(pos(e)); const c = Math.floor(p.x), r = Math.floor(p.y);
       if (c < 0 || c > 7 || r < 0 || r > 7) return;
       this.act(r * 8 + c);
     };
@@ -100,9 +122,10 @@ export class TablePanel {
         e.preventDefault(); this.commit(this.pending.from + this.pending.to + e.key); return;
       }
       const step: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-      const d = step[e.key];
+      let d = step[e.key];
       if (d) {
         e.preventDefault();
+        if (flipped()) d = [-d[0], -d[1]];
         const c = Math.min(7, Math.max(0, (this.cursor % 8) + d[0])), r = Math.min(7, Math.max(0, Math.floor(this.cursor / 8) + d[1]));
         this.cursor = r * 8 + c; this.over = this.cursor; return;
       }
@@ -178,7 +201,15 @@ export class TablePanel {
     const key = `${turn}|${clk}|${pairs.join(" ")}|${taken}`;
     if (key === this.gameKey) return;
     this.gameKey = key;
-    this.gamebar.replaceChildren(el("span", "turn", clk ? `${turn} · ${clk}` : turn), el("span", "moves", pairs.slice(-6).join("  ")), el("span", "caps", taken));
+    this.gamebar.replaceChildren(el("span", "turn", clk ? `${turn} · ${clk}` : turn), el("span", "moves", pairs.join("  ")), el("span", "caps", taken));
+    const over = g.isCheckmate() || g.isDraw();
+    this.banner.hidden = !over;
+    this.banner.textContent = over ? turn : "";
+  }
+  private paintFlip() {
+    const on = flipped();
+    this.flipBtn.classList.toggle("on", on);
+    this.flipBtn.setAttribute("aria-pressed", on ? "true" : "false");
   }
   seatCb: (seated: boolean) => void = () => {};
   /** Called on every press on the table; return true when it was used up (e.g. to offer taking over from the AI players), so no piece is grabbed. */
@@ -224,7 +255,7 @@ export class TablePanel {
   private drawArms(c: CanvasRenderingContext2D, px: number) {
     const caps = virtualTable.arms().flatMap((a) => a.capsules).sort((a, b) => a.a[1] + a.b[1] - (b.a[1] + b.b[1]));
     c.lineCap = "round";
-    const to = (p: [number, number, number]) => [(p[0] / SQUARE + 4) * px, (p[2] / SQUARE + 4) * px];
+    const to = (p: [number, number, number]) => { const q = tableXY({ x: p[0] / SQUARE + 4, y: p[2] / SQUARE + 4 }); return [q.x * px, q.y * px]; };
     for (const k of caps) {
       const [x0, y0] = to(k.a), [x1, y1] = to(k.b);
       c.strokeStyle = k.tone < 150 ? "rgba(58,74,99,.82)" : "rgba(226,170,138,.9)"; c.lineWidth = (2 * k.r * px) / SQUARE;
@@ -238,7 +269,8 @@ export class TablePanel {
     const vs = viewSettings(), disp = vs.display;
     if (!dueFrame(now, this.lastFrame, vs.render.fps)) return;
     this.lastFrame = now;
-    this.paintSeat(); this.paintGame();
+    this.paintSeat(); this.paintFlip(); this.paintGame();
+    this.lookSel.value = boardTheme().id; this.pieceSel.value = pieceSet().id;
     const c = this.cv.getContext("2d")!, px = this.px, m = this.margin, th = boardTheme();
     const k = pixelRatio(vs.render.scale), side = Math.round((8 + m * 2) * px * k); // backing resolution only: CSS keeps the canvas at 100% width
     if (this.cv.width !== side) this.cv.width = this.cv.height = side;
@@ -247,21 +279,22 @@ export class TablePanel {
     c.save(); c.translate(m * px, m * px);
     const b = virtualTable.game.board();
     for (let i = 0; i < 64; i++) { c.fillStyle = ((i % 8) + Math.floor(i / 8)) % 2 ? th.dark : th.light; c.fillRect((i % 8) * px, Math.floor(i / 8) * px, px, px); }
-    if (this.sel !== null) { c.fillStyle = th.hi; c.fillRect((this.sel % 8) * px, Math.floor(this.sel / 8) * px, px, px); }
-    if (this.cursor !== null) { c.strokeStyle = "rgba(255,228,92,.95)"; c.lineWidth = 2; c.strokeRect((this.cursor % 8) * px + 2, Math.floor(this.cursor / 8) * px + 2, px - 4, px - 4); }
+    if (this.sel !== null) { const v = visSq(this.sel); c.fillStyle = th.hi; c.fillRect((v % 8) * px, Math.floor(v / 8) * px, px, px); }
+    if (this.cursor !== null) { const v = visSq(this.cursor); c.strokeStyle = "rgba(255,228,92,.95)"; c.lineWidth = 2; c.strokeRect((v % 8) * px + 2, Math.floor(v / 8) * px + 2, px - 4, px - 4); }
     c.restore();
-    const ov = { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints };
+    const ov = { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints, flip: disp.flip };
     drawTableOverlay(c, px, m, ov, now / 1000, false, "under"); // square tints sit under the pieces
     c.save(); c.translate(m * px, m * px);
     c.font = `700 ${px * 0.28}px Arial, sans-serif`; c.textBaseline = "top"; c.textAlign = "left"; c.lineWidth = Math.max(2, px * 0.06); c.strokeStyle = "rgba(0,0,0,.75)"; c.fillStyle = "#f7f4ee";
     for (let k = 0; k < (disp.coords ? 8 : 0); k++) {
-      c.textAlign = "left"; c.strokeText(String(8 - k), 0.08 * px, k * px + 0.06 * px); c.fillText(String(8 - k), 0.08 * px, k * px + 0.06 * px);
-      c.textAlign = "right"; c.textBaseline = "bottom"; c.strokeText("abcdefgh"[k], (k + 1) * px - 0.08 * px, 8 * px - 0.04 * px); c.fillText("abcdefgh"[k], (k + 1) * px - 0.08 * px, 8 * px - 0.04 * px); c.textBaseline = "top";
+      const rank = flipped() ? k + 1 : 8 - k, file = flipped() ? "hgfedcba"[k] : "abcdefgh"[k];
+      c.textAlign = "left"; c.strokeText(String(rank), 0.08 * px, k * px + 0.06 * px); c.fillText(String(rank), 0.08 * px, k * px + 0.06 * px);
+      c.textAlign = "right"; c.textBaseline = "bottom"; c.strokeText(file, (k + 1) * px - 0.08 * px, 8 * px - 0.04 * px); c.fillText(file, (k + 1) * px - 0.08 * px, 8 * px - 0.04 * px); c.textBaseline = "top";
     }
     if (this.sel !== null && disp.legalMoves) {
       const from = sqName(this.sel);
       for (const mv of virtualTable.game.moves({ verbose: true }).filter((x) => x.from === from)) {
-        const i = (8 - Number(mv.to[1])) * 8 + (mv.to.charCodeAt(0) - 97), cx = ((i % 8) + 0.5) * px, cy = (Math.floor(i / 8) + 0.5) * px;
+        const i = visSq((8 - Number(mv.to[1])) * 8 + (mv.to.charCodeAt(0) - 97)), cx = ((i % 8) + 0.5) * px, cy = (Math.floor(i / 8) + 0.5) * px;
         c.fillStyle = "rgba(12,16,24,.62)"; c.beginPath();
         if (mv.captured || mv.flags.includes("e")) { c.arc(cx, cy, px * 0.46, 0, 7); c.arc(cx, cy, px * 0.34, 0, 7, true); } else c.arc(cx, cy, px * 0.22, 0, 7);
         c.fill();
@@ -270,11 +303,15 @@ export class TablePanel {
     c.font = `${px * 0.82}px "Segoe UI Symbol", serif`; c.textAlign = "center"; c.textBaseline = "middle";
     b.forEach((row, r) => row.forEach((p, col) => {
       if (!p || virtualTable.carried === r * 8 + col || this.drag?.from === r * 8 + col || bus.pieceView) return; // projected pieces come with the overlay
+      const v = visSq(r * 8 + col), x = (v % 8) * px, y = Math.floor(v / 8) * px;
       const img = pieceImage(p.color + p.type);
-      if (img) { c.drawImage(img, col * px, r * px, px, px); return; }
-      const g = GLYPH["b" + p.type]; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.strokeStyle = p.color === "w" ? "#3b3a37" : "#0d0d0d"; c.lineWidth = p.color === "w" ? 2.2 : 1.2; c.strokeText(g, (col + 0.5) * px, (r + 0.55) * px); c.fillText(g, (col + 0.5) * px, (r + 0.55) * px);
+      if (img) { c.drawImage(img, x, y, px, px); return; }
+      const g = GLYPH["b" + p.type]; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.strokeStyle = p.color === "w" ? "#3b3a37" : "#0d0d0d"; c.lineWidth = p.color === "w" ? 2.2 : 1.2; c.strokeText(g, x + 0.5 * px, y + 0.55 * px); c.fillText(g, x + 0.5 * px, y + 0.55 * px);
     }));
-    if (bus.botColor) drawBotAvatar(c, px, bus.botColor, virtualTable.busy || !!bus.engineHint, virtualTable.hand, now / 1000, bus.director?.elo);
+    if (bus.botColor) {
+      const look = virtualTable.hand, side = flipped() ? (bus.botColor === "b" ? "w" : "b") : bus.botColor;
+      drawBotAvatar(c, px, side, virtualTable.busy || !!bus.engineHint, look ? tableXY(look) : null, now / 1000, bus.director?.elo);
+    }
     this.drawArms(c, px);
     const lifted = (sq: number | null, x: number, y: number, hand: "me" | "bot") => { // a piece in a hand, raised and shadowed
       const p = sq === null ? null : b[Math.floor(sq / 8)][sq % 8]; if (!p) return;
@@ -284,9 +321,9 @@ export class TablePanel {
       else { c.font = `${px * 0.9}px "Segoe UI Symbol", serif`; c.fillStyle = p.color === "w" ? "#fdfdfd" : "#262421"; c.fillText(GLYPH["b" + p.type], x * px, y * px - 4); }
       drawGrabHand(c, x * px, y * px - px * 0.3, px, hand === "bot" ? bus.botColor === "b" : false);
     };
-    if (virtualTable.carried !== null && virtualTable.hand) lifted(virtualTable.carried, virtualTable.hand.x, virtualTable.hand.y, "bot");
-    if (this.drag && virtualTable.pointer) lifted(this.drag.from, virtualTable.pointer.x, virtualTable.pointer.y, "me");
-    if (this.over !== null) { c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.strokeRect((this.over % 8) * px + 1, Math.floor(this.over / 8) * px + 1, px - 2, px - 2); }
+    if (virtualTable.carried !== null && virtualTable.hand) { const h = tableXY(virtualTable.hand); lifted(virtualTable.carried, h.x, h.y, "bot"); }
+    if (this.drag && virtualTable.pointer) { const h = tableXY(virtualTable.pointer); lifted(this.drag.from, h.x, h.y, "me"); }
+    if (this.over !== null) { const v = visSq(this.over); c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.strokeRect((v % 8) * px + 1, Math.floor(v / 8) * px + 1, px - 2, px - 2); }
     c.restore();
     drawTableOverlay(c, px, m, ov, now / 1000, false, "over");
     const g = bus.game, d = bus.director;

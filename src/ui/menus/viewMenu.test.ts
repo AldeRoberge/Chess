@@ -58,5 +58,7 @@ describe("viewMenu", () => {
     const coords = displayItems()[0] as unknown as { get: () => boolean; set: (v: boolean) => void };
     coords.set(false);
     expect(coords.get()).toBe(false);
+    const flip = displayItems().find((i) => (i as { label: string }).label === "Flip board") as unknown as { get: () => boolean; set: (v: boolean) => void };
+    flip.set(true); expect(flip.get()).toBe(true);
   });
 });

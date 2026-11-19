@@ -16,6 +16,10 @@ export interface Alignment {
   contrast: number;
   /** Median distance of the grid lines from the real edges, in squares (0 = on them). */
   error: number;
+  /** 0 (the squares just outside the grid are not board) .. 1 (the checker pattern carries on past the grid: it is too small or shifted). */
+  outside: number;
+  /** Like `error`, but over all 18 lines including the board's own outer edges, and a mean that ignores the worst few: it feels every corner. For the auto-aligner. */
+  fine: number;
 }
 
 /** Bilinear brightness at a picture point; outside the picture counts as unreadable (null). */
@@ -66,18 +70,33 @@ function lineError(f: GrayFrame, m: BoardMap, alongU: boolean, k: number): numbe
 export function scoreAlignment(f: GrayFrame, m: BoardMap): Alignment {
   const errs: number[] = [], polarity: number[] = [];
   for (let k = 1; k < 8; k++) for (const alongU of [true, false]) { const e = lineError(f, m, alongU, k); if (e !== null) errs.push(e); }
+  const outer: number[] = [];
+  for (const k of [0, 8]) for (const alongU of [true, false]) { const e = lineError(f, m, alongU, k); if (e !== null) outer.push(e); }
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const u = (c + 0.5) / 8, v = (r + 0.5) / 8;
     // neighbours are the other colour; a1 is dark, i.e. file + rank odd, and rank = 8 - r
     const mid = luma(f, m(u, v)), nb = [luma(f, m(u - 1 / 8, v)), luma(f, m(u + 1 / 8, v)), luma(f, m(u, v - 1 / 8)), luma(f, m(u, v + 1 / 8))].filter((x): x is number => x !== null);
     if (mid !== null && nb.length >= 2) polarity.push(((c + 8 - r) % 2 === 1 ? -1 : 1) * (mid - nb.reduce((x, y) => x + y, 0) / nb.length));
   }
-  if (errs.length < 10 || polarity.length < 30) return { q: 0, flipped: false, contrast: 0, error: REACH }; // most of the grid is outside the picture
+  if (errs.length < 10 || polarity.length < 30) return { q: 0, flipped: false, contrast: 0, error: REACH, outside: 0, fine: REACH }; // most of the grid is outside the picture
+  const all = [...errs, ...outer].sort((a, b) => a - b), kept = all.slice(0, Math.max(4, Math.ceil(all.length * 0.8))), fine = kept.reduce((a, b) => a + b, 0) / kept.length;
   const error = median(errs), signed = median(polarity), contrast = Math.abs(signed);
+  // Does the checker pattern carry on just outside the grid? Then the grid sits inside the board (smaller or shifted) and the interior lines alone cannot tell.
+  const side = (cells: [number, number][]) => {
+    const v: number[] = [];
+    for (const [c, r] of cells) {
+      const mid = luma(f, m((c + 0.5) / 8, (r + 0.5) / 8)), nb = [luma(f, m((c - 0.5) / 8, (r + 0.5) / 8)), luma(f, m((c + 1.5) / 8, (r + 0.5) / 8)), luma(f, m((c + 0.5) / 8, (r - 0.5) / 8)), luma(f, m((c + 0.5) / 8, (r + 1.5) / 8))].filter((x): x is number => x !== null);
+      if (mid !== null && nb.length >= 2) v.push((((c + 8 - r) % 2 + 2) % 2 === 1 ? -1 : 1) * (mid - nb.reduce((x, y) => x + y, 0) / nb.length));
+    }
+    return v.length >= 4 ? median(v) : 0;
+  };
+  const idx = Array.from({ length: 8 }, (_, i) => i);
+  const sides = [idx.map((i): [number, number] => [i, -1]), idx.map((i): [number, number] => [i, 8]), idx.map((i): [number, number] => [-1, i]), idx.map((i): [number, number] => [8, i])];
+  const outside = contrast < 3 ? 0 : Math.max(...sides.map((cells) => Math.min(1, Math.max(0, (side(cells) / contrast * Math.sign(signed || 1) - 0.35) / 0.4))));
   const visible = Math.min(1, Math.max(0, (contrast - 3) / 12)); // a grid that is hardly visible cannot be judged
   const flipped = signed < -1.5 && visible > 0.3;
-  const q = visible * Math.min(1, Math.max(0, 1 - error / FAR));
-  return { q: flipped ? Math.min(0.45, q) : q, flipped, contrast, error };
+  const q = visible * Math.min(1, Math.max(0, 1 - error / FAR)) * (1 - outside);
+  return { q: flipped ? Math.min(0.45, q) : q, flipped, contrast, error, outside, fine };
 }
 
 /** Keeps the readout calm: it follows the score, a little late, so a moving hand does not make it flicker. */

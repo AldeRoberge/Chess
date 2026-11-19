@@ -53,7 +53,8 @@ describe("phone page", () => {
     const posts: unknown[] = [];
     const f = vi.fn((url: string, init?: RequestInit) => { if (init?.method === "POST") { posts.push(JSON.parse(String(init.body))); return json({ error: "The computer is not sharing a game right now." }, 503); } return json({ rev: 1, clients: 1, state: state({ turn: "w", fen: "8/4P3/8/8/8/8/8/k6K w - - 0 1", moves: [] }) }); });
     start(f); await flush();
-    q('[data-sq="e7"]').click(); expect(q('[data-sq="e8"]').classList.contains("target")).toBe(true); q('[data-sq="e8"]').click(); await flush();
+    q('[data-sq="e7"]').click(); expect(q('[data-sq="e8"]').classList.contains("target")).toBe(true); q('[data-sq="e8"]').click();
+    expect(q(".rm-promo").hidden).toBe(false); q('[aria-label="Promote to Queen"]').click(); await flush();
     expect(posts).toEqual([{ type: "move", from: "e7", to: "e8", promotion: "q" }]); expect(q(".rm-notice").textContent).toContain("not sharing"); expect(q(".rm-notice").classList.contains("bad")).toBe(true);
     q('[data-sq="h1"]').click(); expect(document.querySelector(".rm-sq.sel")!.getAttribute("data-sq")).toBe("h1"); // white's king, white to move: selects
   });

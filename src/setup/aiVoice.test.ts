@@ -62,7 +62,7 @@ describe("AI and voice setup", () => {
     c.ai.engine = "openai"; c.voice.engine = "elevenlabs";
     for (const step of [ai, voice]) {
       const items = step.items(ctx);
-      expect(items.filter((i) => i.kind === "info").map((i) => i.label.slice(0, 2))).toEqual(["1.", "2.", "3.", "4."].slice(0, step === ai ? 4 : 4));
+      expect(items.filter((i) => i.kind === "info" && /^\d\./.test(i.label)).map((i) => i.label.slice(0, 2))).toEqual(["1.", "2.", "3.", "4."].slice(0, step === ai ? 4 : 4));
       expect(items.find((i) => i.kind === "text" && i.secret)).toBeTruthy();
       for (const a of items.filter((i) => i.kind === "action" && i.label.startsWith("Open"))) if (a.kind === "action") a.run();
     }

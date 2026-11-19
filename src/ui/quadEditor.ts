@@ -1,18 +1,11 @@
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
+import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
-import { findBoardCorners } from "../vision/findBoard";
+import { AlignFollower, AutoAligner } from "./autoAlign";
+import { squareToQuad } from "./quadMap";
 import { AlignmentMeter, alignColor, drawEdgeIcons, iconLevels, scoreAlignment } from "./boardGuide";
 
-/** Projective map of the unit square onto a quad (Heckbert), so the board grid is drawn in true perspective. */
-export function squareToQuad(q: Pt[]): (u: number, v: number) => Pt {
-  const [p0, p1, p2, p3] = q;
-  const dx1 = p1.x - p2.x, dx2 = p3.x - p2.x, dy1 = p1.y - p2.y, dy2 = p3.y - p2.y;
-  const sx = p0.x - p1.x + p2.x - p3.x, sy = p0.y - p1.y + p2.y - p3.y;
-  const det = dx1 * dy2 - dx2 * dy1;
-  const g = Math.abs(det) < 1e-9 ? 0 : (sx * dy2 - dx2 * sy) / det, hh = Math.abs(det) < 1e-9 ? 0 : (dx1 * sy - sx * dy1) / det;
-  const a = p1.x - p0.x + g * p1.x, b = p3.x - p0.x + hh * p3.x, c = p0.x, d = p1.y - p0.y + g * p1.y, e = p3.y - p0.y + hh * p3.y, f = p0.y;
-  return (u, v) => { const w = g * u + hh * v + 1; return { x: (a * u + b * v + c) / w, y: (d * u + e * v + f) / w }; };
-}
+export { squareToQuad };
 
 export interface QuadEditorOpts {
   title: string;
@@ -126,7 +119,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
   ok.onclick = () => close(true); cancel.onclick = () => close(false);
   let autoTimer = 0;
   auto.onclick = () => {
-    const fr = o.frame(), found = fr ? findBoardCorners(fr) : null;
+    const fr = o.frame();
+    // Board corners are a8, h8, h1, a1. A clock box is just a busy rectangle and keeps the older finder.
+    const chess = o.names.length === 4 && o.names[0] === "a8" && o.names[1] === "h8" && o.names[2] === "h1" && o.names[3] === "a1";
+    let found: Pt[] | null = null;
+    if (fr && chess) { const q = findCheckerCorners(fr); found = q ? orientBoardCorners(fr, q) : null; }
+    else if (fr) found = findBoardCorners(fr);
     if (found) { pts = found; emit(); auto.textContent = "Auto detect"; return; }
     auto.textContent = fr ? "No board found" : "No camera frame";
     clearTimeout(autoTimer); autoTimer = window.setTimeout(() => { auto.textContent = "Auto detect"; }, 2000);

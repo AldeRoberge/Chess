@@ -23,7 +23,7 @@ describe("vendorFetch", () => {
     vi.stubGlobal("fetch", async () => jsonRes({ openai: true, elevenlabs: false }));
     await loadServerKeys(true);
     expect(effectiveKey("", "openai")).toBe(SERVER_KEY);
-    const f = vi.fn(async () => new Response("{}")); vi.stubGlobal("fetch", f);
+    const f = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("{}")); vi.stubGlobal("fetch", f);
     await vendorFetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { Authorization: "Bearer x", "Content-Type": "application/json" }, body: "{}" });
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toMatch(/\/api\/openai\/chat\/completions$/);

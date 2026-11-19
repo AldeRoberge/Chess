@@ -91,6 +91,16 @@ describe("BoardSampler", () => {
     const o = s.read(shoot(full, "A", 100, 6, 4));
     expect(o.occ[0]).toBeGreaterThan(0.9); expect(o.occ[27]).toBeLessThan(0.1);
   });
+  it("does not invent a piece from a soft shadow on an empty square", () => {
+    const t = new VirtualTable(), s = new BoardSampler("A", cfg());
+    s.calibrateFromStart(shoot(t, "A", 0, 4, 2));
+    const f = shoot(t, "A", 1, 4, 2), H = boardToImage(s.cfg.corners), sq = 3 * 8 + 3; // d5, empty at the start
+    const c = applyH(H, 3.5, 3.5), rad = Math.hypot(applyH(H, 4, 3.5).x - c.x, applyH(H, 4, 3.5).y - c.y) * 1.1;
+    const data = new Uint8ClampedArray(f.data);
+    for (let y = 0; y < f.height; y++) for (let x = 0; x < f.width; x++) { const d = Math.hypot(x - c.x, y - c.y); if (d < rad) data[y * f.width + x] *= 1 - 0.4 * (1 - d / rad); }
+    const o = s.read({ ...f, data });
+    expect(o.occ[sq]).toBeLessThan(0.5);
+  });
   it("flags squares that changed sharply since the last frame as a hand / occlusion", () => {
     const t = new VirtualTable(), s = new BoardSampler("A", cfg());
     s.calibrateFromStart(shoot(t));

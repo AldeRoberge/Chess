@@ -18,6 +18,8 @@ export interface OverlayInput {
   pieces?: PieceOverlay | null;
   /** Board effects to paint in light on top (the output page keeps its own engine). */
   fx?: { draw(ctx: CanvasRenderingContext2D, px: number, now: number): void } | null;
+  /** Turn the 8×8 around (Black at the bottom). Menu buttons and clocks stay in table space. */
+  flip?: boolean;
 }
 
 /**
@@ -33,13 +35,14 @@ export function drawTableOverlay(ctx: CanvasRenderingContext2D, px: number, marg
   ctx.save();
   ctx.translate(margin * px, margin * px);
   const under = layer !== "over", over = layer !== "under";
-  const sq = (name: string) => { const i = sqIndex(name); return { x: (i % 8) * px, y: Math.floor(i / 8) * px }; };
+  const at = (i: number) => { const j = o.flip ? 63 - i : i; return { x: (j % 8) * px, y: Math.floor(j / 8) * px }; };
+  const sq = (name: string) => at(sqIndex(name));
   const fill = (name: string, c: string) => { const p = sq(name); ctx.fillStyle = c; ctx.fillRect(p.x, p.y, px, px); };
 
   const g = o.game;
   if (under && g?.last && o.lastMove !== false) { fill(g.last.from, "rgba(80,160,255,.28)"); fill(g.last.to, "rgba(80,160,255,.45)"); }
   if (under && g?.lifted) fill(g.lifted, "rgba(255,190,60,.5)");
-  if (over) for (const i of g?.status === "illegal" ? g.diff : []) { const x = (i % 8) * px, y = Math.floor(i / 8) * px; ctx.strokeStyle = `rgba(255,70,90,${0.5 + 0.5 * Math.sin(t * 8)})`; ctx.lineWidth = px * 0.08; ctx.strokeRect(x + 3, y + 3, px - 6, px - 6); }
+  if (over) for (const i of g?.status === "illegal" ? g.diff : []) { const p = at(i); ctx.strokeStyle = `rgba(255,70,90,${0.5 + 0.5 * Math.sin(t * 8)})`; ctx.lineWidth = px * 0.08; ctx.strokeRect(p.x + 3, p.y + 3, px - 6, px - 6); }
   if (o.hint && o.hints !== false) { // engine's move: the human physically plays it for the machine
     const pulse = 0.5 + 0.5 * Math.sin(t * 4);
     if (under) { fill(o.hint.from, `rgba(60,255,160,${0.25 + 0.3 * pulse})`); fill(o.hint.to, `rgba(60,255,160,${0.35 + 0.3 * pulse})`); }

@@ -95,6 +95,12 @@ export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number
   return { reads, start };
 }
 
+interface SqAnim { score: number; piece: string | null; white: boolean; pa: number; ga: number; da: number }
+const anims = new WeakMap<CanvasRenderingContext2D, { t: number; sq: SqAnim[] }>();
+const smoothstep = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** Opacity for a guess of this confidence: below ~10% it is nearly invisible, above ~65% it is solid. */
+export const lowConfAlpha = (score: number) => 0.06 + 0.94 * smoothstep(0.1, 0.65, score);
+
 /**
  * Board preview: themed squares; on each, the piece (from `fen`, or the start position when a game has just begun) with a
  * confidence ring around it and the square's 0..100 confidence in the corner. Pieces seen but not identified show as "?".
@@ -107,46 +113,60 @@ export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b
   const ox = (w - s * 8) / 2;
   const { reads, start } = readSquares(b, opts.fen);
   const labels = !!b && s >= 20;
+  // per-square animation state lives with the canvas: everything eases toward its target instead of popping
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  let st = anims.get(ctx); const fresh = !st;
+  if (!st) { st = { t: now, sq: Array.from({ length: 64 }, () => ({ score: 1, piece: null, white: false, pa: 0, ga: 0, da: 0 })) }; anims.set(ctx, st); }
+  const k = fresh ? 1 : 1 - Math.exp(-Math.min(0.25, Math.max(0, (now - st.t) / 1000)) / 0.14); st.t = now;
+  const ease = (v: number, to: number) => v + (to - v) * k;
   for (let i = 0; i < 64; i++) {
     const x = ox + (i % 8) * s, y = Math.floor(i / 8) * s, cx = x + s / 2, cy = y + s / 2;
     ctx.fillStyle = ((i % 8) + Math.floor(i / 8)) % 2 ? th.dark : th.light;
     ctx.fillRect(x, y, s, s);
-    const r = reads[i], pc = r.piece;
-    if (b) { ctx.fillStyle = confColor(r.score, 0.1 + 0.18 * (1 - r.score)); ctx.fillRect(x, y, s, s); } // low-confidence squares glow red
+    const r = reads[i], pc = r.piece, an = st.sq[i];
     const shown = !!pc && (r.seen || !b), ghost = !!pc && !shown, disc = !pc && r.seen;
-    if (shown || ghost) {
-      const white = pc === pc!.toUpperCase(), ps = s * 0.78;
-      ctx.globalAlpha = ghost ? 0.22 : 0.55 + 0.45 * r.score;
-      const img = pieceImage((white ? "w" : "b") + pc!.toLowerCase());
+    if (pc) an.piece = pc;
+    if (disc && b) an.white = b.white[i] > 0.5;
+    an.score = ease(an.score, r.score);
+    an.pa = ease(an.pa, shown ? 1 : 0); an.ga = ease(an.ga, ghost ? 1 : 0); an.da = ease(an.da, disc ? 1 : 0);
+    const vis = b ? lowConfAlpha(an.score) : 1; // a very doubtful guess fades almost away
+    if (b) { ctx.fillStyle = confColor(an.score, 0.1 + 0.18 * (1 - an.score)); ctx.fillRect(x, y, s, s); } // low-confidence squares glow red
+    const pcs = an.piece;
+    if (pcs && (an.pa > 0.01 || an.ga > 0.01)) {
+      const white = pcs === pcs.toUpperCase(), ps = s * 0.78;
+      ctx.globalAlpha = Math.min(1, an.pa * (0.35 + 0.65 * an.score) * vis + an.ga * 0.22 * Math.max(vis, 0.4));
+      const img = pieceImage((white ? "w" : "b") + pcs.toLowerCase());
       if (img) ctx.drawImage(img, cx - ps / 2, cy - ps / 2, ps, ps);
       else {
         ctx.font = `${s * 0.7}px "Segoe UI Symbol", serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillStyle = white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = white ? "#3b3a37" : "#0d0d0d"; ctx.lineWidth = white ? 1.4 : 0.8;
-        const g = GLYPH[pc!.toLowerCase()]; ctx.strokeText(g, cx, cy + s * 0.04); ctx.fillText(g, cx, cy + s * 0.04);
+        const g = GLYPH[pcs.toLowerCase()]; ctx.strokeText(g, cx, cy + s * 0.04); ctx.fillText(g, cx, cy + s * 0.04);
       }
       ctx.globalAlpha = 1;
-    } else if (disc) {
-      const white = b!.white[i] > 0.5;
-      ctx.globalAlpha = 0.55 + 0.45 * r.score;
-      ctx.fillStyle = white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = white ? "#3b3a37" : "#0d0d0d";
+    }
+    if (an.da > 0.01 && b) {
+      ctx.globalAlpha = an.da * (0.35 + 0.65 * an.score) * vis;
+      ctx.fillStyle = an.white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = an.white ? "#3b3a37" : "#0d0d0d";
       ctx.beginPath(); ctx.arc(cx, cy, s * 0.26, 0, 7); ctx.fill(); ctx.stroke();
-      if (s >= 14) { ctx.fillStyle = white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02); }
+      if (s >= 14) { ctx.fillStyle = an.white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02); }
       ctx.globalAlpha = 1;
     }
     // confidence ring: a dim full circle, with a coloured arc sweeping clockwise from the top in proportion to the score
-    if (b && (shown || ghost || disc)) {
+    const ringA = Math.max(an.pa, an.ga, an.da);
+    if (b && ringA > 0.01) {
       const rad = s * 0.43; ctx.lineWidth = Math.max(1.5, s * 0.07); ctx.lineCap = "round";
+      ctx.globalAlpha = ringA * Math.max(vis, 0.15);
       ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
-      if (ghost) { ctx.setLineDash([s * 0.12, s * 0.1]); ctx.strokeStyle = "rgba(255,90,110,.9)"; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
-      else { ctx.strokeStyle = confColor(r.score); ctx.beginPath(); ctx.arc(cx, cy, rad, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, r.score)); ctx.stroke(); }
-      ctx.lineCap = "butt";
+      if (an.ga > 0.01) { ctx.globalAlpha = an.ga; ctx.setLineDash([s * 0.12, s * 0.1]); ctx.strokeStyle = "rgba(255,90,110,.9)"; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+      if (an.pa > 0.01 || an.da > 0.01) { ctx.globalAlpha = Math.max(an.pa, an.da) * Math.max(vis, 0.15); ctx.strokeStyle = confColor(an.score); ctx.beginPath(); ctx.arc(cx, cy, rad, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, an.score)); ctx.stroke(); }
+      ctx.globalAlpha = 1; ctx.lineCap = "butt";
     }
     if (labels) { // the number itself, 0..100, in the corner (empty squares dimmer)
-      const empty = !(shown || ghost || disc);
+      const empty = ringA < 0.5, txt = String(Math.round(an.score * 100));
       ctx.font = `600 ${Math.max(8, s * 0.2)}px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "right"; ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillText(String(Math.round(r.score * 100)), x + s - 2 + 1, y + s - 3 + 1);
-      ctx.globalAlpha = empty ? 0.6 : 1; ctx.fillStyle = confColor(r.score); ctx.fillText(String(Math.round(r.score * 100)), x + s - 2, y + s - 3); ctx.globalAlpha = 1;
-    } else if (b && !(shown || ghost || disc) && r.score < 0.5) { ctx.fillStyle = "rgba(255,170,60,.45)"; ctx.fillRect(x + s * 0.35, y + s * 0.35, s * 0.3, s * 0.3); }
+      ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillText(txt, x + s - 2 + 1, y + s - 3 + 1);
+      ctx.globalAlpha = empty ? 0.6 : 1; ctx.fillStyle = confColor(an.score); ctx.fillText(txt, x + s - 2, y + s - 3); ctx.globalAlpha = 1;
+    } else if (b && ringA < 0.5 && an.score < 0.5) { ctx.fillStyle = "rgba(255,170,60,.45)"; ctx.fillRect(x + s * 0.35, y + s * 0.35, s * 0.3, s * 0.3); }
   }
   ctx.strokeStyle = "#ff5a6e"; ctx.lineWidth = 2;
   for (const i of opts.diff ?? []) ctx.strokeRect(ox + (i % 8) * s + 1, Math.floor(i / 8) * s + 1, s - 2, s - 2);

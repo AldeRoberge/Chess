@@ -15,11 +15,15 @@ const gltf = vi.hoisted(() => ({ scene: null as any, fail: false }));
 vi.mock("three/examples/jsm/loaders/GLTFLoader.js", () => ({ GLTFLoader: class { async parseAsync() { if (gltf.fail) throw new Error("bad glb"); return { scene: gltf.scene }; } } }));
 
 import { LogPanel, TablePanel, WorldPanel } from "./panels";
+import { resetViewSettings, setDisplay, viewSettings } from "./viewSettings";
+import { pieceSet, setPieceSet } from "./pieceSets";
+import { boardTheme, setBoardTheme } from "./boardThemes";
 
 class FakeChannel { static all: FakeChannel[] = []; sent: any[] = []; onmessage: ((e: { data: any }) => void) | null = null; constructor(public name: string) { FakeChannel.all.push(this); } postMessage(m: any) { this.sent.push(m); } }
 
 beforeEach(() => {
   vi.stubGlobal("BroadcastChannel", FakeChannel); FakeChannel.all = []; view.made.length = 0; localStorage.clear();
+  resetViewSettings(); setPieceSet("chessnut");
   virtualTable.reset(); virtualTable.seated = false; virtualTable.pointer = null;
   Object.assign(bus, { game: null, director: null, board: null, engineHint: null, scene: null, lines: [], events: [], cameras: [] });
 });
@@ -59,6 +63,43 @@ describe("TablePanel", () => {
     bus.director = { phase: "game", mode: "engine", elo: 1500, menu: [], progress: {}, events: [], seat: null } as any; bus.game = { status: "synced", history: ["e4", "e5"], last: null, lifted: undefined, diff: [] } as any;
     p.frame(32); expect(p.root.querySelector(".muted")!.textContent).toBe("game · Stockfish 1500 · tracker: synced · e4 e5");
     bus.director = { ...bus.director, mode: "human" } as any; p.frame(48); expect(p.root.querySelector(".muted")!.textContent).toContain("2 players");
+  });
+  it("copies the PGN and FEN, even when the clipboard is missing, and lists every move", () => {
+    const p = new TablePanel();
+    virtualTable.game.move("e4"); virtualTable.game.move("e5"); p.frame(0);
+    expect(p.root.querySelector(".moves")!.textContent).toContain("1. e4 e5");
+    expect(p.root.querySelector(".gamebar")!.getAttribute("aria-live")).toBe("polite");
+    const write = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    const btns = [...p.root.querySelectorAll("button")];
+    btns.find((b) => b.textContent === "Copy PGN")!.click();
+    btns.find((b) => b.textContent === "Copy FEN")!.click();
+    expect(write).toHaveBeenCalledWith(expect.stringContaining("e4"));
+    expect(write).toHaveBeenCalledWith(expect.stringContaining("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"));
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    btns.find((b) => b.textContent === "Copy PGN")!.click();
+    virtualTable.reset(); p.frame(16);
+    btns.find((b) => b.textContent === "Copy PGN")!.click();
+  });
+  it("flips the board so Black sits at the bottom, and plays from the flipped squares", () => {
+    const p = new TablePanel(), cv = p.root.querySelector("canvas")!; rect(cv);
+    const flip = [...p.root.querySelectorAll("button")].find((b) => b.textContent === "Flip")!;
+    flip.click(); expect(viewSettings().display.flip).toBe(true); expect(flip.classList.contains("on")).toBe(true);
+    click(cv, 3, 1); click(cv, 3, 3); expect(virtualTable.busy).toBe(true); // visual top is White's e-file from Black's side: e2-e4
+    virtualTable.reset();
+    cv.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    setDisplay({ flip: false });
+  });
+  it("picks a piece set and a colour-blind board look, and announces the winner", () => {
+    const p = new TablePanel();
+    const [look, pieces] = p.root.querySelectorAll<HTMLSelectElement>("select");
+    look.value = "cb"; look.dispatchEvent(new Event("change")); expect(boardTheme().id).toBe("cb");
+    look.value = "hc"; look.dispatchEvent(new Event("change")); expect(boardTheme().id).toBe("hc");
+    pieces.value = "fantasy"; pieces.dispatchEvent(new Event("change")); expect(pieceSet().id).toBe("fantasy");
+    virtualTable.game.load("4k3/4Q3/4K3/8/8/8/8/8 b - - 0 1"); p.frame(0);
+    expect(p.root.querySelector(".over-banner")!.hidden).toBe(false);
+    expect(p.root.querySelector(".over-banner")!.textContent).toBe("White wins");
+    p.root.querySelectorAll("button")[1].click(); expect(p.root.querySelector(".over-banner")!.hidden).toBe(true);
+    setBoardTheme("green"); setPieceSet("chessnut");
   });
 });
 
