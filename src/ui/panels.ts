@@ -20,6 +20,7 @@ import { withIcon } from "./icons";
 import type { Tip, TipRow } from "./tooltip";
 import { fenPieces, looksLikeStart } from "../plugins/shared";
 import { playStatus } from "./playStatus";
+import { requestNewGame } from "../chess/savedGame";
 import { isLightSquare, pct, pieceLabel, tone } from "../plugins/hover";
 import { fmtClock } from "../clock/types";
 import { positionAt } from "../remote/protocol";
@@ -95,8 +96,11 @@ export class TablePanel {
     const drawBtn = withIcon(el("button", "", "Draw"), "people"); drawBtn.type = "button";
     drawBtn.dataset.tip = "Draw"; drawBtn.dataset.tipBody = "End the game as a draw both sides agreed.";
     drawBtn.onclick = () => { if (virtualTable.agreeDraw()) this.paintGame(); };
+    const newBtn = withIcon(el("button", "new-game", "New game"), "refresh"); newBtn.type = "button";
+    newBtn.dataset.tip = "New game"; newBtn.dataset.tipBody = "Drop the game in progress and start again from the starting position. Set the pieces up on the real board too.";
+    newBtn.onclick = () => this.startFresh();
     const actions = el("div", "cc-actions");
-    actions.append(this.flipBtn, takeback, more, el("span", "cc-gap"), resignBtn, drawBtn);
+    actions.append(this.flipBtn, takeback, more, el("span", "cc-gap"), newBtn, resignBtn, drawBtn);
     this.moves.tabIndex = 0;
     this.moves.setAttribute("aria-label", "Move list. Left and right arrows step through the game.");
     this.moves.setAttribute("aria-live", "polite");
@@ -108,7 +112,11 @@ export class TablePanel {
     this.banner.hidden = true; this.banner.setAttribute("role", "status");
     this.playBox.dataset.tone = "wait"; this.playBox.setAttribute("role", "status"); this.playBox.append(this.playTitle, this.playDetail);
     this.caption.hidden = true; this.caption.setAttribute("aria-live", "polite");
-    this.root.append(this.topSeat, this.cv, this.botSeat, this.caption, this.playBox, actions, this.banner, this.promo, this.moves, this.info);
+    // Two columns: the board with its player rows, and the status, actions and moves. In a narrow dock both are display:contents (one stacked column); in the wide simple view they sit side by side and the board is sized to the height (style.css).
+    const boardCol = el("div", "cc-board"), sideCol = el("div", "cc-side");
+    boardCol.append(this.topSeat, this.cv, this.botSeat);
+    sideCol.append(this.caption, this.playBox, actions, this.banner, this.promo, this.moves, this.info);
+    this.root.append(boardCol, sideCol);
     this.info.textContent = "Click a piece, then a square. Hover a menu button to test dwell selection. Arrow keys and Enter play too. [ and ] step through the moves.";
     const pos = (e: MouseEvent) => { const r = this.cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * (8 + 2 * this.margin) - this.margin, y: ((e.clientY - r.top) / r.height) * (8 + 2 * this.margin) - this.margin }; };
     this.cv.onmousemove = (e) => {
@@ -345,8 +353,9 @@ export class TablePanel {
     rematch.onclick = () => this.startFresh();
     this.banner.replaceChildren(msg, rematch);
   }
-  /** Puts every piece back and clears a resignation or an agreed draw. */
+  /** Puts every piece back, clears a resignation or an agreed draw, and drops the stored game so a restart does not bring it back. */
   private startFresh() {
+    requestNewGame();
     this.pending = null; this.viewPly = null; this.sel = null; this.drag = null;
     this.paintPromo(); this.banner.hidden = true; this.banner.replaceChildren(); virtualTable.reset(); this.paintGame(); this.paintBoardAria();
   }

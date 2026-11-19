@@ -25,7 +25,9 @@ export function playStatus(v: PlayView): PlayNote {
   const last = g?.history.at(-1);
   if (g?.status === "lifted" || g?.lifted) return note("go", "Piece in hand", "Put it on its square, then move your hand away.");
   if (g?.status === "pending" && g.ply > 0) return note("go", "Watching your move", "Hold still once the piece is down. It counts when the picture settles.");
-  if (g?.status === "illegal") return note("bad", "Not a legal move", "Put the piece back, or finish a legal move.");
+  if (g?.status === "unclear") return note("wait", "Can't read the board", "The camera disagrees with the game on too many squares to be a move. Check the light and the board corners, or set up the start position and press Learn now.");
+  if (g?.status === "illegal" && g.ply === 0) return note("wait", "Set up a new game", "Put every piece back on its starting square.");
+  if (g?.status === "illegal") return note("bad", "Not a legal move", "Put the piece back, or finish a legal move. To start over, set up the starting position.");
   if (g?.over) return note("ready", "Game over", last ? `Last move ${last}.` : "The game has ended.");
 
   const playing = (v.phase ?? "idle") === "game";

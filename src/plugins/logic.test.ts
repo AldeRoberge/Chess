@@ -44,7 +44,7 @@ describe("game.tracker node", () => {
   });
   it("caps fidelity when the position is illegal and previews it", () => {
     const n = node("game.tracker"), v = belief(new Chess(), { fidelity: 1 }); v.occ[52] = 0; v.occ[20] = 1; v.white[20] = 1; v.conf.fill(0.99);
-    n.run({ board: v }); expect(n.h.fidelity).toBe(0.2); n.paint();
+    n.run({ board: v }); n.run({ board: v }); n.run({ board: v }); expect(n.h.fidelity).toBe(0.2); n.paint();
   });
   it("paints a placeholder before any observation", () => { node("game.tracker").paint(); });
   it("resets on demand, when a scenario starts, and when the experience returns to idle", () => {

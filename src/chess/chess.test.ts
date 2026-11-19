@@ -98,17 +98,18 @@ describe("PositionTracker", () => {
   it("reports illegal placements with the offending squares and keeps the game unchanged", () => {
     const t = new PositionTracker(), v = view(new Chess(), { conf: 0.99 });
     v.occ[sqIndex("e2")] = 0; v.occ[sqIndex("e6")] = 1; v.white[sqIndex("e6")] = 1;
+    t.observe(v); t.observe(v);
     const r = t.observe(v);
     expect(r.status).toBe("illegal"); expect(r.diff.sort()).toEqual([sqIndex("e6"), sqIndex("e2")].sort());
     expect(r.events[0]).toMatchObject({ type: "illegal", data: { squares: expect.arrayContaining(["e2", "e6"]) } });
     expect(r.fen).toBe(new Chess().fen());
   });
-  it("tolerates one low-confidence wrong square but not a confident one", () => {
+  it("tolerates one low-confidence wrong square, but not a confident missing piece of the side that moved", () => {
     const g = new Chess(); g.move("d4");
     const lo = view(g); lo.occ[0] = 0; lo.conf[0] = 0.2;
     const a = new PositionTracker(); a.observe(lo);
     expect(a.observe(lo).status).toBe("moved");
-    const hi = view(g); hi.occ[0] = 0; hi.conf[0] = 0.99;
+    const hi = view(g); hi.occ[56] = 0; hi.conf[56] = 0.99; // a1 rook gone too: d4 alone does not explain it
     const b = new PositionTracker(); b.observe(hi);
     expect(b.observe(hi).status).not.toBe("moved");
   });
