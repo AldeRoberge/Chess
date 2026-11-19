@@ -15,14 +15,15 @@ export interface SamplerConfig {
 export const defaultSamplerConfig = (): SamplerConfig => ({
   corners: [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }],
   threshold: 0.22,
-  softness: 0.06,
-  grid: 6,
+  softness: 0.09,
+  grid: 8,
   patch: 0.6,
 });
 
 const SAT = 250; // pixels at or above this are clipped glare, not a piece
 const GHOST_Z = 3; // evidence (in softness units) above which a square is clearly a piece and the ghost guard stays out of it
 const GHOST_LOOK = 0.35; // how far (ln brightness) a square's dark/bright ends may sit from both learned piece looks
+const TEX_ONLY = 0.1; // weight of texture evidence when the brightness did not move
 const RIM = 0.44; // how far from a square's centre (in square widths) the corner samples sit — outside a piece's base, inside the square
 
 /**
@@ -178,6 +179,7 @@ export class BoardSampler {
     const useRim = Number.isFinite(rim) && Number.isFinite(rim0)
       && Math.abs(dRim) >= thrRim
       && dRef * dRim >= 0
+      && Math.abs(dRef) >= thrRim * 0.3 // the middle itself must move too: a darkened border alone is a shadow or a neighbour
       && Math.abs(dRim) > Math.abs(rim - rim0) * 0.45;
     return useRim ? { drive: dRim, gate: thrRim } : { drive: dRef, gate: thr };
   }
@@ -290,7 +292,10 @@ export class BoardSampler {
       // Glare is light the square did not have when it was learned empty. A pale square that is bright by nature
       // (v close to its own empty reference) is just an empty square, not a lamp wash-out.
       const lifted = v - ref > Math.max(12, ref * 0.05);
-      const blown = (v >= SAT && lifted) || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
+      // A lamp lifts the square and its border together; a piece (even a clipped white one) stands out from the wood around its base.
+      const rim0 = this.rimRef[sq], standMin = Math.max(ref * this.cfg.threshold * 0.42, 9);
+      const stands = Number.isFinite(edge) && Number.isFinite(rim0) && Math.abs(v - edge - (ref - rim0)) >= standMin;
+      const blown = (v >= SAT && lifted && !stands) || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
       if (blown) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
       else {
         if (v <= 3) bad++;
@@ -312,12 +317,16 @@ export class BoardSampler {
         } else white[sq] = sigmoid(drive / (soft * 2));
         // A square flatter than bare wood is a lamp or the wood a piece just left, not a piece. Brightness
         // alone must not keep that square occupied, or the king that stepped away never leaves its home.
-        if (drive > 0 && zTex > -Infinity && zTex < -0.5) zBright = Math.min(zBright, zTex);
+        if (!stands && drive > 0 && zTex > -Infinity && zTex < -0.5) zBright = Math.min(zBright, zTex);
         // A lamp that washes the square out is not a vote. Calling it empty erases the knight under the glare
         // and outvotes the camera that can still see it. Leave it undecided.
-        const glare = v >= 220 && lifted && !(zTex > -0.5);
+        const glare = v >= 220 && lifted && !stands && !(zTex > -0.5);
         if (glare) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
-        else occ[sq] = sigmoid(Math.max(zBright * (this.cfg.colorWeight ?? 1), zTex === -Infinity ? -Infinity : zTex * (this.cfg.shapeWeight ?? 1)));
+        else {
+          // Texture with no brightness change at all is usually a neighbour's edge or shadow falling in the patch, so it speaks softly.
+          const texOnly = Math.abs(drive) < gate * 0.3 && !stands;
+          occ[sq] = sigmoid(Math.max(zBright * (this.cfg.colorWeight ?? 1), zTex === -Infinity ? -Infinity : zTex * (this.cfg.shapeWeight ?? 1) * (texOnly && zTex > 0 ? TEX_ONLY : 1)));
+        }
       }
       const thr = Math.max(ref * this.cfg.threshold, 12);
       // Glare flickers on its own. Counting it as a hand freezes the board, so a move on those squares never lands.
