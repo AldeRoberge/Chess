@@ -73,4 +73,8 @@ describe("openQuadEditor", () => {
     o = open(); document.querySelector(".qe")!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })); expect(o.done()).toBe(0);
     (document.querySelector(".qe-btn") as HTMLElement).click(); expect(o.changes.length).toBe(1);
   });
+  it("Negative grid toggles between inverted and green lines", () => {
+    open(); const b = [...document.querySelectorAll<HTMLElement>(".qe-btn")].find((x) => x.textContent!.startsWith("Negative grid"))!;
+    expect(b.textContent).toBe("Negative grid: on"); b.click(); expect(b.textContent).toBe("Negative grid: off"); b.click(); expect(b.textContent).toBe("Negative grid: on");
+  });
 });
