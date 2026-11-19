@@ -3,11 +3,11 @@
  * Selected by <html data-theme data-mode> (see appTheme.ts). Extra tokens: --shadow, --scrim, --halo-bg, --track, --on-signal.
  */
 
-/* Classic: red highlight on navy */
+/* Classic: blue highlight on navy */
 [data-theme=classic][data-mode=light]{
   --ink-0:#e9eff6;--ink-1:#f6f9fc;--ink-2:#edf2f8;--ink-3:#dbe5f0;
   --line:#b4c4d6;--line-hi:#6f94b8;--text:#0c1b2c;--text-dim:#44586e;
-  --signal:#b3202e;--signal-hi:#8a1522;--amber:#a86500;--ok:#13804a;--bad:#c42b3a;
+  --signal:#1769c2;--signal-hi:#0b4b92;--amber:#a86500;--ok:#13804a;--bad:#c42b3a;
   --shadow:#1a2c4033;--scrim:#1a2c4040;--halo-bg:linear-gradient(170deg,#f8fbfffa,#eaf1f8fa);--track:#c9d6e480;--on-signal:#fff;color-scheme:light;
 }
 
