@@ -6,15 +6,15 @@ two-voice narration, Stockfish, weather/decor scenes, DMX and multi-projector ma
 (scanned) room. Think Resolume + Chataigne + TouchDesigner/Blueprints, in a browser tab.
 
 <p align="center">
-  <img src="docs/screenshots/table.png" alt="Table view: a scripted Scholar's mate, the tracker synced on the move list, and the commentator's line under the board" width="100%">
+  <img src="docs/screenshots/table.png" alt="Game tab: a scripted Scholar's mate, the tracker synced on the move list, and the commentator's line under the board" width="100%">
 </p>
 
 ## Screenshots
 
 | | |
 | --- | --- |
-| ![Table view with the live board, cameras and move list](docs/screenshots/table.png) | ![3D / Mapping view: room, table and projector frusta](docs/screenshots/3d-mapping.png) |
-| **Table.** Two virtual cameras feed the board readers; the tracked board, the 2D view and the next suggestions sit on the right. | **3D / Mapping.** The room, the table and the projector frusta (yellow and red beams), with the wall outputs to calibrate. |
+| ![Game tab with the live board, cameras and move list](docs/screenshots/table.png) | ![World tab: room, table and projector frusta](docs/screenshots/3d-mapping.png) |
+| **Game.** Two virtual cameras feed the board readers; the tracked board, the 2D view and the next suggestions sit on the right. | **World.** The room, the table and the projector frusta (yellow and red beams), with the wall outputs to calibrate. |
 | ![Narration log with the commentators' lines and per-camera quality](docs/screenshots/log.png) | ![Guided setup, Board step: dragging the corner handles onto the board](docs/screenshots/setup-board.png) |
 | **Log.** Every move becomes a line of commentary, with each camera's quality and trust. | **Setup, 03 Board.** Drag the four green handles onto a8, h8, h1, a1 on the live preview. |
 | ![Guided setup, Scenes step: winter forest with snow](docs/screenshots/setup-scenes.png) | |
@@ -63,7 +63,7 @@ that carry the piece across the board, exposure, lighting falloff and sensor noi
 rigs (A overhead, B from black's left, C from the right). Six scripted games (`sim/scenarios.ts`:
 Scholar's mate, the Opera Game, queen exchange, both-side castling, en passant, promotion) are played
 by a virtual hand through the full patch. Use the **Scenario Player** node or the setup's
-*Autoplay demo game*. In the **Table** tab you can also click a piece and a square yourself, sit down,
+*Autoplay demo game*. In the **Game** tab you can also click a piece and a square yourself, sit down,
 and hover the mouse over the menu buttons to test dwell selection.
 
 ## Phone remote: watch and play from a phone
@@ -138,7 +138,7 @@ alt-click a wire to cut it, `⏻` bypasses, wheel zooms, drag pans. Each node sh
 
 ## Room, projectors, mapping
 
-* **3D / Mapping** tab: room, table, board, chairs, people skeletons, projector frusta, live projected content.
+* **World** tab: room, table, board, chairs, people skeletons, projector frusta, live projected content.
 * **Import room scan** (Polycam `.glb` / `.obj`): RANSAC planes → floor / ceiling / walls become projection surfaces.
 * **Projectors**: each is a pose + FOV; *Open output* launches a window per projector that renders the room from the
   projector's own viewpoint and **edge-blends overlaps per fragment** (`world/blend.ts`).
