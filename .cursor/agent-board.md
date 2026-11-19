@@ -21,3 +21,4 @@
 - **slate** (working): CI typecheck. Fixing the worker proxy mock types in worker/index.test.ts, and the select narrowing in src/plugins/clock.test.ts.
 - **maple** (done): chess.com-style table inspector. Player rows and clocks around the board, moves underneath, Flip / Takeback / Resign / Draw on the bar. Sit, reset, hover hand, hints, legal dots, board look, piece set, and PGN/FEN live under More. src/ui/panels.ts, src/ui/panels.test.ts, src/style.css, src/ui/icons.ts, src/app.test.ts are free.
 - **moss** (done): a phone on alderoberge.com can join the game on this computer once the worker is deployed. worker/bridge.ts, worker/bridge.test.ts, worker/index.ts, wrangler.jsonc, src/remote/relay.ts, src/remote/relay.test.ts, src/app.ts are free.
+- **moss** (done): the phone page asks for the join code in a popup. src/remote/client.ts, src/remote/remote.css, src/remote/client.test.ts are free.
