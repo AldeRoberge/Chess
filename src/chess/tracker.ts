@@ -206,17 +206,26 @@ export class PositionTracker {
     // knight on f3 leans into e3 in a low camera's picture, and without this the first move was never accepted.
     const contradicts = (grid: string[]) => { for (let i = 0; i < 64; i++) if (grid[i] !== obsGrid[i] && (grid[i] !== exp[i] || b.conf[i] >= this.cfg.minConf)) return true; return false; };
     const exactStep = best?.moves.length === 1 && (best.cost === 0 || !contradicts(best.grid));
-    if (ok && best.unsure > 0 && !exactStep) {
-      this.cand = ""; this.candN = 0;
-      return this.base("pending", diff, events, b.fidelity);
+    // What moved: the squares that changed, explained by a legal move. When exactly one legal move makes every square it
+    // touches match the picture, that is the move, even if a square or two it does not touch is misread (a tall piece
+    // leaning over its neighbour, a reflection). A piece of the mover's that confidently vanished elsewhere rules it out.
+    const touched = (c: Cand) => { const t: number[] = []; for (let i = 0; i < 64; i++) if (c.grid[i] !== exp[i]) t.push(i); return t; };
+    const fits = cands.filter((c) => c.moves.length === 1 && touched(c).every((i) => c.grid[i] === obsGrid[i]));
+    let sole: Cand | null = null;
+    if (fits.length && new Set(fits.map((c) => c.grid.join(","))).size === 1) {
+      const own = new Set(touched(fits[0])), stray = diff.filter((i) => !own.has(i)), mover = this.game.turn();
+      if (stray.length <= 2 && !stray.some((i) => exp[i] === mover && !obsGrid[i] && b.conf[i] >= this.cfg.minConf)) sole = fits[0];
     }
-    if (ok) {
-      const key = best.key;
+    const chosen = ok && (best.unsure === 0 || exactStep) ? best : sole;
+    if (!chosen) {
+      if (ok) { this.cand = ""; this.candN = 0; return this.base("pending", diff, events, b.fidelity); }
+    } else {
+      const key = chosen.key;
       this.candN = this.cand === key ? this.candN + 1 : 1;
       this.cand = key;
       if (this.candN >= this.cfg.confirm) {
-        const fid = Math.exp(-best.cost);
-        for (const m of best.moves) this.commit(m, b.t, fid, events);
+        const fid = Math.exp(-chosen.cost);
+        for (const m of chosen.moves) this.commit(m, b.t, fid, events);
         if (this.game.isDraw()) events.push({ type: "draw", t: b.t });
         this.moveFid = fid;
         this.cand = ""; this.candN = 0;

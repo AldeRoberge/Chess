@@ -113,6 +113,28 @@ describe("PositionTracker", () => {
     t.observe(bad); t.observe(bad); t.observe(settled(new Chess()));
     expect(t.observe(bad).status).toBe("pending");
   });
+  it("finds the knight move from the squares that changed, even when its neighbour is misread with confidence", () => {
+    const g = new Chess(); g.move("Nf3");
+    const t = new PositionTracker();
+    const seen = settled(g); // g1 emptied and f3 filled, as the camera saw it; e3 confidently reads a dark blob
+    seen.occ[44] = 1; seen.white[44] = 0; seen.conf[44] = 0.8;
+    t.observe(seen);
+    expect(t.observe(seen).history).toEqual(["Nf3"]);
+  });
+  it("reads a capture and a pawn push from the changed squares alone", () => {
+    const g = new Chess(); for (const m of ["e4", "d5"]) g.move(m);
+    const t = new PositionTracker(); t.reset(g.fen());
+    g.move("exd5");
+    const seen = settled(g); seen.occ[0] = 0; seen.conf[0] = 0.9; // a8 rook misread as gone: a square the move does not touch, not the mover's
+    t.observe(seen);
+    expect(t.observe(seen).history.at(-1)).toBe("exd5");
+  });
+  it("does not guess when another piece of the mover's also vanished", () => {
+    const g = new Chess(); g.move("Nf3");
+    const t = new PositionTracker();
+    const seen = settled(g); seen.occ[44] = 1; seen.conf[44] = 0.8; seen.occ[48] = 0; seen.conf[48] = 0.9; // a2 pawn gone too
+    for (let i = 0; i < 4; i++) expect(t.observe(seen).history).toEqual([]);
+  });
   it("recovers two plies when frames were dropped", () => {
     const t = new PositionTracker();
     const g = new Chess(); g.move("e4"); g.move("e5");
