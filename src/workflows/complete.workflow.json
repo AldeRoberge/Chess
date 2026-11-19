@@ -1,7 +1,7 @@
 {
   "app": "chess-experience",
   "kind": "workflow",
-  "name": "Complete setup",
+  "name": "Complete demo (simulated)",
   "description": "Three virtual cameras, fusion, tracker, director with a player menu, Stockfish opponent, two-voice narrator with AI commentary, scenes and projector output.",
   "graph": {
     "nodes": [
