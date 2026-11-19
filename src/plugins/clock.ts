@@ -25,7 +25,7 @@ const reader: NodeSpec<ClockState> = {
   outputs: [{ id: "clock", type: "clock" }, { id: "events", type: "event" }],
   params: [
     { id: "kind", kind: "select", label: "Clock type", options: ["auto", "lcd", "phone", "analog", "manual"], value: "auto" },
-    { id: "control", kind: "text", label: "Time control", value: "10+0" },
+    { id: "control", kind: "select", label: "Time control", options: ["1+0", "1+1", "2+1", "3+0", "3+2", "5+0", "5+3", "10+0", "10+5", "15+10", "30+0", "30+20"], labels: ["1+0 bullet", "1+1 bullet", "2+1 bullet", "3+0 blitz", "3+2 blitz", "5+0 blitz", "5+3 blitz", "10+0 rapid", "10+5 rapid", "15+10 rapid", "30+0 classical", "30+20 classical"], value: "10+0" },
     { id: "whiteBox", kind: "text", label: "White display", value: fmtCorners(rect(20, 20, 130, 44)), quad: { names: ["tl", "tr", "br", "bl"], grid: 1 } },
     { id: "blackBox", kind: "text", label: "Black display", value: fmtCorners(rect(170, 20, 130, 44)), quad: { names: ["tl", "tr", "br", "bl"], grid: 1 } },
     { id: "flagHour", kind: "number", label: "Flag position", min: 1, max: 12, step: 1, value: 12 },

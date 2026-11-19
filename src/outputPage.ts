@@ -20,7 +20,10 @@ export function startOutputPage(index: number) {
   ch.onmessage = (e: MessageEvent<OutMsg>) => {
     const m = e.data;
     if (m.type === "state") { scene = m.scene; overlay = m.overlay; for (const c of m.fx ?? []) fx.spawn(c, performance.now()); }
-    else if (m.type === "calib") calibCmd = m.cmd.kind === "end" ? null : m.cmd;
+    else if (m.type === "calib") {
+      if (m.cmd.head != null && m.cmd.head !== index) return;
+      calibCmd = m.cmd.kind === "end" ? null : m.cmd;
+    }
     else if (m.type === "mapping") { cfg = loadMapping(); out.rebuild(cfg, Math.min(index, cfg.projectors.length - 1)); }
   };
   const size = () => {
@@ -33,9 +36,14 @@ export function startOutputPage(index: number) {
   const loop = (t: number) => {
     if (calibCmd) {
       calib.style.display = "block";
-      const c = calib.getContext("2d")!;
-      c.fillStyle = calibCmd.kind === "white" ? "#fff" : "#000"; c.fillRect(0, 0, calib.width, calib.height);
-      if (calibCmd.kind === "dot") { c.fillStyle = "#fff"; c.beginPath(); c.arc(calibCmd.x * (calib.width / 1280), calibCmd.y * (calib.height / 720), Math.max(6, calib.width / 120), 0, 7); c.fill(); }
+      const c = calib.getContext("2d")!, w = calib.width, h = calib.height;
+      if (calibCmd.kind === "grid") {
+        const n = 8, cw = w / n, ch = h / n;
+        for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) { c.fillStyle = (r + col) % 2 ? "#fff" : "#111"; c.fillRect(col * cw, r * ch, cw + 1, ch + 1); }
+      } else {
+        c.fillStyle = calibCmd.kind === "white" ? "#fff" : "#000"; c.fillRect(0, 0, w, h);
+        if (calibCmd.kind === "dot") { c.fillStyle = "#fff"; c.beginPath(); c.arc(calibCmd.x * (w / 1280), calibCmd.y * (h / 720), Math.max(6, w / 120), 0, 7); c.fill(); }
+      }
     } else { calib.style.display = "none"; out.render(scene, { ...overlay, fx }, t); }
     requestAnimationFrame(loop);
   };

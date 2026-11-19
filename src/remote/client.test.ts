@@ -130,6 +130,18 @@ describe("phone page", () => {
     [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
     expect(String(write.mock.calls.at(-1)?.[0])).toContain("[Result");
   });
+  it("can watch without sending moves or takeback, and remembers that choice", async () => {
+    const bag: Record<string, string> = {}, posts: unknown[] = [];
+    const f = vi.fn((_u: string, init?: RequestInit) => { if (init?.method === "POST") posts.push(JSON.parse(String(init.body))); return json({ rev: 1, clients: 1, state: state({ turn: "b" }) }); });
+    const store = { getItem: (k: string) => bag[k] ?? null, setItem: (k: string, v: string) => { bag[k] = v; } };
+    history.replaceState({}, "", "/#/remote?code=4321");
+    stop = mountRemote(host(), { fetchFn: f as never, base: "/", poll: 5, storage: store }).stop; await flush();
+    q('[aria-label="Watch only"]').click();
+    expect(q('[aria-label="Watch only"]').getAttribute("aria-pressed")).toBe("true"); expect(q(".rm-acts").hidden).toBe(true); expect(bag["chess.remote.watch"]).toBe("1");
+    q('[data-sq="e7"]').click(); expect(document.querySelector(".target")).toBeNull(); expect(posts).toHaveLength(0);
+    stop(); stop = mountRemote(host(), { fetchFn: f as never, base: "/", poll: 5, storage: store }).stop; await flush();
+    expect(q(".rm-acts").hidden).toBe(true); expect(q('[aria-label="Watch only"]').getAttribute("aria-pressed")).toBe("true");
+  });
   it("sends takeback, resign, and draw from the action row", async () => {
     const posts: unknown[] = [];
     const f = vi.fn((_u: string, init?: RequestInit) => { if (init?.method === "POST") posts.push(JSON.parse(String(init.body))); return json({ rev: 1, clients: 1, state: state() }); });

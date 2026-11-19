@@ -292,10 +292,15 @@ export class BoardSampler {
         // A square flatter than bare wood is a lamp or the wood a piece just left, not a piece. Brightness
         // alone must not keep that square occupied, or the king that stepped away never leaves its home.
         if (drive > 0 && zTex > -Infinity && zTex < -0.5) zBright = Math.min(zBright, zTex);
-        occ[sq] = sigmoid(Math.max(zBright, zTex));
+        // A lamp that washes the square out is not a vote. Calling it empty erases the knight under the glare
+        // and outvotes the camera that can still see it. Leave it undecided.
+        const glare = v >= 220 && !(zTex > -0.5);
+        if (glare) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
+        else occ[sq] = sigmoid(Math.max(zBright, zTex));
       }
       const thr = Math.max(ref * this.cfg.threshold, 12);
-      if (!Number.isNaN(p) && Math.abs(v - p) > thr * 1.2) { moving++; hand[sq] = 1; }
+      // Glare flickers on its own. Counting it as a hand freezes the board, so a move on those squares never lands.
+      if (!blown && v < 220 && !Number.isNaN(p) && Math.abs(v - p) > thr * 1.2) { moving++; hand[sq] = 1; }
       if (occ[sq] < 0.05 && !blown) {
         this.ref[sq] += (v - this.ref[sq]) * 0.01;
         if (Number.isFinite(edge)) this.rimRef[sq] += (edge - this.rimRef[sq]) * 0.01;

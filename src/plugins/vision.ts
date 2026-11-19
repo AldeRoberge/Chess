@@ -160,7 +160,7 @@ interface FuseState { fusion: Fusion; board: BoardBelief | null; obs: SquareObs[
 const fuse: NodeSpec<FuseState> = {
   type: "vision.fuse", title: "Multi-Camera Fusion", category: "Vision",
   inputs: ["o1", "o2", "o3", "o4"].map((id, i) => ({ id, type: "obs" as const, label: `cam ${i + 1}` })), outputs: [{ id: "board", type: "board" }],
-  params: [{ id: "staleMs", kind: "number", label: "Drop feed after (ms)", min: 100, max: 3000, step: 50, value: 600 }, { id: "handMotion", kind: "number", label: "Hand motion gate", min: 0.02, max: 0.4, step: 0.01, value: 0.08 }],
+  params: [{ id: "staleMs", kind: "number", label: "Drop feed after (ms)", min: 100, max: 3000, step: 50, value: 600 }, { id: "handMotion", kind: "number", label: "Hand motion gate", min: 0.06, max: 0.4, step: 0.01, value: 0.08 }],
   previewSize: [120, 120],
   init: () => ({ fusion: new Fusion(), board: null, obs: [], handMotion: 0.08 }),
   process(inputs, { now, params, state, setFidelity, span }) {

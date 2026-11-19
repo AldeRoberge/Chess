@@ -31,6 +31,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   let sel: string | null = null, tab: Tab = "moves", cam = "", flipped = false, online = false, stopped = false, timer = 0;
   let sent = "";
   let promo: { from: string; to: string; fen: string } | null = null;
+  let watch = read("chess.remote.watch") === "1";
 
   document.body.classList.add("remote");
   root.replaceChildren();
@@ -51,7 +52,10 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
 
   // ---- main layout
   const head = el("div", "rm-head"), title = el("span", "rm-title", "Chess XP"), conn = el("span", "rm-conn", "Connecting"); conn.setAttribute("role", "status");
-  head.append(title, conn);
+  const watchBtn = withIcon(el("button", "rm-btn", "Watch only"), "eye", 18); watchBtn.type = "button";
+  watchBtn.setAttribute("aria-label", "Watch only");
+  watchBtn.onclick = () => { watch = !watch; write("chess.remote.watch", watch ? "1" : "0"); draw(); };
+  head.append(title, watchBtn, conn);
   const turn = el("p", "rm-turn"); turn.setAttribute("aria-live", "polite");
   const clocksEl = el("p", "rm-clocks"); clocksEl.hidden = true;
   const boardEl = el("div", "rm-board"); boardEl.setAttribute("role", "group"); boardEl.setAttribute("aria-label", "Chess board");
@@ -91,7 +95,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     if (view === null) return { fen: st.fen, last: st.last ? { from: st.last.from, to: st.last.to } : null };
     const p = positionAt(st.moves, view); return { fen: p.fen, last: p.last };
   }
-  const canPlay = () => !!st && view === null && st.play !== "off" && !st.over;
+  const canPlay = () => !!st && view === null && st.play !== "off" && !st.over && !watch;
 
   function drawBoard() {
     const { fen, last: lm } = currentPosition(), g = new Chess(fen), theme = boardTheme(), set = pieceSet().id;
@@ -223,6 +227,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
 
   function draw() {
     drawTurn(); drawNav(); drawBoard(); drawPromo(); drawPanel(); markTabs();
+    acts.hidden = watch; watchBtn.classList.toggle("on", watch); watchBtn.setAttribute("aria-pressed", String(watch));
     conn.textContent = online ? (st ? "Live" : "Waiting") : "Offline, retrying…"; conn.classList.toggle("off", !online);
     if (st?.notice && `${st.notice.at}` !== lastNotice) { lastNotice = `${st.notice.at}`; if (sent) showNotice(st.notice.text, st.notice.ok); }
   }

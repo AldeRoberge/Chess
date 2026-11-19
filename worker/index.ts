@@ -1,11 +1,15 @@
 // Cloudflare Worker for alderoberge.com/chess: a keyed proxy to OpenAI and ElevenLabs.
 // The API keys live in Worker secrets (OPENAI_API_KEY, ELEVENLABS_API_KEY) or KV, and never reach the browser.
-// Everything outside /chess/api/ falls through to the static assets.
+// Everything outside /chess/api/ and /chess/remote/ falls through to the static assets.
+
+import { handleRemote, type BridgeNamespace } from "./bridge";
 
 interface KV { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void>; delete(k: string): Promise<void> }
 export interface Env {
   KEYS: KV;
   ASSETS: { fetch(r: Request): Promise<Response> };
+  /** Live phone room. Absent until the worker is deployed with the GameBridge migration. */
+  BRIDGE?: BridgeNamespace;
   ADMIN_PASSPHRASE?: string;
   /** Dashboard secrets (`wrangler secret put`). Used when KV has no key for that vendor. */
   OPENAI_API_KEY?: string;
@@ -116,9 +120,13 @@ async function proxy(req: Request, env: Env, vendor: Vendor, path: string): Prom
   return new Response(up.body, { status: up.status, headers: h });
 }
 
+export { GameBridge } from "./bridge";
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    const remote = await handleRemote(req, env, url);
+    if (remote) return remote;
     if (!url.pathname.startsWith(PREFIX)) return env.ASSETS.fetch(req);
     const route = url.pathname.slice(PREFIX.length);
     const c = cors(req);

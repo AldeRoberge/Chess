@@ -13,6 +13,11 @@ const frame = (w: string, b: string, t: number) => { const f = blank(320, 100); 
 beforeEach(() => { bus.clock = null; bus.clockView = null; bus.events.length = 0; });
 
 describe("clock.reader", () => {
+  it("offers the usual time-control presets", () => {
+    const p = node("clock.reader").spec.params!.find((x) => x.id === "control");
+    if (!p || p.kind !== "select") throw new Error("control");
+    expect(p.options).toEqual(expect.arrayContaining(["1+0", "3+2", "5+0", "10+0", "15+10"]));
+  });
   it("estimates from real time and the moves when nothing is read, and its certainty falls", () => {
     const n = node("clock.reader", { control: "10+0" });
     n.run({ game: { ply: 1 } }, 0);
