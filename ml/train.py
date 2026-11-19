@@ -27,19 +27,21 @@ def load(name):
 
 
 class Net(nn.Module):
+    """Three stride-2 convolutions (32 -> 16 -> 8 -> 4 px) and two dense layers: about 200k multiply-adds per square."""
+
     def __init__(self):
         super().__init__()
-        self.c1, self.b1 = nn.Conv2d(1, 16, 3, padding=1), nn.BatchNorm2d(16)
-        self.c2, self.b2 = nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32)
-        self.c3, self.b3 = nn.Conv2d(32, 48, 3, padding=1), nn.BatchNorm2d(48)
-        self.f1 = nn.Linear(48 * 4 * 4, 64)
+        self.c1, self.b1 = nn.Conv2d(1, 8, 3, stride=2, padding=1), nn.BatchNorm2d(8)
+        self.c2, self.b2 = nn.Conv2d(8, 16, 3, stride=2, padding=1), nn.BatchNorm2d(16)
+        self.c3, self.b3 = nn.Conv2d(16, 32, 3, stride=2, padding=1), nn.BatchNorm2d(32)
+        self.f1 = nn.Linear(32 * 4 * 4, 64)
         self.f2 = nn.Linear(64, 3)
         self.drop = nn.Dropout(0.25)
 
     def forward(self, x):
-        x = F.max_pool2d(F.relu(self.b1(self.c1(x))), 2)  # 16
-        x = F.max_pool2d(F.relu(self.b2(self.c2(x))), 2)  # 8
-        x = F.max_pool2d(F.relu(self.b3(self.c3(x))), 2)  # 4
+        x = F.relu(self.b1(self.c1(x)))
+        x = F.relu(self.b2(self.c2(x)))
+        x = F.relu(self.b3(self.c3(x)))
         x = self.drop(F.relu(self.f1(x.flatten(1))))
         return self.f2(x)
 
@@ -114,10 +116,10 @@ print("real start frame accuracy", ra, "\n", rconf.tolist())
 net.eval()
 w1, b1 = fold(net.c1, net.b1); w2, b2 = fold(net.c2, net.b2); w3, b3 = fold(net.c3, net.b3)
 layers = [
-    {"type": "conv", "in": 1, "out": 16, "w": pack(w1), "b": pack(b1)},
-    {"type": "conv", "in": 16, "out": 32, "w": pack(w2), "b": pack(b2)},
-    {"type": "conv", "in": 32, "out": 48, "w": pack(w3), "b": pack(b3)},
-    {"type": "dense", "in": 768, "out": 64, "w": pack(net.f1.weight), "b": pack(net.f1.bias)},
+    {"type": "conv", "in": 1, "out": 8, "stride": 2, "w": pack(w1), "b": pack(b1)},
+    {"type": "conv", "in": 8, "out": 16, "stride": 2, "w": pack(w2), "b": pack(b2)},
+    {"type": "conv", "in": 16, "out": 32, "stride": 2, "w": pack(w3), "b": pack(b3)},
+    {"type": "dense", "in": 512, "out": 64, "w": pack(net.f1.weight), "b": pack(net.f1.bias)},
     {"type": "dense", "in": 64, "out": 3, "w": pack(net.f2.weight), "b": pack(net.f2.bias), "last": True},
 ]
 sample = xv[:3]

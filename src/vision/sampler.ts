@@ -1,6 +1,6 @@
 import { applyH, boardToImage } from "./homography";
-import { extractCrops } from "./squareCrops";
-import type { SquareCnn } from "./squareCnn";
+import { CROP, extractCrops } from "./squareCrops";
+import { SquareCache, type SquareCnn } from "./squareCnn";
 import { clamp, sigmoid, type GrayFrame, type Pt, type SquareObs } from "./types";
 
 export interface SamplerConfig {
@@ -58,6 +58,9 @@ export class BoardSampler {
   private tone: { w: [number, number][]; b: [number, number][] } | null = null;
   /** The trained square classifier, shared by every reader. Load it with `loadSquareCnn()` (squareModel.ts). */
   static cnn: SquareCnn | null = null;
+  private cnnCache: SquareCache | null = null;
+  private crops = new Float32Array(64 * CROP * CROP);
+  private cnnCacheOf: SquareCnn | null = null;
   leanU = 0;
   leanV = 0;
   private H: number[] = [];
@@ -71,6 +74,7 @@ export class BoardSampler {
     const key = JSON.stringify(this.cfg.corners) + this.cfg.grid + this.cfg.patch + (this.cfg.positionWeight ?? 1);
     if (key === this.key) return;
     this.key = key;
+    this.cnnCache?.reset();
     this.H = boardToImage(this.cfg.corners);
     this.lean();
     const { grid, patch } = this.cfg;
@@ -345,7 +349,9 @@ export class BoardSampler {
     }
     const net = this.cfg.engine === "cnn" ? BoardSampler.cnn : null;
     if (net && this.cfg.corners.length === 4) {
-      const p = net.classify(extractCrops(frame, this.cfg.corners));
+      this.prepare();
+      if (this.cnnCacheOf !== net) { this.cnnCache = new SquareCache(net); this.cnnCacheOf = net; }
+      const p = this.cnnCache!.classify(extractCrops(frame, this.cfg.corners, this.crops));
       for (let sq = 0; sq < 64; sq++) {
         const e = p[sq * 3], w = p[sq * 3 + 1], b = p[sq * 3 + 2];
         occ[sq] = clamp(1 - e, 0.001, 0.999);

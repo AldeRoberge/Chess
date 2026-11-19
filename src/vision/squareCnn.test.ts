@@ -6,6 +6,7 @@ import { applySensor, renderLuminance } from "../sim/render3d";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { parseCorners } from "../plugins/shared";
 import { BoardSampler, defaultSamplerConfig } from "./sampler";
+import { SquareCache } from "./squareCnn";
 import { loadSquareCnn } from "./squareModel";
 import { CROP } from "./squareCrops";
 import check from "./squareCnn.check.json";
@@ -31,6 +32,18 @@ describe("square CNN", () => {
       const out = net.logits(x, k * CROP * CROP);
       for (let c = 0; c < 3; c++) expect(out[c]).toBeCloseTo(check.logits[k * 3 + c], 2);
     }
+  });
+
+  it("only reruns the network on squares that changed", () => {
+    const cache = new SquareCache(BoardSampler.cnn!), crops = new Float32Array(64 * CROP * CROP).fill(0.5);
+    cache.classify(crops);
+    expect(cache.ran).toBe(64);
+    cache.classify(crops.map((v) => v + 0.01)); // sensor noise
+    expect(cache.ran).toBeLessThanOrEqual(5); // only the staggered refreshes
+    const moved = crops.slice();
+    for (let i = 0; i < 16 * CROP; i++) moved[3 * CROP * CROP + 8 * CROP + i] = 0.1; // a dark blob on one square
+    cache.classify(moved);
+    expect(cache.ran).toBeGreaterThanOrEqual(1);
   });
 
   it("reads the real camera frame of the starting position", () => {
