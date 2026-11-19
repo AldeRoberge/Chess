@@ -143,7 +143,7 @@ export class NodeEditor {
     el.append(body);
     const foot = h("div", "ne-foot"); foot.append(ms); el.append(foot); // latency lives below so titles keep their width
     const heat = h("div", "ne-heat"), heatTxt = h("span", "ne-heat-t"), spark = h("canvas", "ne-spark");
-    spark.width = 120; spark.height = 24;
+    { const d = Math.min(3, Math.max(1, Math.ceil(window.devicePixelRatio || 1))); spark.width = 120 * d; spark.height = 24 * d; spark.style.width = "120px"; spark.style.height = "24px"; } // sharp on hi-dpi
     const track = h("div", "ne-heat-bar"); track.append(h("i"));
     heat.append(track, spark, heatTxt); el.append(heat);
     const grip = h("div", "ne-grip"); grip.dataset.tip = "Resize"; el.append(grip);
@@ -331,7 +331,7 @@ export class NodeEditor {
       v.heat.txt.textContent = `${s.avg.toFixed(2)} avg · ${s.p95.toFixed(2)} p95 · ${s.max.toFixed(2)} max ms · ${(share * 100).toFixed(0)}%`;
       const c = v.heat.spark, g = c.getContext("2d")!, vals = profiler.series(id), mx = Math.max(0.5, s.max);
       g.clearRect(0, 0, c.width, c.height);
-      g.strokeStyle = col; g.lineWidth = 1.5; g.beginPath();
+      g.strokeStyle = col; g.lineWidth = 1.5 * (c.width / 120); g.beginPath();
       vals.forEach((x, i) => { const px = (i / 119) * c.width, py = c.height - 2 - (x / mx) * (c.height - 4); if (i) g.lineTo(px, py); else g.moveTo(px, py); });
       g.stroke();
     }
