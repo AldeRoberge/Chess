@@ -394,3 +394,22 @@ describe("triangulation", () => {
     expect(rayToPlane([0, 0, 0], new Array(12).fill(0), { x: 1, y: 1 })).toBeNull();
   });
 });
+
+it("retains moderate single-camera evidence until a piece stabilizes", () => {
+  const fusion = new Fusion(), stabilizer = new Stabilizer();
+  const observation: SquareObs = {
+    cam: "A", t: 0, quality: 1, weight: 1, motion: 0,
+    occ: new Float32Array(64).fill(0.01), white: new Float32Array(64).fill(0.95),
+    handSquares: new Uint8Array(64),
+  };
+  observation.occ[42] = 0.69; // faint knight on c3
+  let result: BoardBelief | undefined;
+  for (let i = 0; i < 40; i++) {
+    observation.t = i * 100;
+    const fused = fusion.fuse([observation], observation.t);
+    expect(fused.occ[42]).toBeGreaterThan(0.5);
+    result = stabilizer.step(fused);
+  }
+  expect(result!.occ[42]).toBe(1);
+  expect(result!.settled).toBe(true);
+});

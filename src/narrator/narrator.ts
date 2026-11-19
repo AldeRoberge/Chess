@@ -1,3 +1,4 @@
+import { extraPhrases } from "./extraPhrases";
 import type { ExperienceEvent } from "../core/events";
 
 export type Lang = "fr" | "en";
@@ -194,6 +195,15 @@ const EN: Phrases = {
   lessThan: (n) => `less than ${n} seconds`,
   sideLc: (c) => (c === "w" ? "white" : "black"),
 };
+
+// Expand each context independently so generic chatter cannot replace move facts.
+for (const [phrases, extra] of [[FR, extraPhrases.fr], [EN, extraPhrases.en]] as const) {
+  phrases.engineSits.push(...extra.engineSits);
+  phrases.opening.push(...extra.opening);
+  phrases.colour.develop.push(...extra.develop);
+  phrases.colour.middlegame.push(...extra.middlegame);
+  phrases.colour.endgame.push(...extra.endgame);
+}
 
 const PHRASES: Record<Lang, Phrases> = { fr: FR, en: EN };
 

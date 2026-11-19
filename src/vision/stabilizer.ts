@@ -29,7 +29,7 @@ export class Stabilizer {
     if (!this.started) { this.lastChange = b.t; this.started = true; }
     if (!frozen && b.cams > 0) {
       for (let sq = 0; sq < 64; sq++) {
-        this.accOcc[sq] = clamp(this.accOcc[sq] * decay + logit(b.occ[sq]) * (1 - decay) * 3, -8, 8);
+        this.accOcc[sq] = clamp(this.accOcc[sq] * decay + logit(b.occ[sq]) * (1 - decay) * 5, -8, 8);
         this.accWhite[sq] = clamp(this.accWhite[sq] * decay + logit(b.white[sq]) * (1 - decay) * 3, -8, 8);
         const wasOcc = this.occ[sq];
         if (!this.occ[sq] && this.accOcc[sq] > on) this.occ[sq] = 1;

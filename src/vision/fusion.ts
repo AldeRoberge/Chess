@@ -40,7 +40,7 @@ export class Fusion {
       // Two mild "maybe" readings add up in log-odds and become a piece. That is the shadow a
       // moved piece leaves behind: no camera will actually stand behind it, but the square stays
       // occupied. A piece has to be clear to at least one camera, or the square is empty.
-      if (live.length && peak[sq] < 0.7 && Math.abs(occL[sq]) > 1e-6) occ[sq] = Math.min(occ[sq], 0.02);
+      if (live.length > 1 && peak[sq] < 0.7 && Math.abs(occL[sq]) > 1e-6) occ[sq] = Math.min(occ[sq], 0.02);
       white[sq] = wsum[sq] > 0 ? sigmoid(whL[sq]) : 0.5;
       const cOcc = Math.abs(occ[sq] * 2 - 1);
       const cCol = occ[sq] > 0.5 ? Math.abs(white[sq] * 2 - 1) : 1;
