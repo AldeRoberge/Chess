@@ -90,10 +90,19 @@ describe("PositionTracker", () => {
   });
   it("reports a piece in hand (lifted) when it cannot decide where it will land", () => {
     const t = new PositionTracker(), g = new Chess();
-    const v = view(g, { conf: 0.05 }); v.occ[sqIndex("e2")] = 0;
+    const v = view(g); v.occ[sqIndex("e2")] = 0;
     const r = t.observe(v);
     expect(r.status).toBe("lifted"); expect(r.lifted).toBe("e2"); expect(r.diff).toEqual([sqIndex("e2")]);
     expect(r.events.map((e) => e.type)).toEqual(["lifted"]);
+  });
+  it("retains the position when a missing piece is only weakly observed", () => {
+    const t = new PositionTracker(), v = view(new Chess(), { conf: 0.05 });
+    v.occ[sqIndex("e2")] = 0;
+    const r = t.observe(v);
+    expect(r.status).toBe("synced");
+    expect(r.uncertain).toEqual([sqIndex("e2")]);
+    expect(r.history).toEqual([]);
+    expect(r.events).toEqual([]);
   });
   it("reports illegal placements with the offending squares and keeps the game unchanged", () => {
     const t = new PositionTracker(), v = view(new Chess(), { conf: 0.99 });
