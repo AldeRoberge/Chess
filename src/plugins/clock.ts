@@ -137,7 +137,7 @@ const reader: NodeSpec<ClockState> = {
 
 interface OverlayState { shown: boolean }
 const overlay: NodeSpec<OverlayState> = {
-  type: "clock.overlay", title: "CLOCK PROJECTION", category: "Output",
+  type: "clock.overlay", title: "Clock projection", category: "Output",
   desc: "Projects the time left onto the table: digits, a depleting circle, or a square outline around the board. Uncertain estimates are drawn dashed and faded.",
   inputs: [{ id: "clock", type: "clock" }], outputs: [],
   params: [

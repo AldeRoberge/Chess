@@ -5,6 +5,7 @@ import botplay from "./botplay.workflow.json";
 import chesscom from "./chesscom.workflow.json";
 import humanvsbot from "./humanvsbot.workflow.json";
 import complete from "./complete.workflow.json";
+import real from "./real.workflow.json";
 import pieceless from "./pieceless.workflow.json";
 
 /**
@@ -17,6 +18,7 @@ export interface WorkflowFile { app: string; kind: "workflow"; name: string; des
 export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
   { id: "basic", ...(basic as unknown as WorkflowFile) },
   { id: "complete", ...(complete as unknown as WorkflowFile) },
+  { id: "real", ...(real as unknown as WorkflowFile) },
   { id: "chesscom", ...(chesscom as unknown as WorkflowFile) },
   { id: "pieceless", ...(pieceless as unknown as WorkflowFile) },
   { id: "botplay", ...(botplay as unknown as WorkflowFile) },

@@ -1,8 +1,9 @@
 import type { Backup } from "../setup/backups";
 import { ago } from "../setup/backups";
+import { BUTTON_ICON, withIcon } from "./icons";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
-const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return b; };
+const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return BUTTON_ICON[label] ? withIcon(b, BUTTON_ICON[label]) : b; };
 
 /** A centred dialog with a title, message, optional details and actions. Replaces any earlier notice. Esc, the backdrop or Dismiss closes it. */
 export function notify(message: string, actions: { label: string; run: () => void }[] = [], tone: "info" | "warn" = "info", opts: { title?: string; details?: string[]; onDismiss?: () => void } = {}) {
@@ -48,7 +49,7 @@ export function openBackupPanel(api: PanelApi) {
   file.onchange = () => { const f = file.files?.[0]; if (f) { api.importFile(f); close(); } };
   bar.append(btn("Back up now", () => { api.backupNow(); draw(); }), btn("Import file…", () => file.click()), btn("Export file", api.exportFile), file);
   const list = el("div", "bk-list");
-  const note = el("p", "bk-note", "Your workflow is autosaved on every edit. Backups are extra restore points, taken every 5 minutes while you work, on exit, and before anything destructive. Restoring one also restores its setup, and first backs up what you have now.");
+  const note = el("p", "bk-note", "Your workflow is autosaved on every edit. Backups are extra restore points, taken every 5 minutes while you work, on exit, and before anything destructive. Restoring one also restores its settings, and first backs up what you have now.");
 
   const draw = () => {
     const items = api.list();

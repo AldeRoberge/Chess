@@ -37,6 +37,7 @@ const track: NodeSpec<TrackState> = {
     if (!board) return { game: state.res, events: [] };
     state.res = span("track moves (observe)", () => t.observe(board));
     bus.game = state.res;
+    if (state.res.status === "moved" && state.res.events.length) pushLog(bus.events, state.res.events); // the log reads the bus; a held piece must not reprint "lifted" every tick
     setFidelity(Math.min(state.res.fidelity, state.res.status === "illegal" ? 0.2 : 1));
     return { game: state.res, events: state.res.events };
   },

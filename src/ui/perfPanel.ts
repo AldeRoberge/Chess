@@ -1,4 +1,5 @@
 import type { Graph } from "../core/graph";
+import { icon, setLabel, withIcon } from "./icons";
 import { loadPrefs, patchPrefs } from "../setup/prefs";
 import { aggregateBoxes, delta, frameBoxes, hueOf, panView, percentile, profiler, slowestFrame, toTrace, zoomView, type FlameBox, type FrameRecord, type View } from "../core/profiler";
 import { CAT_COLOR } from "./editor";
@@ -45,7 +46,7 @@ export class PerfPanel {
   private tip = el("div", "perf-tip");
   private table = el("div", "perf-table");
   private search = el("input");
-  private pauseBtn = el("button", "", "Pause");
+  private pauseBtn = withIcon(el("button", "", "Pause"), "pause", 14);
   private mode: "frame" | "window" = "window";
   private depth = 1;
   private selected: number | null = null; // index into profiler.frames while pinned
@@ -74,15 +75,15 @@ export class PerfPanel {
   private total = 1;
   private base: Map<string, number> | null = null;
   private baseTick = 0;
-  private baseBtn = el("button", "", "Set baseline");
+  private baseBtn = withIcon(el("button", "", "Set baseline"), "flag", 14);
 
   constructor(private graph: Graph, private hooks: PerfHooks) {
     const bar = el("div", "perf-actions");
-    this.pauseBtn.onclick = () => { profiler.paused = !profiler.paused; this.pauseBtn.textContent = profiler.paused ? "Resume" : "Pause"; this.pauseBtn.classList.toggle("on", profiler.paused); this.draw(true); };
-    const clear = el("button", "", "Clear"); clear.onclick = () => { profiler.reset(); this.selected = null; this.resetView(); this.draw(true); };
-    const worst = el("button", "", "Slowest frame"); worst.title = "Pin the slowest captured frame";
+    this.pauseBtn.onclick = () => { profiler.paused = !profiler.paused; setLabel(this.pauseBtn, profiler.paused ? "Resume" : "Pause"); this.pauseBtn.querySelector(".ic")!.outerHTML = icon(profiler.paused ? "play" : "pause", 14); this.pauseBtn.classList.toggle("on", profiler.paused); this.draw(true); };
+    const clear = withIcon(el("button", "", "Clear"), "trash", 14); clear.onclick = () => { profiler.reset(); this.selected = null; this.resetView(); this.draw(true); };
+    const worst = withIcon(el("button", "", "Slowest frame"), "bolt", 14); worst.title = "Pin the slowest captured frame";
     worst.onclick = () => { const i = slowestFrame(profiler.frames); if (i < 0) return; this.selected = i; this.mode = "frame"; this.resetView(); if (!profiler.paused) this.pauseBtn.click(); this.syncModeButtons(); this.draw(true); };
-    const save = el("button", "", "Export trace"); save.title = "Download the capture as Chrome trace JSON (Perfetto, chrome://tracing)";
+    const save = withIcon(el("button", "", "Export trace"), "export", 14); save.title = "Download the capture as Chrome trace JSON (Perfetto, chrome://tracing)";
     save.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(toTrace(profiler.frames))], { type: "application/json" })); a.download = "chess-experience-trace.json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
     this.baseBtn.title = "Remember today's per-node averages, then compare after a change";
     this.baseBtn.onclick = () => {
@@ -90,7 +91,7 @@ export class PerfPanel {
         this.base = new Map(); this.baseTick = 0;
         for (const id of graph.nodes.keys()) { const s = profiler.summarize(id); if (s) { this.base.set(id, s.avg); this.baseTick += s.avg; } }
       }
-      this.baseBtn.textContent = this.base ? "Clear baseline" : "Set baseline"; this.baseBtn.classList.toggle("on", !!this.base); this.draw(true);
+      setLabel(this.baseBtn, this.base ? "Clear baseline" : "Set baseline"); this.baseBtn.classList.toggle("on", !!this.base); this.draw(true);
     };
     const bud = el("label", "perf-budget"); const bi = el("input"); bi.type = "number"; bi.min = "0"; bi.step = "0.5";
     profiler.budget = Math.max(0, loadPrefs().perfBudget ?? 0); bi.value = String(profiler.budget);

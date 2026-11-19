@@ -7,7 +7,7 @@ export const NODE_W = 280;
 export const NODE_H = 300;
 /** Narrowest a node may be once organised; anything narrower is widened so its controls and labels breathe. */
 export const AMPLE_W = 360;
-const COL_W = 330, ROW_H = 340, PAD = 24, HEAD = 40, GAP = 56, WRAP = 5;
+const COL_W = 330, ROW_H = 800, PAD = 24, HEAD = 40, GAP = 56, WRAP = 3; // ROW_H is the step: cards are taller than NODE_H, and a short step paints them on top of each other
 
 /** What a node is for. Sections follow this when the patch is organised. */
 const ROLES: { title: string; color: string; match: RegExp }[] = [
@@ -52,7 +52,7 @@ export function organize(g: GraphJSON, size?: (id: string) => { w: number; h: nu
     const colX = cw.map((_, c) => 20 + PAD + cw.slice(0, c).reduce((t, v) => t + v + (COL_W - NODE_W), 0));
     const rowY = rh.map((_, r) => y + HEAD + PAD + rh.slice(0, r).reduce((t, v) => t + v + (ROW_H - NODE_H), 0));
     ordered.forEach((node, i) => { node.x = colX[i % WRAP]; node.y = rowY[Math.floor(i / WRAP)]; });
-    const w = colX[cols - 1] + cw[cols - 1] + PAD - 20, h = rowY[rows - 1] + rh[rows - 1] + PAD - y;
+    const w = colX[cols - 1] + cw[cols - 1] + PAD - 20, h = rowY[rows - 1] + Math.max(rh[rows - 1], ROW_H) + PAD - y;
     groups.push({ id: `g${++n}`, title: role.title, color: role.color, x: 20, y, w, h });
     y += h + GAP;
   }

@@ -62,7 +62,7 @@ export class WorldView {
   private matB = new THREE.MeshPhysicalMaterial({ color: 0x3b3a3f, roughness: 0.38, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2 });
   private lamp!: THREE.SpotLight;
   private lastFrame = 0;
-  showFrusta = true;
+  showFrusta = false;
   showProjection = true;
 
   constructor(private canvas: HTMLCanvasElement, private cfg: MappingConfig) {

@@ -3,6 +3,7 @@ import { bus } from "../core/bus";
 import { virtualTable } from "../sim/virtualTable";
 import { loadSetup } from "../setup/config";
 import { modal, type WorkflowApi } from "./workflows";
+import { BUTTON_ICON, withIcon } from "./icons";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
@@ -21,7 +22,7 @@ export function openPlayNow(api: WorkflowApi, onPlay: () => void = () => {}) {
   const eloLabel = el("span", "", `Bot strength: ${o.elo}`);
   elo.oninput = () => { o.elo = Number(elo.value); eloLabel.textContent = `Bot strength: ${o.elo}`; };
   const eloRow = el("label", "wf-field"); eloRow.append(eloLabel, elo);
-  const play = el("button", "primary", "Play now"); play.type = "button";
+  const play = withIcon(el("button", "primary", "Play now"), BUTTON_ICON["Play now"]); play.type = "button";
   play.onclick = () => {
     const r = buildBotPlay(api.registry, o, loadSetup());
     virtualTable.reset(); bus.engineHint = null; // the table outlives the workflow: cameras must learn the start position, not the last game

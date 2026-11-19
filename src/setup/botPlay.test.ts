@@ -16,7 +16,8 @@ describe("buildBotPlay", () => {
     expect(r.bot).toBe("w"); expect(r.setup.completed).toBe(true);
     expect(find(r.graph as any, "game.engine")[0].params).toMatchObject({ color: "w", virtualHand: true });
     expect(find(r.graph as any, "sim.person")[0].params.seated).toBe(true);
-    expect(find(r.graph as any, "experience.director")[0].params).toMatchObject({ preset: "engine", presetElo: "900" });
+    expect(find(r.graph as any, "experience.director")[0].params).toMatchObject({ preset: "engine", presetElo: "900", introMs: 1000 });
+    expect(find(r.graph as any, "narration.narrator")[0].params.language).toBe("en");
     expect(find(r.graph as any, "source.synthetic").length).toBe(2);
   });
   it("webcams: real sources and pose tracking, the bot only announces its move", () => {

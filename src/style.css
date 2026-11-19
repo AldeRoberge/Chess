@@ -12,6 +12,7 @@
   --font-ui:"Chakra Petch",system-ui,sans-serif;--font-mono:"IBM Plex Mono",ui-monospace,monospace;
   --u:1;--t-xs:calc(12px*var(--u));--t-sm:calc(13px*var(--u));--t-md:calc(15px*var(--u));--t-lg:calc(20px*var(--u));--t-xl:calc(28px*var(--u));
   --radius:4px;color-scheme:dark;
+  --paper:#e8edf3;--paper-ink:#0a1827;--paper-dim:#4a5d75;--paper-rule:#b4c2d3;
   --shadow:#0009;--scrim:rgb(2 6 12/.6);--halo-bg:linear-gradient(170deg,#0a2038fb,#07182bfb);--track:#081a2f80;--on-signal:#02060d;
 }
 *{box-sizing:border-box}
@@ -52,6 +53,13 @@ aside{position:relative;display:flex;flex-direction:column;border-left:1px solid
 .world-cv{aspect-ratio:4/3;height:auto}
 .muted{color:var(--text-dim);font-size:var(--t-xs)}
 .table .muted{font-family:var(--font-ui)}
+.gamebar{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+.gamebar .turn{font-weight:600}
+.gamebar .moves,.gamebar .caps{font-family:var(--font-mono);color:var(--text-dim)}
+.table-cv{display:block;width:100%;height:auto;touch-action:none}
+.table-cv:focus-visible{outline:2px solid var(--signal);outline-offset:3px}
+.promo{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bar button.on{border-color:var(--signal);color:var(--signal-hi)}
 .chk{display:flex;gap:6px;align-items:center;color:var(--text-dim)}
 .chk input{accent-color:var(--signal)}
 .rig-row{display:flex;gap:8px;align-items:center;margin:3px 0}.rig-row b{min-width:64px;font-weight:600}
@@ -78,16 +86,17 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 @keyframes flow-sure{to{stroke-dashoffset:-26}}
 @keyframes flow-weak{to{stroke-dashoffset:-7.5}}
 .ne-node{position:absolute;isolation:isolate;width:320px;background:var(--ink-1);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px var(--shadow);cursor:default}
-.ne-node.sized{display:flex;flex-direction:column}.ne-node.sized .ne-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;overflow:clip;overflow-clip-margin:10px}
+.ne-node.sized{display:flex;flex-direction:column;min-height:0;overflow:hidden}.ne-node.sized .ne-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;overflow:clip;overflow-clip-margin:10px}
 .ne-node.sized .ne-preview{aspect-ratio:auto!important;flex:1 1 40px;min-height:0;height:auto;object-fit:contain;width:calc(100% - 20px)}
 .ne-node.sized .ne-foot{flex:none}.ne-node.sized .ne-params{overflow:auto;flex:none;max-height:45%}
 .ne-node.wide .ne-params{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:5px 14px}
 .ne-node.wide .ne-param{min-width:0}
 .ne-grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 55%,var(--line-hi) 55% 65%,transparent 65% 77%,var(--line-hi) 77% 87%,transparent 87%);border-radius:0 0 6px 0}
 .ne-node.sel{border-color:var(--signal)}.ne-node.bypass{opacity:.8}
-/* With a selection, the selected nodes stay bright and everything else is dimmed back. */
+/* With a selection, the other nodes only soften slightly; the wires touching the selection shine brighter. */
 .ne-node{transition:opacity .15s}
-.ne.has-sel .ne-node:not(.sel){opacity:.35}
+.ne.has-sel .ne-node:not(.sel){opacity:.85}
+.ne-wires path.hot{filter:brightness(1.6) saturate(1.2);stroke-width:4.5}
 .ne.has-sel .ne-node.sel{opacity:1}
 .ne-head{display:grid;grid-template-columns:26px auto 1fr;align-items:center;column-gap:8px;row-gap:3px;padding:8px 8px 7px 12px;border-radius:5px 5px 0 0;background:var(--ink-2);box-shadow:inset 3px 0 var(--cat);cursor:grab;user-select:none}
 .ne-ico{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:6px;color:var(--cat);background:color-mix(in srgb,var(--cat) 16%,transparent);border:1px solid color-mix(in srgb,var(--cat) 40%,transparent)}.ne-ico .ic{display:block}
@@ -157,7 +166,6 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 /* projector window */
 body.output{background:#000;overflow:hidden}body.output canvas{position:fixed;inset:0;width:100%;height:100%}#c{display:none}
 body.output .hint{position:fixed;left:8px;bottom:8px;color:#fff4;font-size:var(--t-xs);pointer-events:none}
-@media (max-width:900px){main{grid-template-columns:1fr}aside{display:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.ne-ms.crit{opacity:1}}
 
 /* navigation: tab icons, key hints, next-step strip */
@@ -298,7 +306,7 @@ body.resizing{cursor:col-resize;user-select:none}
 .ne-node:not(.wide) .ne-pn{white-space:normal;overflow-wrap:anywhere;color:var(--text-dim)}
 .ne-node:not(.wide) .ne-pv{min-width:0}
 .ne-node:not(.wide) .ne-param input[type=text],.ne-node:not(.wide) .ne-param select{width:100%;box-sizing:border-box}
-.ne-node{width:320px;min-width:320px}.ne-node.sized{min-height:min-content}
+.ne-node{width:320px;min-width:320px}.ne-node.sized{min-height:0;overflow:hidden}
 .ne-opt{grid-column:1/-1;display:flex;flex-direction:column;gap:6px;margin:4px 0}.ne-opt-list{display:flex;flex-direction:column;gap:6px}
 .ne-node:not(.wide) .ne-opt,.ne-node:not(.wide) .ne-opt-list,.ne-node:not(.wide) .ne-opt-card{display:grid;grid-template-columns:subgrid;grid-column:1/-1}
 .ne-opt-card{border:1px solid var(--line);border-left:2px solid var(--signal);border-radius:4px;background:color-mix(in srgb,var(--signal) 6%,transparent);padding:2px 0 4px;gap:0}
@@ -366,3 +374,27 @@ aside{container-type:inline-size}
 /* empty states say what will appear and when */
 .lines:empty::before{content:"No commentary yet. Lines appear here once a game starts.";color:var(--text-dim);font-size:var(--t-xs)}
 .events:empty::before{content:"No events yet. Moves, phase changes and seat changes are listed here.";color:var(--text-dim);font-size:var(--t-xs)}
+
+/* portrait and narrow windows: the dock becomes a bottom sheet under the graph; ribbon, top bar and next-steps swipe sideways */
+@media (max-width:900px){
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,48%)}
+  aside{border-left:0;border-top:1px solid var(--line)}
+  .resize{display:none}
+  .ribbon{overflow-x:auto;scrollbar-width:none}.ribbon::-webkit-scrollbar{display:none}
+  .rtabs{overflow-x:auto;scrollbar-width:none}.rtabs::-webkit-scrollbar{display:none}.rtabs>button{flex:none}
+  #next{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.next-card{flex:0 0 190px}.next-lead{flex:none}
+  #tabs button{padding:11px 6px}
+  #app{height:100vh;height:100dvh}
+}
+
+/* buttons and tabs with an icon: 16px beside 13px text (14px in the dense performance panel), 22px above the ribbon's labels */
+.has-ic{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.has-ic .ic{flex:none}
+.rtabs>button{display:inline-flex;align-items:center;gap:7px}
+.rtabs>button .ic{flex:none;opacity:.85}.rtabs>button.on .ic{opacity:1;color:var(--signal)}
+.ne-tools button{display:inline-flex;align-items:center;gap:6px}
+.scen-pause{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.notice-actions button,.bk-bar button,.bk-head button,.bk-row button{display:inline-flex;align-items:center;gap:7px}
+
+/* touch sizing must not stretch the round section dot */
+.coarse .ne-gdot{min-height:0}

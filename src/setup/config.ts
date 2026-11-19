@@ -26,7 +26,7 @@ export interface CameraSetup {
   autoFields?: AutoField[];
 }
 
-export type AutoField = "fov" | "trust" | "channel";
+export type AutoField = "fov" | "trust" | "channel" | "corners";
 
 /** Records whether a field was filled by auto detect (true) or set by hand (false). */
 export function setAutoField(cam: CameraSetup, field: AutoField, auto: boolean) {

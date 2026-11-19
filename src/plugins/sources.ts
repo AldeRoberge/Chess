@@ -10,7 +10,7 @@ import { frameHover } from "./hover";
 interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number }
 
 const webcam: NodeSpec<WebcamState> = {
-  type: "source.webcam", title: "WEBCAM / IR", category: "Source",
+  type: "source.webcam", title: "Webcam", category: "Source",
   inputs: [], outputs: [{ id: "frame", type: "frame" }],
   params: [
     { id: "online", kind: "bool", label: "Online", value: true },

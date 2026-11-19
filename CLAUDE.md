@@ -25,6 +25,10 @@ A dirty tree you did not make is not yours to clean up. If files you did not tou
 2. Check `git reflog`, `git stash list`, `git fsck --lost-found --no-reflogs`, and the backup refs under `refs/backup/`.
 3. Tell the user exactly which files may be affected, and ask the other sessions to verify and re-apply their own edits (they must not run reset, checkout or stash to do so).
 
+## Trunk-based development
+
+Commit your changes directly to `main`. Do not open feature branches or pull requests for routine work. Keep commits small, commit often, and push to `main` as soon as the tests and type-check pass. Stage only the files you edited, never `git add -A`, so other sessions' uncommitted edits stay out of your commit.
+
 ## Tell the user
 
 Uncommitted work is unprotected. Suggest committing often, and keep GitHub Desktop's pull, discard and stash actions away from this folder while sessions are active.

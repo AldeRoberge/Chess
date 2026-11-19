@@ -13,7 +13,7 @@ export const PRESETS: Record<"low" | "medium" | "high", Omit<RenderSettings, "qu
 export const SHADOW_MAP: Record<RenderSettings["shadows"], number> = { off: 0, low: 512, high: 2048 };
 export const DEFAULTS: ViewSettings = {
   render: { ...PRESETS.high, scale: 1.5, quality: "high" },
-  display: { coords: true, legalMoves: true, hints: true, lastMove: true, frusta: true },
+  display: { coords: true, legalMoves: true, hints: true, lastMove: true, frusta: false },
 };
 
 let cur: ViewSettings = merge(loadPrefs().view2);
