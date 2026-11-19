@@ -99,11 +99,13 @@ export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number
     let agree = piece ? occ : 1 - occ;
     if (piece && seen) agree = Math.min(agree, piece === piece.toUpperCase() ? white : 1 - white);
     if (!piece && seen) agree = Math.min(agree, 0.5 + Math.abs(white - 0.5)); // unidentified piece: only occupancy/colour certainty
-    let score = Math.min(conf, Math.max(agree, 0));
+    // `conf` is a margin (|2p-1|, so 70% sure of "empty" is only 0.4). For an empty square that reads as empty, P(empty) is the honest number;
+    // the margin would paint a square that is probably just empty as doubtful.
+    let score = !piece && !seen ? Math.max(agree, 0) : Math.min(conf, Math.max(agree, 0));
     // the start position is a strong prior: a square that agrees with it needs far less evidence.
     // A square we just cleared (the piece has left) does not get that boost.
     const prior = start && agree > 0.5 && piece === (pcs[i] ?? null);
-    if (prior) score = 1 - (1 - score) * 0.3;
+    if (prior) score = piece ? 1 - (1 - score) * 0.3 : 1; // an empty middle square of the start position that reads empty is simply empty: never tinted
     reads.push({ piece, seen, score: Math.max(0, Math.min(1, score)), prior });
   }
   return { reads, start };
