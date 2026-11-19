@@ -309,7 +309,9 @@ export class BoardSampler {
     }
     return {
       cam: this.cam, t: frame.t,
-      quality: clamp(1 - (bad / 64) * 2, 0, 1),
+      // Unreadable squares reduce the vote proportionally; half a bright board
+      // must not mute the readable pieces on the other half.
+      quality: clamp(1 - bad / 64, 0, 1),
       weight, occ, white,
       motion: moving / 64,
       handSquares: hand,

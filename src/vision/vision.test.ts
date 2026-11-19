@@ -142,6 +142,21 @@ describe("BoardSampler", () => {
     expect(s.read(flatFrame(255)).quality).toBe(0);
     expect(s.read(flatFrame(0)).quality).toBe(0);
   });
+  it("keeps readable pieces through fusion and stabilization when half the board is washed out", () => {
+    const corners = defaultSamplerConfig().corners;
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    const bg = (sq: number) => sq % 8 < 4 ? 255 : 50;
+    s.calibrateEmpty(boardPaint(corners, (sq) => bg(sq)));
+    const piece = sqIndex("g2");
+    const frame = boardPaint(corners, (sq, u, v) => sq === piece && Math.hypot(u - 6.5, v - 6.5) < 0.35 ? 190 : bg(sq));
+    const o = s.read(frame);
+    expect(o.quality).toBeGreaterThan(0);
+    expect(o.occ[piece]).toBeGreaterThan(0.7);
+    const fusion = new Fusion(), stab = new Stabilizer();
+    let result: BoardBelief;
+    for (let t = 0; t < 30; t++) result = stab.step(fusion.fuse([{ ...o, t }], t));
+    expect(result!.occ[piece]).toBe(1);
+  });
   it("treats board points that fall outside the image as unknown", () => {
     const s = new BoardSampler("A", { ...cfg(), corners: [{ x: -900, y: -900 }, { x: -800, y: -900 }, { x: -800, y: -800 }, { x: -900, y: -800 }] });
     expect(Number.isNaN(s.measure(flatFrame(100))[0])).toBe(true);
@@ -245,6 +260,15 @@ function boardPaint(corners: { x: number; y: number }[], colour: (sq: number, u:
 const obs = (cam: string, occ: number, white: number, extra: Partial<SquareObs> = {}): SquareObs => ({ cam, t: 1000, quality: 1, weight: 1, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), motion: 0, handSquares: new Uint8Array(64), ...extra });
 
 describe("Fusion", () => {
+  it("keeps unusable and undecided camera readings unknown rather than confidently empty", () => {
+    for (const extra of [{ quality: 0 }, { weight: 0 }]) {
+      const b = new Fusion().fuse([obs("A", 0.99, 0.99, extra)], 1000);
+      expect(b.occ[0]).toBe(0.5); expect(b.conf[0]).toBe(0);
+      expect(b.fidelity).toBe(0); expect(b.cams).toBe(0);
+    }
+    const b = new Fusion().fuse([obs("A", 0.5, 0.5)], 1000);
+    expect(b.occ[0]).toBe(0.5); expect(b.conf[0]).toBe(0);
+  });
   it("reports zero fidelity and an undecided board with no cameras", () => {
     const b = new Fusion().fuse([], 1000);
     expect(b.fidelity).toBe(0); expect(b.cams).toBe(0); expect(b.occ[0]).toBe(0.5); expect(b.handOver).toBe(false);
