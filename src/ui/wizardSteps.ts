@@ -18,6 +18,7 @@ export interface WizardState {
   checks: Check[] | null;
   detected: CameraDevice[];
   scanning: boolean;
+  scanMsg?: string;
   boardCam: number; // camera being calibrated
   scenePreview: SceneState;
   tests: Record<string, TestResult>; // latest "Test key" outcome per service id
@@ -233,7 +234,8 @@ export const STEPS: Step[] = [
       const out: Item[] = [];
       const full = c.cfg.cameras.length >= MAX_CAMERAS;
       const fullWhy = `All ${MAX_CAMERAS} camera slots are used. Remove a camera from the table above to add another.`;
-      out.push({ kind: "action", icon: "scan", label: c.state.scanning ? "Scanning…" : "Scan for webcams", disabled: c.state.scanning, hint: c.state.scanning ? "A scan is already running. It finishes in a few seconds." : undefined, run: () => c.scan() });
+      out.push({ kind: "action", icon: "scan", label: c.state.scanning ? "Scanning…" : "Scan for webcams", disabled: c.state.scanning, hint: c.state.scanning ? "Asking the browser for webcams. Gives up after 4 seconds." : undefined, run: () => c.scan() });
+      if (!c.state.scanning && c.state.scanMsg) out.push({ kind: "info", label: "Last scan", value: c.state.scanMsg, tone: c.state.detected.length ? undefined : "warn" } as Item);
       for (const d of c.state.detected.filter((d) => !c.cfg.cameras.some((x) => x.deviceId === d.deviceId))) {
         out.push({ kind: "action", icon: "plus", label: `Add webcam · ${d.label}`, disabled: full, hint: full ? fullWhy : undefined, run: () => { c.cfg.cameras.push(webcamSetup(d.deviceId, d.label, nextCameraId(c.cfg))); c.refresh(); } });
       }

@@ -162,7 +162,11 @@ export class SetupWizard {
 
   private async scan() {
     this.state.scanning = true; this.render();
-    try { this.state.detected = await this.deps.listCameras(); } finally { this.state.scanning = false; }
+    try {
+      this.state.detected = await this.deps.listCameras();
+      this.state.scanMsg = this.state.detected.length ? `Found ${this.state.detected.length} webcam${this.state.detected.length === 1 ? "" : "s"}.`
+        : "The browser reports no webcam. Close other apps using it (Zoom, Teams, OBS), unplug and replug it, then restart Chrome and scan again.";
+    } finally { this.state.scanning = false; }
     this.render();
   }
   private async runChecks() {
