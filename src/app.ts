@@ -49,7 +49,6 @@ import { icon, withIcon } from "./ui/icons";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
 import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
 import { PAGES, formatRoute, parseRoute, routeTitle, sameRoute, type Route } from "./ui/route";
-import { suggestNext, type Suggestion } from "./ui/nextSteps";
 
 export interface Boot { graph: Graph; editor: NodeEditor; go(r: Route): void; route(): Route; step(now: number): void; start(): void; openWizard(): void; wizard: () => SetupWizard | null }
 
@@ -193,7 +192,6 @@ export function boot(root: HTMLElement): Boot {
       <aside>
         <div class="resize" id="resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize inspector" data-tip="Resize inspector" data-tip-body="Drag to change the width of this panel." data-tip-keys="Drag,Double-click" data-tip-hint="Double-click resets"></div>
         <nav id="tabs"></nav>
-        <div id="next" aria-label="Suggested next steps"></div>
         <div id="dock"></div>
       </aside>
     </main>
@@ -267,8 +265,8 @@ export function boot(root: HTMLElement): Boot {
   table.seatCb = (seated) => { for (const n of graph.nodes.values()) if (n.type === "sim.person") n.params.seated = seated; };
   let soundOn = false;
   const soundLabel = () => { document.getElementById("audio")!.querySelector(".lbl")!.textContent = soundOn && !mixer.get().muted ? "Sound on" : "Sound off"; };
-  const doSound = () => { if (!soundOn) { startAudio(graph); startFxAudio(graph); soundOn = true; } mixer.setMuted(false); patchPrefs({ sound: true }); soundLabel(); refreshNext(true); };
-  const toggleSound = () => { if (!soundOn) { doSound(); return; } const muted = mixer.toggleMuted(); patchPrefs({ sound: !muted }); soundLabel(); refreshNext(true); };
+  const doSound = () => { if (!soundOn) { startAudio(graph); startFxAudio(graph); soundOn = true; } mixer.setMuted(false); patchPrefs({ sound: true }); soundLabel(); };
+  const toggleSound = () => { if (!soundOn) { doSound(); return; } const muted = mixer.toggleMuted(); patchPrefs({ sound: !muted }); soundLabel(); };
   document.getElementById("audio")!.onclick = toggleSound;
 
   // mixer popover: one slider per bus, plus a mute-all switch. Opens under its button; closes on an outside click.
@@ -490,7 +488,6 @@ export function boot(root: HTMLElement): Boot {
       profiler.begin("hud");
       lastHud = now; worstMs = 0;      const g = bus.game, b = bus.board;
       const tot = [...graph.stats.values()].reduce((a, s) => a + s.ms, 0);
-      refreshNext();
       const boardPending = !b || b.settled === false || !!b.handOver; // missing, still warming up, or a hand over the board: not a failed calibration
       const boardT = boardPending ? "" : chipTone.board(b.fidelity), moveT = chipTone.move(g ? g.moveFidelity : 0), fpsT = chipTone.fps(1000 / frameMs), camT = chipTone.cam(bus.cameras.length), tickT = chipTone.tick(tot / 66);
       const boardPct = boardPending ? "…" : `${Math.round(b.fidelity * 100)}%`;
@@ -525,27 +522,6 @@ export function boot(root: HTMLElement): Boot {
   // ---- routing: the URL hash always mirrors the page (and setup step) on screen
   const stepIds = STEPS.map((x) => x.id);
   let route: Route = { page: "table" };
-  const nextEl = document.getElementById("next")!;
-  let nextKey = "";
-  const doSuggestion = (s: Suggestion) => { if (s.to) go(s.to); else if (s.action === "sound") doSound(); else if (s.action === "export") doExport(); };
-  function refreshNext(force = false) {
-    const b = bus.board;
-    const boardPending = !b || b.settled === false || !!b.handOver;
-    const list = suggestNext({ route, setupDone: !!loadSetup()?.completed, soundOn: soundOn && !mixer.get().muted, boardFidelity: b && !boardPending ? b.fidelity : boardPending ? 1 : 0, boardPending, cameras: graph.nodes.size ? 1 : 0 });
-    // Keyed on everything rendered, so an unchanged bar is never rebuilt (rebuilding replays the cards' entry animation).
-    const key = list.map((x) => `${x.id}\u0001${x.title}\u0001${x.hint}\u0001${x.icon}`).join("\u0002");
-    if (key === nextKey) return;
-    nextKey = key;
-    nextEl.replaceChildren();
-    const lead = document.createElement("span"); lead.className = "next-lead"; lead.innerHTML = `${icon("spark", 14)}<span>Next</span>`; nextEl.append(lead);
-    list.forEach((s, i) => {
-      const b = document.createElement("button"); b.type = "button"; b.className = `next-card${i === 0 ? " primary" : ""}`; b.title = s.hint;
-      b.innerHTML = `<span class="next-ic">${icon(s.icon, 18)}</span><span class="next-tx"><b></b><small></small></span>`;
-      b.querySelector("b")!.textContent = s.title; b.querySelector("small")!.textContent = s.hint;
-      b.onclick = () => doSuggestion(s);
-      nextEl.append(b);
-    });
-  }
   /** Show `r` without touching the URL. */
   function apply(r: Route) {
     route = r;
@@ -553,7 +529,6 @@ export function boot(root: HTMLElement): Boot {
     else { if (wiz && loadSetup()?.completed) closeWizard(); show(PAGES.indexOf(r.page)); }
     document.title = routeTitle(r, r.page === "settings" ? STEPS.find((x) => x.id === r.step)?.title : undefined);
     document.body.dataset.page = r.page;
-    refreshNext(true);
   }
   /** Navigate: show it and push a history entry so Back works. */
   function go(r: Route, replace = false) {
