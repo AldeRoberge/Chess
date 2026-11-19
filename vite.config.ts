@@ -14,7 +14,7 @@ export default defineConfig(({ command }) => ({
   define: { __APP_VERSION__: JSON.stringify(version), __BUILD_TIME__: JSON.stringify(new Date().toISOString()), __BUILD_COMMIT__: JSON.stringify(commit) },
   build: { target: "es2022", chunkSizeWarningLimit: 900, outDir: "dist/chess", emptyOutDir: true },
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "worker/**/*.test.ts"],
     environment: "jsdom",
     testTimeout: 240000,
     setupFiles: ["./src/test/setup.ts"],

@@ -1,5 +1,6 @@
 /** Speech output for narration lines: browser speechSynthesis or ElevenLabs text-to-speech. */
 import { mixer } from "../scene/mixer";
+import { effectiveKey, vendorFetch } from "../net/vendorFetch";
 
 export interface VoiceSettings {
   provider: "browser" | "elevenlabs";
@@ -45,7 +46,7 @@ function speakBrowser(text: string, who: "A" | "B", s: VoiceSettings) {
 }
 
 async function fetchEleven(text: string, voiceId: string, s: VoiceSettings): Promise<Blob> {
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+  const r = await vendorFetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
     method: "POST",
     headers: { "xi-api-key": s.apiKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
     body: JSON.stringify({ text, model_id: s.model || ELEVENLABS_DEFAULTS.model }),
@@ -57,7 +58,7 @@ async function fetchEleven(text: string, voiceId: string, s: VoiceSettings): Pro
 export interface ElevenVoice { id: string; name: string; category: string }
 
 /** Voices available to this key (premade, cloned, library): proves the key works too. */
-export async function fetchElevenVoices(apiKey: string, doFetch: typeof fetch = fetch): Promise<ElevenVoice[]> {
+export async function fetchElevenVoices(apiKey: string, doFetch: typeof fetch = vendorFetch): Promise<ElevenVoice[]> {
   const r = await doFetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": apiKey.trim() } });
   if (!r.ok) throw new Error(`ElevenLabs ${r.status}`);
   const j = (await r.json()) as { voices?: { voice_id: string; name?: string; category?: string }[] };
@@ -113,7 +114,7 @@ export const ELEVENLABS_PROVIDER: TtsProvider = {
   id: "elevenlabs",
   label: "ElevenLabs",
   speak: (text, who, s) => {
-    if (s.apiKey.trim()) speakEleven(text, who, s);
+    if (effectiveKey(s.apiKey, "elevenlabs")) speakEleven(text, who, s);
     else speakBrowser(text, who, s);
   },
 };

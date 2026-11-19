@@ -5,6 +5,7 @@ import { virtualTable } from "../sim/virtualTable";
 import { camHealth, setAutoField, type AutoField, type CameraSetup, type SetupConfig } from "../setup/config";
 import { CHANNEL_NAME, boardSeparation, detectChannel, estimateFov, trustFor } from "../setup/autodetect";
 import { detectBoardCorners } from "../setup/corners";
+import { effectiveKey } from "../net/vendorFetch";
 import type { CameraDevice } from "../setup/devices";
 import { evaluateEnv, runCheckAction, type Env } from "../setup/system";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "../setup/buildInfo";
@@ -414,7 +415,7 @@ export class SetupWizard {
   private detectCorners() {
     const cam = this.cfg.cameras[this.state.boardCam], img = this.state.frame;
     if (!img) { this.state.autoMsg = "No live picture to measure: check that this camera is online and has a signal."; this.deps.sfx.play("deny"); this.render(); return; }
-    const key = this.cfg.ai.apiKey.trim(), job = ++this.cornerJob;
+    const key = effectiveKey(this.cfg.ai.apiKey, "openai").trim(), job = ++this.cornerJob;
     this.state.autoMsg = key ? "Detecting corners from the checkerboard, printed coordinates, and AI…" : "Detecting corners from the checkerboard and printed coordinates…";
     this.deps.sfx.play("tick"); this.renderList();
     void detectBoardCorners(img, { apiKey: key, model: this.cfg.ai.model }).then((r) => {

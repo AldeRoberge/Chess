@@ -2,7 +2,8 @@
  * The assistant's brain: an OpenAI tool-calling loop with streaming.
  * Pure of the DOM so it can be tested with a fake fetch. The panel drives it and renders its events.
  */
-export interface ToolCall { id: string; type: "function"; function: { name: string; arguments: string } }
+import { vendorFetch } from "../net/vendorFetch";
+export interface ToolCall{ id: string; type: "function"; function: { name: string; arguments: string } }
 export interface ChatMsg { role: "system" | "user" | "assistant" | "tool"; content: string | null; tool_calls?: ToolCall[]; tool_call_id?: string }
 
 /** read = no side effects; write = changes the app but can be undone; danger = asks you first. */
@@ -52,7 +53,7 @@ const failure = async (r: Response) => {
 };
 
 /** One streamed chat completion. Falls back to a plain JSON body when the response is not a stream. */
-export async function complete(messages: ChatMsg[], tools: AgentTool[], o: AgentOptions, signal: AbortSignal, onText: (d: string) => void, doFetch: typeof fetch = fetch): Promise<Completion> {
+export async function complete(messages: ChatMsg[], tools: AgentTool[], o: AgentOptions, signal: AbortSignal, onText: (d: string) => void, doFetch: typeof fetch = vendorFetch): Promise<Completion> {
   const body: Record<string, unknown> = { model: o.model, messages, stream: true, stream_options: { include_usage: true } };
   if (tools.length) { body.tools = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })); body.tool_choice = "auto"; }
   if (REASONING.test(o.model)) body.reasoning_effort = "medium"; else body.temperature = 0.3;

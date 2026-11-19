@@ -45,15 +45,23 @@ export function gaussBlur(src: Float32Array, w: number, h: number, r: number): F
   return boxBlur(boxBlur(boxBlur(src, w, h, rr), w, h, rr), w, h, rr);
 }
 
-function median3(src: Float32Array, w: number, h: number): Float32Array {
-  const out = new Float32Array(w * h), v = new Array<number>(9);
-  for (let y = 0; y < h; y++)
+/** 3x3 median via the classic 19-exchange network (a plain sort of 9 per pixel is several times slower). */
+export function median3(src: Float32Array, w: number, h: number): Float32Array {
+  const out = new Float32Array(w * h);
+  const p = new Float32Array(9);
+  const ex = (i: number, j: number) => { if (p[i] > p[j]) { const t = p[i]; p[i] = p[j]; p[j] = t; } };
+  for (let y = 0; y < h; y++) {
+    const ym = Math.max(0, y - 1) * w, y0 = y * w, yp = Math.min(h - 1, y + 1) * w;
     for (let x = 0; x < w; x++) {
-      let k = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) v[k++] = src[Math.min(h - 1, Math.max(0, y + dy)) * w + Math.min(w - 1, Math.max(0, x + dx))];
-      v.sort((a, b) => a - b);
-      out[y * w + x] = v[4];
+      const xm = Math.max(0, x - 1), xp = Math.min(w - 1, x + 1);
+      p[0] = src[ym + xm]; p[1] = src[ym + x]; p[2] = src[ym + xp];
+      p[3] = src[y0 + xm]; p[4] = src[y0 + x]; p[5] = src[y0 + xp];
+      p[6] = src[yp + xm]; p[7] = src[yp + x]; p[8] = src[yp + xp];
+      ex(1, 2); ex(4, 5); ex(7, 8); ex(0, 1); ex(3, 4); ex(6, 7); ex(1, 2); ex(4, 5); ex(7, 8);
+      ex(0, 3); ex(5, 8); ex(4, 7); ex(3, 6); ex(1, 4); ex(2, 5); ex(4, 7); ex(4, 2); ex(6, 4); ex(4, 2);
+      out[y0 + x] = p[4];
     }
+  }
   return out;
 }
 

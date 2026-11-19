@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
-import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, edgeIcons, scoreAlignment } from "./boardGuide";
+import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, edgeIcons, scoreAlignment, snapLevel } from "./boardGuide";
 import { squareToQuad } from "./quadEditor";
 
 /** A flat checkerboard: squares of `sq` px with the board's a8 corner at (x0, y0). a1 is dark unless `flip`. */
@@ -64,6 +64,9 @@ describe("edge icons", () => {
     expect(by("left").map((i) => i.code)).toEqual(["br", "bp", "wp", "wr"]); expect(by("right")).toHaveLength(4);
     expect(by("bottom").every((i) => i.v > 1) && by("top").every((i) => i.v < 0) && by("left").every((i) => i.u < 0) && by("right").every((i) => i.u > 1)).toBe(true);
     expect(by("left")[0].v).toBeCloseTo(0.0625); expect(by("left")[3].v).toBeCloseTo(0.9375);
+  });
+  it("snaps certainty to sure / unsure / guess / unknown", () => {
+    expect([1, 0.9, 0.7, 0.3, 0.05].map(snapLevel)).toEqual([1, 1, 0.5, 0.2, 0]);
   });
   it("draws one badge per icon", () => {
     const c = document.createElement("canvas").getContext("2d")!, m = squareToQuad(corners()); let arcs = 0; const arc = c.arc.bind(c); c.arc = ((...a: Parameters<typeof c.arc>) => { arcs++; return arc(...a); }) as typeof c.arc;

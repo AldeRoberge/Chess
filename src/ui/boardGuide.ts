@@ -1,4 +1,5 @@
 import type { GrayFrame, Pt } from "../vision/types";
+import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
 import { pieceImage } from "./pieceSets";
 
 /** Maps the board's unit square to picture pixels (u: file a→h, v: rank 8→1). See squareToQuad. */
@@ -98,7 +99,7 @@ export const alignColor = (q: number, light = 54) => `hsl(${Math.round(28 + 102 
 
 // ---- piece icons along the edges --------------------------------------------------------------------------------
 
-export interface EdgeIcon { code: string; u: number; v: number; edge: "top" | "bottom" | "left" | "right" }
+export interface EdgeIcon { code: string; u: number; v: number; edge: "top" | "bottom" | "left" | "right"; /** The board square (0 = a8 .. 63 = h1) this icon stands for. */ sq: number }
 const BACK = ["r", "n", "b", "q", "k", "b", "n", "r"];
 /** How far outside the board's edge the icons sit, in squares. */
 const OUT = 0.62;
@@ -109,25 +110,53 @@ const OUT = 0.62;
  */
 export function edgeIcons(): EdgeIcon[] {
   const out: EdgeIcon[] = [];
-  BACK.forEach((p, f) => { out.push({ code: `b${p}`, u: (f + 0.5) / 8, v: -OUT / 8, edge: "top" }, { code: `w${p}`, u: (f + 0.5) / 8, v: 1 + OUT / 8, edge: "bottom" }); });
+  BACK.forEach((p, f) => { out.push({ code: `b${p}`, u: (f + 0.5) / 8, v: -OUT / 8, edge: "top", sq: f }, { code: `w${p}`, u: (f + 0.5) / 8, v: 1 + OUT / 8, edge: "bottom", sq: 56 + f }); });
   const file = ["br", "bp", "", "", "", "", "wp", "wr"]; // rank 8 down to rank 1
-  file.forEach((code, r) => { if (code) out.push({ code, u: -OUT / 8, v: (r + 0.5) / 8, edge: "left" }, { code, u: 1 + OUT / 8, v: (r + 0.5) / 8, edge: "right" }); });
+  file.forEach((code, r) => { if (code) out.push({ code, u: -OUT / 8, v: (r + 0.5) / 8, edge: "left", sq: r * 8 }, { code, u: 1 + OUT / 8, v: (r + 0.5) / 8, edge: "right", sq: r * 8 + 7 }); });
   return out;
+}
+
+// ---- how sure we are of each piece ------------------------------------------------------------------------------
+
+/** The steps of certainty: 1 sure, 0.5 unsure, 0.2 only a guess from the game state, 0 unknown or impossible. */
+export const LEVELS = [1, 0.5, 0.2, 0] as const;
+const LEVEL_COLOR: Record<number, string> = { 1: "#35e07a", 0.5: "#e6d83c", 0.2: "#ff9a3c", 0: "#ff4d4d" };
+
+/** Snaps a probability (0..1) to the nearest-below step: >=0.85 sure, >=0.5 unsure, >=0.2 a guess, else nothing. */
+export function snapLevel(p: number): number { return p >= 0.85 ? 1 : p >= 0.5 ? 0.5 : p >= 0.2 ? 0.2 : 0; }
+
+/**
+ * For each edge icon (same order as edgeIcons()), how sure the camera is that the right piece colour stands on that
+ * start square. Reads the picture with the grid as it is now, assuming the start position: when the grid is off the
+ * board the answer drops with the alignment, so a perfect fit with the pieces seen under it gives full rings.
+ */
+export function iconLevels(f: GrayFrame, corners: Pt[], q: number): number[] {
+  const s = new BoardSampler("guide", { ...defaultSamplerConfig(), corners });
+  s.calibrateFromStart(f);
+  const obs = s.read(f), fit = Math.min(1, Math.max(0, q / GOOD));
+  return edgeIcons().map((ic) => {
+    const white = ic.code[0] === "w", p = obs.occ[ic.sq] * (white ? obs.white[ic.sq] : 1 - obs.white[ic.sq]);
+    return snapLevel(Number.isFinite(p) ? p * fit : 0);
+  });
 }
 
 const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔", bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚" };
 
 /** Draws the edge icons. `P` maps the unit square to canvas pixels; `ring` is the colour of the badge behind each icon. */
-export function drawEdgeIcons(ctx: CanvasRenderingContext2D, P: (u: number, v: number) => Pt, ring: string) {
+export function drawEdgeIcons(ctx: CanvasRenderingContext2D, P: (u: number, v: number) => Pt, ring: string, levels?: number[]) {
   const a = P(0.5, 0), b = P(0.5 + 1 / 8, 0), c = P(0, 0.5), d = P(0, 0.5 + 1 / 8);
   const size = Math.max(12, Math.min(46, Math.min(Math.hypot(b.x - a.x, b.y - a.y), Math.hypot(d.x - c.x, d.y - c.y)) * 0.78));
   ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  for (const ic of edgeIcons()) {
-    const p = P(ic.u, ic.v), img = pieceImage(ic.code);
-    ctx.fillStyle = "rgba(7,9,13,.62)"; ctx.strokeStyle = ring; ctx.lineWidth = 2;
+  edgeIcons().forEach((ic, i) => {
+    const p = P(ic.u, ic.v), img = pieceImage(ic.code), lv = levels?.[i];
+    ctx.fillStyle = "rgba(7,9,13,.62)"; ctx.strokeStyle = lv === undefined ? ring : "rgba(255,255,255,.18)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(p.x, p.y, size * 0.62, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (lv !== undefined && lv > 0) { // the outline fills up with how sure we are: full circle = sure
+      ctx.strokeStyle = LEVEL_COLOR[lv] ?? ring; ctx.lineWidth = 3.5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.arc(p.x, p.y, size * 0.62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lv); ctx.stroke();
+    }
     if (img) ctx.drawImage(img, p.x - size / 2, p.y - size / 2, size, size);
     else { ctx.fillStyle = ic.code[0] === "w" ? "#fff" : "#9fb4cc"; ctx.font = `${Math.round(size * 0.85)}px serif`; ctx.fillText(GLYPH[ic.code], p.x, p.y + size * 0.04); }
-  }
+  });
   ctx.restore();
 }

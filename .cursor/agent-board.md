@@ -1,4 +1,6 @@
 # Agent board
 
 - **grove** (done): table play, graph spacing, setup focus, HUD, bot-play narration language. Files are free again.
-- **birch**: auto-detect board corners (shape, OCR, AI). Editing src/setup/corners.ts, src/setup/corners.test.ts, src/setup/config.ts, src/ui/menu.ts, src/ui/wizard.ts, src/ui/wizardSteps.ts, src/ui/wizard.test.ts.
+- **birch** (done): auto-detect board corners from the checkerboard, printed labels, and AI. Files are free again.
+- **lens** (done): splash skips Vite hot reload. src/ui/splash.ts, src/ui/splash.test.ts, src/main.ts are free.
+- **flint** (working): CI type errors. Claiming src/assistant/snapshot.ts, src/assistant/tools/app.ts, src/assistant/assistant.test.ts, src/setup/corners.test.ts.

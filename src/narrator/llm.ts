@@ -1,5 +1,6 @@
 import type { ExperienceEvent } from "../core/events";
 import type { Lang, NarrationLine } from "./narrator";
+import { vendorFetch } from "../net/vendorFetch";
 
 /** Optional AI commentary through OpenAI's chat API (small, fast, cheap model). Falls back to the built-in lines on any failure. */
 export interface LlmSettings { apiKey: string; model: string; names: [string, string]; voices: 1 | 2; lang?: Lang; timeoutMs?: number }
@@ -53,7 +54,7 @@ export function parseReply(raw: string, s: Voices, t: number, priority: number):
 }
 
 /** Asks the model for lines about these events; rejects on HTTP errors, timeouts or an empty reply so the caller can fall back. */
-export async function commentate(events: ExperienceEvent[], history: string[], s: LlmSettings, priority: number, doFetch: typeof fetch = fetch): Promise<NarrationLine[]> {
+export async function commentate(events: ExperienceEvent[], history: string[], s: LlmSettings, priority: number, doFetch: typeof fetch = vendorFetch): Promise<NarrationLine[]> {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), s.timeoutMs ?? 5000);
   try {
     const r = await doFetch("https://api.openai.com/v1/chat/completions", {

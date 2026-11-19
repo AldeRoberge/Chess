@@ -1,7 +1,7 @@
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import type { GrayFrame, Pt } from "../vision/types";
 import { findBoardCorners } from "../vision/findBoard";
-import { AlignmentMeter, alignColor, drawEdgeIcons, scoreAlignment } from "./boardGuide";
+import { AlignmentMeter, alignColor, drawEdgeIcons, iconLevels, scoreAlignment } from "./boardGuide";
 
 /** Projective map of the unit square onto a quad (Heckbert), so the board grid is drawn in true perspective. */
 export function squareToQuad(q: Pt[]): (u: number, v: number) => Pt {
@@ -61,7 +61,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
 
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;
-  let sel = 0, raf = 0, closed = false;
+  let sel = 0, raf = 0, closed = false, levels: number[] | undefined, levelsAt = 0;
   const emit = () => o.change(fmtCorners(pts));
   const paint = () => {
     if (closed) return;
@@ -86,7 +86,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
     ctx.strokeStyle = color; ctx.lineWidth = 1.5; lines(() => ctx.stroke());
     ctx.lineWidth = 3; outline(); ctx.stroke();
     ctx.restore();
-    if (o.grid > 1) drawEdgeIcons(ctx, P, color);
+    if (o.grid > 1) {
+      // Read the pieces under the grid a few times a second; each icon's outline fills with how sure that piece is.
+      const now = performance.now();
+      if (fr && now - levelsAt > 250) { levelsAt = now; try { levels = iconLevels(fr, pts, meter.q); } catch { levels = undefined; } }
+      drawEdgeIcons(ctx, P, color, fr ? levels : undefined);
+    }
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
     pts.forEach((p, i) => {
       const x = p.x * sx, y = p.y * sy;

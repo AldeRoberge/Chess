@@ -5,6 +5,7 @@ import { CHANNEL_NAME, type Channel } from "../setup/autodetect";
 import type { CameraDevice } from "../setup/devices";
 import type { Check } from "../setup/system";
 import { testElevenLabs, testOpenAiKey, type TestResult } from "../setup/keyTests";
+import { loadServerKeys, saveServerKeys, serverHas, type Vendor } from "../net/vendorFetch";
 import { OPENAI_PRICES } from "../narrator/openaiModels";
 import { elevenVoiceLabel, fetchElevenVoices, type ElevenVoice, type VoiceSettings } from "../narrator/voice";
 import { fmtCorners, parseCorners } from "../plugins/shared";
@@ -135,6 +136,31 @@ const ELEVEN_VOICES_URL = "https://elevenlabs.io/app/voice-library";
 const link = (c: StepCtx, label: string, url: string): Item => ({ kind: "action", icon: "arrow", label, hint: url, run: () => c.open(url) });
 const testLine = (c: StepCtx, id: string): Item[] => { const r = c.state.tests[id]; return r ? [{ kind: "info", label: "Key test", value: r.text, tone: r.tone }] : []; };
 
+/** Keys kept on the site's Cloudflare worker: browsers never see them, and every device just works. */
+const server = { pass: "", msg: undefined as TestResult | undefined, busy: false };
+function serverKeyItems(c: StepCtx, vendor: Vendor, label: string, local: () => string, clear: () => void): Item[] {
+  void loadServerKeys().then(() => c.refresh());
+  const has = serverHas(vendor);
+  const out: Item[] = [{ kind: "info", label: `${label} on server`, value: has ? "Stored: every device uses it, nothing is kept in this browser." : "Not stored. Save it below to stop pasting it on each device.", tone: has ? "ok" : "warn" }];
+  out.push(
+    { kind: "text", label: "Server passphrase", secret: true, get: () => server.pass, set: (v) => { server.pass = v; }, hint: "The ADMIN_PASSPHRASE secret of the worker. Only needed to save or remove a key; it is not stored." },
+    { kind: "action", icon: "refresh", label: server.busy ? "Saving…" : `Save ${label} key to server`, disabled: server.busy || !local().trim(), run: () => {
+      server.busy = true; server.msg = undefined; c.refresh();
+      saveServerKeys(server.pass, { [vendor]: local().trim() }).then(() => { clear(); server.msg = { tone: "ok", text: `${label} key saved on the server and removed from this browser.` }; })
+        .catch((e) => { server.msg = { tone: "fail", text: `Not saved: ${e instanceof Error ? e.message : e}` }; })
+        .finally(() => { server.busy = false; c.refresh(); });
+    } },
+  );
+  if (has) out.push({ kind: "action", icon: "refresh", label: `Remove ${label} key from server`, disabled: server.busy, run: () => {
+    server.busy = true; c.refresh();
+    saveServerKeys(server.pass, { [vendor]: "" }).then(() => { server.msg = { tone: "ok", text: `${label} key removed from the server.` }; })
+      .catch((e) => { server.msg = { tone: "fail", text: `Not removed: ${e instanceof Error ? e.message : e}` }; })
+      .finally(() => { server.busy = false; c.refresh(); });
+  } });
+  if (server.msg) out.push({ kind: "info", label: "Server", value: server.msg.text, tone: server.msg.tone });
+  return out;
+}
+
 const aiItems = (c: StepCtx): Item[] => {
   const ai = c.cfg.ai;
   const out: Item[] = [
@@ -156,6 +182,7 @@ const aiItems = (c: StepCtx): Item[] => {
       hint: "Small models are fast and cheap, which suits live commentary. Prices are per million tokens." },
     { kind: "action", icon: "refresh", label: "Test key", run: () => c.test("openai", () => testOpenAiKey(ai.apiKey)) },
     ...testLine(c, "openai"),
+    ...serverKeyItems(c, "openai", "OpenAI", () => ai.apiKey, () => { ai.apiKey = ""; c.refresh(); }),
   );
   return out;
 };
@@ -197,6 +224,7 @@ const voiceItems = (c: StepCtx): Item[] => {
     { kind: "text", label: "ElevenLabs API key", secret: true, get: () => v.apiKey, set: (x) => { v.apiKey = x.trim(); delete c.state.tests.elevenlabs; loadVoices(c); c.refresh(); }, hint: "Paste the key you just copied, then press Enter." },
     { kind: "action", icon: "refresh", label: voiceList.busy ? "Loading voices…" : "Load my voices", disabled: voiceList.busy, run: () => loadVoices(c) },
     ...(voiceList.error ? [{ kind: "info", label: "Voices", value: voiceList.error, tone: "fail" } as Item] : []),
+    ...serverKeyItems(c, "elevenlabs", "ElevenLabs", () => v.apiKey, () => { v.apiKey = ""; c.refresh(); }),
   );
   if (voiceList.key === v.apiKey && voiceList.voices.length) {
     // include a currently set ID that is not in the account's list, so the dropdown never shows a blank

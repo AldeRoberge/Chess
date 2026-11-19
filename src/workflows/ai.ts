@@ -2,6 +2,7 @@ import type { GraphJSON, ParamDef, ParamValues, Registry } from "../core/types";
 import { Graph } from "../core/graph";
 import { organize } from "../core/groups";
 import { WORKFLOWS } from "./index";
+import { vendorFetch } from "../net/vendorFetch";
 
 /** What the model is asked to return. Wires are "nodeId.portId". */
 export interface Draft { name?: string; summary?: string; nodes?: { id?: string; type?: string; x?: number; y?: number; params?: Record<string, unknown> }[]; edges?: { from?: string; to?: string }[] }
@@ -83,7 +84,7 @@ export const parseDraft = (raw: string): Draft | null => {
 export interface AiOptions { apiKey: string; model: string; timeoutMs?: number }
 
 /** One chat round-trip. Returns the model's raw reply; throws on HTTP errors, timeouts and empty replies. */
-export async function chat(messages: Msg[], o: AiOptions, doFetch: typeof fetch = fetch): Promise<string> {
+export async function chat(messages: Msg[], o: AiOptions, doFetch: typeof fetch = vendorFetch): Promise<string> {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), o.timeoutMs ?? 90000);
   try {
     const r = await doFetch("https://api.openai.com/v1/chat/completions", {
@@ -104,7 +105,7 @@ export async function chat(messages: Msg[], o: AiOptions, doFetch: typeof fetch 
 /** The conversation behind the wizard: first request, then optional revisions of the model's own last answer. */
 export class AiSession {
   private msgs: Msg[];
-  constructor(private reg: Registry, private opts: AiOptions, private base?: GraphJSON, private doFetch: typeof fetch = fetch) {
+  constructor(private reg: Registry, private opts: AiOptions, private base?: GraphJSON, private doFetch: typeof fetch = vendorFetch) {
     this.msgs = [{ role: "system", content: systemPrompt(reg) }];
   }
 

@@ -1,3 +1,4 @@
+import { averageFrames, enhance, noEnhance } from "../vision/enhance";
 import { Fusion } from "../vision/fusion";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
 import { Stabilizer } from "../vision/stabilizer";
@@ -11,7 +12,7 @@ import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, parseC
 import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
 
-interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number }
+interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; readOf: GrayFrame | null }
 /** Board square (0 = a8) under an image pixel for these corners, or null when the pixel is off the board. */
 function squareAtPixel(corners: { x: number; y: number }[], x: number, y: number): number | null {
   const q = applyH(invertH(boardToImage(corners)), x, y);
@@ -27,21 +28,34 @@ const reader: NodeSpec<ReaderState> = {
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.1, max: 0.6, step: 0.01, value: 0.22 },
     { id: "weight", kind: "number", label: "Trust", min: 0, max: 2, step: 0.1, value: 1 },
+    { id: "clean", kind: "bool", label: "Clean up noise", value: true },
+    { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
     { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
   ],
   previewSize: [160, 120],
   frameOf: (s) => s.frame,
-  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1 }),
+  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, readOf: null }),
   process({ frame }, { params, state, setFidelity, span }) {
     const s = state.sampler;
     s.cam = String(params.cam);
     if (state.corners !== params.corners) { const c = parseCorners(String(params.corners)); if (c) { s.cfg.corners = c; state.corners = String(params.corners); } }
     s.cfg.threshold = Number(params.threshold);
-    state.frame = frame ?? null;
-    if (!frame) { state.obs = null; setFidelity(null); return { obs: null }; }
-    if (params.learn || (params.autoCal && !state.autoDone && !s.calibrated)) { span("calibrateFromStart", () => s.calibrateFromStart(frame)); state.autoDone = true; params.learn = false; }
-    if (frame.t !== state.lastT || !state.obs) { state.lastT = frame.t; state.obs = span("sample board (read)", () => s.read(frame, Number(params.weight))); } // one read per camera frame
+    if (!frame) { state.frame = null; state.raw = null; state.recent = []; state.obs = null; setFidelity(null); return { obs: null }; }
+    // Clean-up: a median filter plus the mean of the last few frames of a still board (benchmarked: far fewer phantom and missed pieces than reading raw frames).
+    // The mean restarts whenever the board is changing (a hand, a moved piece), so motion is never smeared into the picture.
+    if (frame !== state.raw || !state.frame) {
+      state.raw = frame;
+      const keep = Math.max(1, Math.round(Number(params.average) || 1));
+      if (state.obs && state.obs.motion > 0.02) state.recent = [];
+      state.recent.push(frame);
+      if (state.recent.length > keep) state.recent.splice(0, state.recent.length - keep);
+      const mean = state.recent.length > 1 ? averageFrames(state.recent) : frame;
+      state.frame = span("clean up picture", () => enhance(mean, { ...noEnhance(), denoise: params.clean ? "median" : "none" }));
+    }
+    const img = state.frame!;
+    if (params.learn || (params.autoCal && !state.autoDone && !s.calibrated)) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; }
+    if (img !== state.readOf || !state.obs) { state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight))); } // one read per camera frame
     setFidelity(state.obs.quality * (1 - Math.min(1, state.obs.motion * 4)));
     return { obs: state.obs };
   },

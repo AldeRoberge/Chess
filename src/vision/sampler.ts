@@ -13,8 +13,8 @@ export const defaultSamplerConfig = (): SamplerConfig => ({
   corners: [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }],
   threshold: 0.22,
   softness: 0.06,
-  grid: 4,
-  patch: 0.5,
+  grid: 6,
+  patch: 0.6,
 });
 
 const SAT = 250; // pixels at or above this are clipped glare, not a piece

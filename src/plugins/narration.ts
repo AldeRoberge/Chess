@@ -2,6 +2,7 @@ import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import type { HoverInfo, ModelInfo, NodeSpec, Plugin } from "../core/types";
 import { LANGS, Narrator, type Lang, type NarrationLine } from "../narrator/narrator";
+import { effectiveKey } from "../net/vendorFetch";
 
 /** Language param shared by every narration node; unknown or missing values fall back to French. */
 const langParam = { id: "language", kind: "select" as const, label: "Language", options: LANGS, value: "fr" as Lang };
@@ -122,7 +123,7 @@ const aiNarrator: NodeSpec<AiState> = {
     const evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
     for (const e of evs) { const san = (e.data as any)?.san; if (san && (e.type === "move" || e.type === "capture" || e.type === "castle" || e.type === "promotion")) state.history.push(san); }
     state.history = state.history.slice(-40);
-    const key = String(params.aiKey ?? "").trim();
+    const key = effectiveKey(String(params.aiKey ?? ""), "openai").trim();
     // One model-list request per key; a failed request keeps the priced fallback list.
     if (key && key !== state.keyFetched) { state.keyFetched = key; fetchOpenAiModelIds(key).then(adoptLiveModels).catch(() => {}); }
     const lines = state.ready.splice(0);
@@ -176,7 +177,7 @@ const speak: NodeSpec<SpeakState> = {
   ],
   init: () => ({ enabled: true, keyFetched: "" }),
   process({ lines }, { params, state }) {
-    const key = String(params.apiKey ?? "").trim();
+    const key = effectiveKey(String(params.apiKey ?? ""), "elevenlabs").trim();
     // One voice-list request per key; a failed request keeps the default voices.
     if (key && key !== state.keyFetched) { state.keyFetched = key; fetchElevenVoices(key).then(adoptElevenVoices).catch(() => {}); }
     if (!params.enabled) return;

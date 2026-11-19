@@ -17,11 +17,11 @@ export function problems(h: AssistantHost): (Issue | { level: "error" | "warn"; 
 
 /** The compact picture of the whole app handed to the model before each message. */
 export function snapshot(h: AssistantHost, now = h.now()) {
-  const g = h.graph(), game = bus.game, sel = new Set(h.selection());
+  const g = h.graph(), game = bus.game, sel = new Set(h.selection()), route = h.route();
   const byType: Record<string, number> = {}; for (const n of g.nodes) byType[n.type] = (byType[n.type] ?? 0) + 1;
   const ev = (e: ExperienceEvent) => ({ type: e.type, ago_s: Math.max(0, r2((now - e.t) / 1000)), ...(e.data ? { data: e.data } : {}) });
   return {
-    page: h.route().page === "setup" ? `setup (${(h.route() as { step: string | null }).step ?? "?"})` : h.route().page,
+    page: route.page === "settings" ? `settings (${route.step ?? "?"})` : route.page,
     setup: h.setup() ? redact(h.setup()) : "not completed yet",
     problems: problems(h),
     selected_nodes: g.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, type: n.type, bypass: !!n.bypass, params: redact(n.params) })),

@@ -1,6 +1,7 @@
 import { boardSeparation, type Channel } from "./autodetect";
 import { boardToImage, applyH } from "../vision/homography";
 import type { Pt } from "../vision/types";
+import { vendorFetch } from "../net/vendorFetch";
 
 /**
  * Finds the four playing-surface corners (a8, h8, h1, a1) in a camera picture.
@@ -240,26 +241,27 @@ function convexHull(pts: Pt[]): Pt[] {
   return area < 0 ? hull.reverse() : hull;
 }
 
-/** A rasterised quadrilateral's hull is full of near-straight edge pixels. The four corners are the sharp turns. */
+/** A rasterised quadrilateral's hull is full of edge pixels. Drop the one closest to its neighbours' chord until four corners remain. */
 function quadFromContour(contour: Pt[]): Pt[] | null {
   const hull = convexHull(contour);
-  const n = hull.length;
-  if (n < 4) return null;
-  if (n === 4) return hull;
-  const span = Math.max(2, Math.round(n * 0.03));
-  const turn = hull.map((p, i) => {
-    const a = hull[(i - span + n) % n], b = hull[(i + span) % n];
-    const ax = p.x - a.x, ay = p.y - a.y, bx = b.x - p.x, by = b.y - p.y;
-    const la = Math.hypot(ax, ay) || 1, lb = Math.hypot(bx, by) || 1;
-    return Math.atan2((ax / la) * (by / lb) - (ay / la) * (bx / lb), (ax / la) * (bx / lb) + (ay / la) * (by / lb));
-  });
-  const picked: number[] = [];
-  for (const i of turn.map((_, i) => i).sort((a, b) => turn[b] - turn[a])) {
-    if (picked.every((j) => Math.min(Math.abs(i - j), n - Math.abs(i - j)) >= n / 8)) picked.push(i);
-    if (picked.length === 4) break;
+  if (hull.length < 4) return null;
+  const idx = hull.map((_, i) => i);
+  const dist = (p: Pt, a: Pt, c: Pt) => {
+    const dx = c.x - a.x, dy = c.y - a.y, len = Math.hypot(dx, dy) || 1;
+    return Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / len;
+  };
+  while (idx.length > 4) {
+    let drop = 0, best = Infinity;
+    for (let k = 0; k < idx.length; k++) {
+      const d = dist(hull[idx[k]], hull[idx[(k - 1 + idx.length) % idx.length]], hull[idx[(k + 1) % idx.length]]);
+      if (d < best) { best = d; drop = k; }
+    }
+    idx.splice(drop, 1);
   }
-  if (picked.length < 4) return null;
-  return picked.sort((a, b) => a - b).map((i) => hull[i]);
+  const corners = idx.map((i) => hull[i]);
+  const cx = corners.reduce((s, p) => s + p.x, 0) / 4, cy = corners.reduce((s, p) => s + p.y, 0) / 4;
+  // Pixel (x, y) covers [x, x+1) × [y, y+1). The outer corner of that pixel is the board's edge.
+  return corners.map((p) => ({ x: p.x + (p.x >= cx ? 1 : 0), y: p.y + (p.y >= cy ? 1 : 0) }));
 }
 
 /**
@@ -284,7 +286,6 @@ function fitQuad(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel
   }
   const masked = maskCorners(lum, img.width, img.height, tone);
   const sw = scoreOf(img, walked, ch), sm = masked ? scoreOf(img, masked, ch) : 0;
-  console.log("fit", "walk", sw.toFixed(2), walked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "), "mask", sm.toFixed(2), masked ? masked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | ") : "none", "tone", Math.round(tone.dark), Math.round(tone.light), "tol", tone.tol.toFixed(1));
   return sm > sw ? masked! : walked;
 }
 
@@ -312,18 +313,15 @@ function orientByShade(img: ImageData, corners: Pt[], ch: Channel): Pt[] {
 /** The checkerboard quadrilateral, named a8, h8, h1, a1 as far as the squares themselves allow. Null when nothing reads as a board. */
 export function detectCornersByShape(img: ImageData): ShapeCorners | null {
   const hits = checkerHits(img);
-  if (!hits) { console.log("reject no hits"); return null; }
+  if (!hits) return null;
   const blob = largestBlob(hits.pts);
   // A tilted board matches one period only in patches, so the hits stay sparse. Any of them still names the two square colours.
   const seed = blob.length >= 24 ? blob : hits.pts.length >= 24 ? hits.pts : null;
-  if (!seed) { console.log("reject blob", blob.length, "pts", hits.pts.length); return null; }
+  if (!seed) return null;
   const fitted = fitQuad(img, seed, hits.sx, hits.sy, hits.channel);
   const corners = orientByShade(img, fitted, hits.channel);
   const separation = scoreOf(img, corners, hits.channel);
-  if (separation < 0.45) {
-    console.log("reject", "hits", hits.pts.length, "blob", blob.length, "sx", hits.sx, "sy", hits.sy, "sep", separation.toFixed(2), "fit", fitted.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "));
-    return null;
-  }
+  if (separation < 0.45) return null;
   return { corners, separation, channel: hits.channel };
 }
 
@@ -412,8 +410,7 @@ export function applyBorderLabels(img: ImageData, corners: Pt[]): LabelOrientati
   };
   for (let e = 0; e < 4; e++) {
     const chars = readEdge(img, H, e);
-    if (!chars) { notes.push(`edge ${e} unreadable`); continue; }
-    if (notes.length < 8) notes.push(`edge ${e} [${chars.join("")}]`);
+    if (!chars) continue;
     const opts = [
       { n: hitsOf(chars, FILES), kind: "file" as const, start: "a" },
       { n: hitsOf(chars, [...FILES].reverse().join("")), kind: "file" as const, start: "h" },
@@ -539,7 +536,7 @@ function parseAiCorners(text: string, sx: number, sy: number): Pt[] | null {
 }
 
 /** Asks a vision model for a8, h8, h1, a1 in the picture's own pixels. Null when the reply is missing or not a real quad. */
-export async function detectCornersByAi(img: ImageData, apiKey: string, model?: string, doFetch: typeof fetch = fetch): Promise<Pt[] | null> {
+export async function detectCornersByAi(img: ImageData, apiKey: string, model?: string, doFetch: typeof fetch = vendorFetch): Promise<Pt[] | null> {
   const small = downscale(img), ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);
   try {
     const r = await doFetch("https://api.openai.com/v1/chat/completions", {
@@ -593,7 +590,6 @@ export async function detectBoardCorners(img: ImageData, opt: DetectOptions = {}
   let labels = false;
   if (corners) {
     const named = applyBorderLabels(img, corners);
-    if (!named.labels) console.log("labels", named.notes, "corners", corners.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "));
     corners = named.corners; labels = named.labels;
   }
   const key = opt.apiKey?.trim() ?? "";

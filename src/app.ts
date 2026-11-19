@@ -28,6 +28,7 @@ import { NodeEditor } from "./ui/editor";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
 import { clearPrefs, loadPrefs, patchPrefs } from "./setup/prefs";
+import { loadServerKeys } from "./net/vendorFetch";
 import { History } from "./core/history";
 import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, openSession, type Backup } from "./setup/backups";
 import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
@@ -69,6 +70,7 @@ export function boot(root: HTMLElement): Boot {
     recovered = listBackups()[0] ?? null;
     if (recovered) try { graph.load(recovered.graph); } catch { recovered = null; for (const id of [...graph.nodes.keys()]) graph.removeNode(id); }
   }
+  void loadServerKeys(); // which API keys the site worker holds (see worker/index.ts)
   let setup = loadSetup();
   if (!graph.nodes.size) {
     if (!setup && !loadPrefs().draft) {

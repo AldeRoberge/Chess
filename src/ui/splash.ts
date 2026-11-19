@@ -4,6 +4,8 @@ import { mixer } from "../scene/mixer";
 declare const __APP_VERSION__: string;
 
 export const SPLASH_KEY = "chess.splashSeen";
+/** Set just before Vite full-reloads this tab, so the reload itself does not play the splash again. */
+export const HMR_KEY = "chess.hotReload";
 /** Whole splash length in ms: the knight appears, tilts, winks (dink), straightens, then everything fades out. */
 export const SPLASH_MS = 3200;
 /** Shorter version for subsequent runs. */
@@ -13,6 +15,15 @@ export const SPLASH_FAST_MS = 1300;
 export function firstRun(store: Pick<Storage, "getItem" | "setItem"> = localStorage): boolean {
   try { if (store.getItem(SPLASH_KEY)) return false; store.setItem(SPLASH_KEY, "1"); return true; } catch { return false; }
 }
+
+/** True only for the page load Vite just triggered. A new tab or a manual refresh still shows the splash. */
+export function fromHotReload(store: Pick<Storage, "getItem" | "removeItem"> = sessionStorage): boolean {
+  try { if (store.getItem(HMR_KEY) !== "1") return false; } catch { return false; }
+  try { store.removeItem(HMR_KEY); } catch { /* still skip this one load */ }
+  return true;
+}
+
+if (import.meta.hot) import.meta.hot.on("vite:beforeFullReload", () => { try { sessionStorage.setItem(HMR_KEY, "1"); } catch { /* storage blocked */ } });
 
 /** A short two-note "dink" bell at the moment of the wink. Silent when muted or when audio is unavailable. */
 function dink(ctx: AudioContext, at: number) {

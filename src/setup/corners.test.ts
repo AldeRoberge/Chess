@@ -85,9 +85,11 @@ describe("checkerboard shape", () => {
     for (const id of ["A", "B"] as const) {
       const lum = renderLuminance({ pieces: [], blobs: [] }, { width: FRAME_W, height: FRAME_H, rig: RIGS[id] });
       const found = detectCornersByShape(grayImage(lum));
-      console.log(id, rigCorners(RIGS[id], 0).map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "));
       expect(found, id).toBeTruthy();
-      near(found!.corners, rigCorners(RIGS[id], 0), 14);
+      const truth = rigCorners(RIGS[id], 0);
+      // With no printed labels, rank 1 is the side lower in the picture. From black's side that is a 180° flip of the true names.
+      const want = truth[2].y + truth[3].y >= truth[0].y + truth[1].y ? truth : [truth[2], truth[3], truth[0], truth[1]];
+      near(found!.corners, want, 14);
     }
   });
   it("returns nothing for a blank picture", () => {
@@ -152,7 +154,7 @@ describe("AI and the combined detector", () => {
     const img = boardImage(rect, (dark) => (dark ? [40, 40, 40] : [210, 210, 210]));
     // the picture is wider than 240, so it is halved; the model replies in that smaller image
     const fetch = vi.fn(async () => reply(rect));
-    const r = await detectBoardCorners(img, { apiKey: "sk-test", doFetch: fetch as unknown as typeof fetch });
+    const r = await detectBoardCorners(img, { apiKey: "sk-test", doFetch: fetch as unknown as typeof globalThis.fetch });
     expect(fetch).toHaveBeenCalledOnce();
     const body = JSON.parse(String((fetch.mock.calls[0] as unknown as [string, { body: string }])[1].body));
     expect(body.model).toBe("gpt-4.1-mini");
@@ -165,7 +167,7 @@ describe("AI and the combined detector", () => {
     const img = boardImage(rect, (dark) => (dark ? [40, 40, 40] : [210, 210, 210]));
     const elsewhere = [{ x: 10, y: 10 }, { x: 200, y: 12 }, { x: 190, y: 160 }, { x: 20, y: 150 }];
     const fetch = vi.fn(async () => reply(elsewhere));
-    const r = await detectBoardCorners(img, { apiKey: "sk-test", doFetch: fetch as unknown as typeof fetch });
+    const r = await detectBoardCorners(img, { apiKey: "sk-test", doFetch: fetch as unknown as typeof globalThis.fetch });
     near(r.corners!, rect, 8);
     expect(r.detail).toContain("measured corners were kept");
   });
@@ -174,12 +176,12 @@ describe("AI and the combined detector", () => {
     const blank = image((data) => { for (let i = 0; i < data.length; i += 4) { data[i] = data[i + 1] = data[i + 2] = 20; data[i + 3] = 255; } });
     const guess = [{ x: 30, y: 30 }, { x: 200, y: 28 }, { x: 210, y: 180 }, { x: 24, y: 176 }];
     const fetch = vi.fn(async () => reply(guess));
-    const only = await detectBoardCorners(blank, { apiKey: "sk-test", doFetch: fetch as unknown as typeof fetch });
+    const only = await detectBoardCorners(blank, { apiKey: "sk-test", doFetch: fetch as unknown as typeof globalThis.fetch });
     near(only.corners!, guess, 2);
     expect(only.detail).toContain("AI");
     const img = boardImage(rect, (dark) => (dark ? [40, 40, 40] : [210, 210, 210]));
     const down = vi.fn(async () => ({ ok: false, json: async () => ({}) }));
-    const kept = await detectBoardCorners(img, { apiKey: "sk-test", doFetch: down as unknown as typeof fetch });
+    const kept = await detectBoardCorners(img, { apiKey: "sk-test", doFetch: down as unknown as typeof globalThis.fetch });
     near(kept.corners!, rect, 8);
     expect(kept.detail).toContain("could not be reached");
   });

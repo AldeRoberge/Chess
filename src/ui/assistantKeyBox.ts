@@ -1,4 +1,5 @@
 import { AI_DEFAULT_MODEL, loadAiSettings, saveAiSettings } from "../workflows/ai";
+import { effectiveKey } from "../net/vendorFetch";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
@@ -8,7 +9,7 @@ export class KeyBox {
   /** Another place the key may already live (the setup's own key). */
   constructor(private fallbackKey: () => string = () => "") { this.build(); }
 
-  apiKey() { return loadAiSettings().apiKey || this.fallbackKey(); }
+  apiKey() { return effectiveKey(loadAiSettings().apiKey || this.fallbackKey(), "openai"); }
   model() { return loadAiSettings().model || AI_DEFAULT_MODEL; }
   toggle() { this.root.classList.toggle("open"); }
   /** Opens the form and says why (a key is needed, or the one given was refused). */
