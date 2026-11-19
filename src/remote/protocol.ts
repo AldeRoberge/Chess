@@ -26,6 +26,8 @@ export interface RemoteState {
   turn: "w" | "b";
   ply: number;
   over: boolean;
+  /** How the game ended in words, such as "Checkmate. White wins."; null while it is going on. */
+  result?: string | null;
   /** Every move so far in standard notation, from the first. */
   moves: string[];
   last: { from: string; to: string; san: string } | null;
@@ -88,6 +90,19 @@ export function targetsFrom(fen: string, from: string): string[] {
 /** Does moving `from`→`to` in `fen` need a promotion piece? */
 export function needsPromotion(fen: string, from: string, to: string): boolean {
   try { return new Chess(fen).moves({ square: from as never, verbose: true }).some((m) => m.to === to && !!m.promotion); } catch { return false; }
+}
+
+/** How a finished game ended, read from its final position; null while it is still going. Resignations and agreed draws are not in the position, so the host words those itself. */
+export function resultText(fen: string): string | null {
+  try {
+    const g = new Chess(fen);
+    if (g.isCheckmate()) return `Checkmate. ${g.turn() === "w" ? "Black" : "White"} wins.`;
+    if (g.isStalemate()) return "Stalemate. It is a draw.";
+    if (g.isInsufficientMaterial()) return "Draw: not enough pieces to mate.";
+    if (g.isThreefoldRepetition()) return "Draw by repetition.";
+    if (g.isDraw()) return "Draw.";
+    return null;
+  } catch { return null; }
 }
 
 /** Display name of a side. */

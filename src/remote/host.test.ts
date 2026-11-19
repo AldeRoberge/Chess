@@ -7,6 +7,11 @@ const game = (over = false) => ({ fen: new Chess().fen(), turn: "w" as const, pl
 const bus = (o: Partial<BusView> = {}): BusView => ({ game: game(), director: { phase: "game" }, engineHint: null, botColor: null, cameras: [{ id: "A", online: true, quality: 0.8 }], lines: Array.from({ length: 7 }, (_, i) => ({ name: "Jean", text: `line ${i}` })), ...o });
 
 describe("remote host", () => {
+  it("words the result of a finished game", () => {
+    const mate = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
+    expect(snapshot(bus({ game: { ...game(true), fen: mate } }), { now: 5, virtualBoard: true, framed: new Set(), notice: null }).result).toBe("Checkmate. Black wins.");
+    expect(snapshot(bus(), { now: 5, virtualBoard: true, framed: new Set(), notice: null }).result).toBeNull();
+  });
   it("decides what a phone's move can do", () => {
     expect(playMode(bus(), true)).toBe("virtual"); expect(playMode(bus(), false)).toBe("hint");
     expect(playMode(bus({ game: null }), true)).toBe("off"); expect(playMode(bus({ game: game(true) }), true)).toBe("off");

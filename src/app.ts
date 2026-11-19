@@ -177,6 +177,7 @@ export function boot(root: HTMLElement): Boot {
         </div>
         <div class="rpane" data-rpane="view">
           <div class="rgroup"><div class="rbtns">
+            <button id="nodesview" class="rb" data-tip="Show nodes" data-tip-body="Show the node editor next to the table. Off (the default) is the simple view: just the board, the log and the assistant, and the editor is not drawn, which keeps the app light.">${icon("grid", 22)}<span>Show nodes</span></button>
             <button id="heat" class="rb" data-tip="Node timings" data-tip-body="Show each node's cost on the workflow: a share bar, a sparkline of recent ticks, and avg / p95 / max milliseconds.">${icon("gauge", 22)}<span>Timings</span></button>
           </div><div class="rlabel">Graph</div></div>
           <div class="rgroup"><div class="rbtns">
@@ -274,6 +275,11 @@ export function boot(root: HTMLElement): Boot {
   modeBtn.onclick = () => setAppMode(nextMode(appMode()));
   onAppTheme(syncTheme); syncTheme();
   if (prefs.heat) setHeat(true);
+  // Simple view is the default: the node editor is hidden (and so not painted), leaving the table, log and assistant at full width.
+  const nodesBtn = document.getElementById("nodesview")!;
+  const setSimple = (simple: boolean, save = true) => { document.body.classList.toggle("simple", simple); nodesBtn.classList.toggle("on", !simple); nodesBtn.setAttribute("aria-pressed", String(!simple)); if (save) patchPrefs({ simple }); };
+  setSimple(prefs.simple !== false, false);
+  nodesBtn.onclick = () => setSimple(!document.body.classList.contains("simple"));
   const tabs = document.getElementById("tabs")!, dock = document.getElementById("dock")!;
   let active = 0;
   const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
@@ -474,7 +480,11 @@ export function boot(root: HTMLElement): Boot {
     base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
     build: (framed, notice, now) => {
       const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
-      if (virtualTable.over) { s.over = true; s.play = "off"; }
+      if (virtualTable.over) {
+        s.over = true; s.play = "off";
+        const e = virtualTable.ended;
+        if (e) s.result = e.kind === "draw" ? "Draw agreed." : `${e.color === "w" ? "White" : "Black"} resigns. ${e.color === "w" ? "Black" : "White"} wins.`;
+      }
       return s;
     },
     frames: camFrames,
