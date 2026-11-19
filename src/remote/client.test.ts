@@ -25,7 +25,7 @@ describe("phone page", () => {
     expect(q('.rm-bottom [aria-label="Watch only"]')).not.toBeNull();
     const ghost = q(".rm-guide-ghost"), moving = q(".rm-guide-piece");
     expect(ghost.style.left).toBe("50%"); expect(ghost.style.top).toBe("50%");
-    expect(document.querySelectorAll(".rm-guide path")).toHaveLength(3);
+    expect(q(".rm-guide canvas")).not.toBeNull();
     await flush(); expect(q(".rm-guide-piece")).toBe(moving);
     q<HTMLButtonElement>('[aria-label="Turn the board around"]').click();
     expect(q(".rm-guide-ghost").style.left).toBe("37.5%");

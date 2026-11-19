@@ -295,5 +295,5 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   }
 
   if (!code) askCode(); else { build(); void poll(); }
-  return { stop() { stopped = true; clearTimeout(timer); document.body.classList.remove("remote"); } };
+  return { stop() { stopped = true; clearTimeout(timer); moveGuide.stop(); document.body.classList.remove("remote"); } };
 }
