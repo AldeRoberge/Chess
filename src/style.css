@@ -203,19 +203,6 @@ header button{display:inline-flex;align-items:center;gap:7px}
 .rmenu button{justify-content:flex-start;background:transparent;border-color:transparent;text-align:left}
 .rmenu button:hover{background:var(--ink-3)}
 .ic{flex:none}
-#next{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
-.next-lead{display:flex;align-items:center;gap:5px;color:var(--text-dim);font:600 var(--t-xs)/1 var(--font-ui);letter-spacing:.06em;text-transform:uppercase;padding-right:2px}
-.next-card{display:flex;align-items:center;gap:9px;text-align:left;padding:7px 11px 7px 8px;min-width:0;flex:1 1 150px;animation:next-in .3s cubic-bezier(.2,.7,.2,1) both}
-.next-card:nth-child(3){animation-delay:.05s}.next-card:nth-child(4){animation-delay:.1s}
-.next-ic{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:var(--radius);background:var(--ink-0);border:1px solid var(--line);color:var(--signal)}
-.next-tx{display:flex;flex-direction:column;min-width:0}
-.next-tx b{font:600 var(--t-xs)/1.3 var(--font-ui);color:var(--text)}
-.next-tx small{font:400 var(--t-xs)/1.3 var(--font-ui);color:var(--text-dim)}
-.next-card.primary{border-color:var(--line-hi);background:var(--ink-3)}
-.next-card.primary .next-ic{background:var(--signal);color:var(--ink-0);border-color:var(--signal)}
-.next-card:hover .next-ic{border-color:var(--signal)}
-@keyframes next-in{from{opacity:0;transform:translateY(4px)}}
-@media (prefers-reduced-motion:reduce){.next-card{animation:none}}
 
 /* notices + backups */
 .notice{position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
@@ -382,7 +369,6 @@ aside{container-type:inline-size}
   .resize{display:none}
   .ribbon{overflow-x:auto;scrollbar-width:none}.ribbon::-webkit-scrollbar{display:none}
   .rtabs{overflow-x:auto;scrollbar-width:none}.rtabs::-webkit-scrollbar{display:none}.rtabs>button{flex:none}
-  #next{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.next-card{flex:0 0 190px}.next-lead{flex:none}
   #tabs button{padding:11px 6px}
   #app{height:100vh;height:100dvh}
 }

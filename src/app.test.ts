@@ -187,11 +187,9 @@ describe("navigation", () => {
     app.wizard()!.handle("next"); expect(location.hash).toBe("#/settings/cameras");
     app.go({ page: "world" }); expect(app.wizard()).toBeNull(); expect(location.hash).toBe("#/world");
   });
-  it("opens straight at a deep link and runs suggestions", () => {
+  it("opens straight at a deep link", () => {
     finishSetup(); history.replaceState(null, "", "#/settings/board"); const app = boot(root);
     expect(app.wizard()!.stepId).toBe("board");
-    app.go({ page: "table" }); root.querySelector<HTMLElement>(".next-card")!.click();
-    expect(location.hash).toMatch(/^#\/(settings|world)/);
   });
   it("keeps first-time users in setup whatever the URL says", () => {
     midSetup();
