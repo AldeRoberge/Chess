@@ -326,13 +326,18 @@ export class PerfPanel {
   /** Jump to the whole graph without animating; used when the mode or depth changes. */
   private resetView() { this.view = { a: 0, w: 1 }; this.focusPath = ""; }
 
+  private smoothed = new Map<string, number>();
+
   private drawKpis() {
     const fr = this.frames(), n = fr.length, durs = fr.map((f) => f.dur);
     const span = n > 1 ? fr[n - 1].at - fr[Math.max(0, n - 61)].at : 0, count = Math.min(n - 1, 60);
     const fps = span > 0 ? (count / span) * 1000 : 0;
-    const avg = n ? durs.reduce((a, b) => a + b, 0) / n : 0, p95 = percentile(durs, 0.95), worst = n ? Math.max(...durs) : 0;
+    // Exponential smoothing so the readouts glide instead of jumping on every redraw.
+    const smooth = (key: string, v: number) => { const p = this.smoothed.get(key), r = p === undefined || !n ? v : p + (v - p) * 0.15; this.smoothed.set(key, r); return r; };
+    const avg = smooth("avg", n ? durs.reduce((a, b) => a + b, 0) / n : 0), p95 = smooth("p95", percentile(durs, 0.95)), worst = smooth("worst", n ? Math.max(...durs) : 0);
     const long = durs.filter((d) => d > 16.7).length;
-    let tick = 0; for (const s of this.graph.stats.values()) tick += s.ms;
+    let rawTick = 0; for (const s of this.graph.stats.values()) rawTick += s.ms;
+    const tick = smooth("tick", rawTick);
     const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
     const WHAT: Record<string, string> = {
       "Frame rate": "How many screen frames per second the app draws. 60 is smooth; under 30 feels laggy.",
