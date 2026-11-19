@@ -115,13 +115,13 @@ describe("relay", () => {
   });
   it("publishes the game to alderoberge and brings a distant phone's move back", async () => {
     let row: { token: string; code: string; rev: number; state: string | null; queue: string; touched: number } | null = null;
-    const ctx: BridgeState = {
-      blockConcurrencyWhile: async (fn) => { await fn(); },
+    const ctx = {
+      blockConcurrencyWhile: async (fn: () => Promise<void>) => { await fn(); },
       storage: { sql: { exec(query: string, ...binds: unknown[]) {
         if (query.includes("INSERT")) row = { token: String(binds[0]), code: String(binds[1]), rev: Number(binds[2]), state: binds[3] as string | null, queue: String(binds[4]), touched: Number(binds[5]) };
         return { toArray: () => query.includes("SELECT") && row ? [row] : [] };
       } } },
-    };
+    } as BridgeState;
     const room = new GameBridge(ctx, {});
     const pub = createServer(async (req, res) => {
       const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer);

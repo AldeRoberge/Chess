@@ -73,7 +73,7 @@ export function createRelay(opts: RelayOptions = {}) {
       const root = bridge.endsWith("/") ? bridge : `${bridge}/`;
       const join = path.includes("?") ? "&" : "?";
       const r = await fetch(`${root}${path}${join}code=${encodeURIComponent(code)}`, {
-        method: "POST", headers: { Authorization: `Bearer ${hostToken}`, "Content-Type": type }, body, signal: AbortSignal.timeout(2500),
+        method: "POST", headers: { Authorization: `Bearer ${hostToken}`, "Content-Type": type }, body: typeof body === "string" ? body : body as unknown as BodyInit, signal: AbortSignal.timeout(2500),
       });
       if (!r.ok) return null;
       const j = await r.json() as { commands?: RemoteCommand[]; clients?: number };

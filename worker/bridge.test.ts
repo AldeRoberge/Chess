@@ -14,7 +14,7 @@ function memory(): BridgeState {
       if (query.includes("INSERT")) row = { token: String(binds[0]), code: String(binds[1]), rev: Number(binds[2]), state: binds[3] as string | null, queue: String(binds[4]), touched: Number(binds[5]) };
       return { toArray: () => query.includes("SELECT") && row ? [row] : [] };
     } } },
-  };
+  } as BridgeState;
 }
 
 const post = (room: GameBridge, path: string, body: string, auth = token) =>

@@ -125,7 +125,7 @@ export class GameBridge {
       if (route.startsWith("api/frame/") && req.method === "GET") {
         const f = this.frames.get(route.slice("api/frame/".length).replace(/\.jpg$/, ""));
         if (!f || !this.fresh(now)) return json({ error: "No picture from that camera yet." }, 404);
-        return new Response(f.jpeg, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
+        return new Response(f.jpeg as unknown as BodyInit, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
       }
       if (route === "api/cmd" && req.method === "POST") {
         const raw = await req.text();
