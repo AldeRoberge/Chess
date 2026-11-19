@@ -47,7 +47,7 @@ export class Calibrate {
       const best = v.results[0];
       if (!best || v.validation.accuracy < 0.9 || v.validation.consistency < 0.95) return { ok: false, text: "Validation is too weak to apply. Check corners and lighting, then restart Calibrate." };
       const cameras = this.cameras();
-      if (!cameras.length || cameras.some(c => !this.samples[0].cameras.some(b => b.id === c.id))) return { ok: false, text: "Camera setup changed. Restart calibration." };
+      if (cameras.length !== this.samples[0].cameras.length || cameras.some(c => !this.samples[0].cameras.some(b => b.id === c.id && JSON.stringify(b.corners) === JSON.stringify(c.sampler.cfg.corners)))) return { ok: false, text: "Camera setup changed. Restart calibration." };
       for (const camera of cameras) {
         Object.assign(this.graph.nodes.get(camera.id)!.params, best.settings);
         camera.sampler.cfg = { ...camera.sampler.cfg, ...best.settings };

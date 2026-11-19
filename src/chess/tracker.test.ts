@@ -17,6 +17,28 @@ const settled = (g: Chess, flip?: number[]): BoardBelief => {
 };
 
 describe("PositionTracker", () => {
+  it("detects a faint single-camera knight move through fusion and hysteresis", () => {
+    const tracker = new PositionTracker(), fusion = new Fusion(), filter = new Stabilizer();
+    const game = new Chess();
+    let result = tracker.snapshot();
+    const feed = (t: number, faint: boolean) => {
+      const board = settled(game);
+      if (faint) {
+        // Consistent but below the integrator's amplitude threshold in both directions.
+        board.occ[62] = 0.4;
+        board.occ[45] = 0.6;
+      }
+      result = tracker.observe(filter.step(fusion.fuse([{
+        cam: "A", t, quality: 0.77, weight: 1, motion: 0,
+        occ: board.occ, white: board.white, handSquares: new Uint8Array(64),
+      }], t)));
+    };
+    for (let t = 0; t <= 2000; t += 100) feed(t, false);
+    game.move("Nf3");
+    for (let t = 2100; t <= 4500; t += 100) feed(t, true);
+    expect(result.history).toEqual(["Nf3"]);
+  });
+
   it("accepts a legal move after the confirm count and emits events", () => {
     const t = new PositionTracker();
     const g = new Chess(); g.move("e4");

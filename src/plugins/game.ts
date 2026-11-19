@@ -131,7 +131,7 @@ const engine: NodeSpec<EngState> = {
   ],
   init: () => ({ engine: null, loading: false, thinkingFen: "", hintFen: "", out: [], info: "", now: 0 }),
   process({ game, director }, { params, state, now }) {
-    if (calibrationRuntime.active) return { events: [] };
+    if (calibrationRuntime.active) { state.thinkingFen = ""; return { events: [] }; }
     state.now = now;
     const g = game as TrackResult | undefined, d = director as DirectorOut | undefined;
     const out: ExperienceEvent[] = [];
@@ -144,11 +144,11 @@ const engine: NodeSpec<EngState> = {
       state.engine.setElo(d.elo);
       const fen = g.fen;
       void state.engine.bestMove(fen).then((uci) => {
+        if (calibrationRuntime.active) { state.thinkingFen = ""; return; }
         const c = new Chess(fen);
         const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
         state.hintFen = fen;
         bus.engineHint = { from: m.from, to: m.to };
-        if (calibrationRuntime.active) return;
         const ev: ExperienceEvent = { type: "engine-move", t: state.now, data: { uci, san: m.san, from: m.from, to: m.to } };
         state.out.push(ev);
         if (params.virtualHand) virtualTable.play(uci, state.now);

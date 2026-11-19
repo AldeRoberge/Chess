@@ -98,7 +98,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const promoEl = el("div", "rm-promo"); promoEl.hidden = true;
   const notice = el("p", "rm-notice"); notice.setAttribute("role", "status");
   const tabs = el("div", "rm-tabs"); tabs.setAttribute("role", "tablist");
-  const tabBtns = (["moves", "camera", "info", "calibrate"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info", calibrate: "Calibrate" }[t]), { moves: "list", camera: "camera", info: "info", calibrate: "settings" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
+  const tabBtns = (["moves", "camera", "info", "calibrate"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info", calibrate: "Calibrate" }[t]), { moves: "list", camera: "camera", info: "info", calibrate: "setup" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
   function build() { page.replaceChildren(head, turn, clocksEl, boardEl, confidence, promoEl, nav, acts, notice, tabs, panel, bottom); draw(); }

@@ -324,6 +324,32 @@ describe("Fusion", () => {
 const belief = (over: Partial<BoardBelief> = {}, occ = 1, white = 1): BoardBelief => ({ t: 0, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), conf: new Float32Array(64).fill(1), fidelity: 0.9, handOver: false, settled: false, cams: 2, ...over });
 
 describe("Stabilizer", () => {
+  it("resolves sustained weak evidence but rejects flicker and unknown squares", () => {
+    const s = new Stabilizer();
+    let last: BoardBelief;
+    for (let t = 0; t <= 2000; t += 100) {
+      const b = belief({ t }, 0.5, 0.5);
+      b.occ[0] = 0.6;
+      b.occ[1] = t % 200 ? 0.6 : 0.4;
+      last = s.step(b);
+    }
+    expect(last!.occ[0]).toBe(1);
+    expect(last!.occ[1]).toBe(0);
+    expect(last!.occ[2]).toBe(0);
+    for (let t = 2100; t <= 4000; t += 100) last = s.step(belief({ t }, 0.4, 0.4));
+    expect(last!.occ[0]).toBe(0);
+    expect(last!.white[0]).toBe(0);
+  });
+
+  it("does not count time under a hand or offline as sustained evidence", () => {
+    const s = new Stabilizer();
+    s.step(belief({ t: 0 }, 0.6));
+    s.step(belief({ t: 1000, handOver: true }, 0.6));
+    expect(s.step(belief({ t: 1100 }, 0.6)).occ[0]).toBe(0);
+    s.step(belief({ t: 2000, cams: 0 }, 0.6));
+    expect(s.step(belief({ t: 2100 }, 0.6)).occ[0]).toBe(0);
+  });
+
   it("needs sustained evidence to turn a square on (hysteresis) and settles after a quiet period", () => {
     const s = new Stabilizer();
     let last = s.step(belief({ t: 0 }, 0.5, 0.5));
