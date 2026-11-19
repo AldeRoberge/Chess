@@ -24,3 +24,25 @@ export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
   { id: "botplay", ...(botplay as unknown as WorkflowFile) },
   { id: "humanvsbot", ...(humanvsbot as unknown as WorkflowFile) },
 ];
+
+/**
+ * A live workflow ships wired to one webcam. When the saved setup has two or more enabled webcams, give it a second one:
+ * the first keeps its source and board reader, the second is a copy of them (own device and corners) feeding the fuser and people tracker.
+ */
+export function withLiveCameras(w: WorkflowFile, saved: SetupConfig | null): { graph: GraphJSON; setup: SetupConfig | null } {
+  const cams = (saved?.cameras ?? []).filter((c) => c.kind === "webcam" && c.online).slice(0, 2);
+  const src = w.graph.nodes.find((n) => n.type === "source.webcam"), rd = src && w.graph.nodes.find((n) => n.type === "vision.boardReader" && w.graph.edges.some((e) => e.from.node === src.id && e.to.node === n.id));
+  if (cams.length < 2 || !src || !rd || w.graph.nodes.filter((n) => n.type === "source.webcam").length !== 1) return { graph: w.graph, setup: w.setup };
+  const g: GraphJSON = JSON.parse(JSON.stringify(w.graph));
+  const s0 = g.nodes.find((n) => n.id === src.id)!, r0 = g.nodes.find((n) => n.id === rd.id)!;
+  const fuse = g.nodes.find((n) => n.type === "vision.fuse"), pose = g.nodes.find((n) => n.type === "tracking.pose");
+  const id = (p: string) => { let i = 1; while (g.nodes.some((n) => n.id === p + i) || g.edges.some((e) => e.id === p + i)) i++; return p + i; };
+  const s1 = { ...s0, id: id("cam"), y: s0.y + 360, params: { ...s0.params } }, r1 = { ...r0, id: id("cam"), y: r0.y + 360, params: { ...r0.params } };
+  s1.id = id("camsrc"); g.nodes.push(s1); r1.id = id("camrd"); g.nodes.push(r1);
+  [s0, s1].forEach((n, i) => { n.params = { ...n.params, device: cams[i].deviceId || cams[i].label, channel: cams[i].channel, online: true }; });
+  [r0, r1].forEach((n, i) => { n.params = { ...n.params, cam: cams[i].id, corners: cams[i].corners, weight: cams[i].trust }; });
+  g.edges.push({ id: id("ecam"), from: { node: s1.id, port: "frame" }, to: { node: r1.id, port: "frame" } });
+  if (fuse) g.edges.push({ id: id("ecam"), from: { node: r1.id, port: "obs" }, to: { node: fuse.id, port: "o2" } });
+  if (pose) g.edges.push({ id: id("ecam"), from: { node: s1.id, port: "frame" }, to: { node: pose.id, port: "f2" } });
+  return { graph: g, setup: w.setup ? { ...w.setup, cameras: cams } : w.setup };
+}
