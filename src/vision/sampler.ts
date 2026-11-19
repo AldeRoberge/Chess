@@ -2,6 +2,9 @@ import { applyH, boardToImage } from "./homography";
 import { clamp, sigmoid, type GrayFrame, type Pt, type SquareObs } from "./types";
 
 export interface SamplerConfig {
+  shapeWeight?: number; // texture/edge evidence strength
+  colorWeight?: number; // brightness evidence strength
+  positionWeight?: number; // perspective correction strength
   corners: Pt[]; // [a8,h8,h1,a1] in image pixels
   threshold: number; // |delta| that counts as "piece present", as a fraction of the square's empty brightness (exposure-independent)
   softness: number; // sigmoid softness, same units
@@ -58,7 +61,7 @@ export class BoardSampler {
   constructor(public cam: string, public cfg: SamplerConfig = defaultSamplerConfig()) {}
 
   private prepare() {
-    const key = JSON.stringify(this.cfg.corners) + this.cfg.grid + this.cfg.patch;
+    const key = JSON.stringify(this.cfg.corners) + this.cfg.grid + this.cfg.patch + (this.cfg.positionWeight ?? 1);
     if (key === this.key) return;
     this.key = key;
     this.H = boardToImage(this.cfg.corners);
@@ -95,8 +98,8 @@ export class BoardSampler {
     // The longer image edge is closer to the camera. Piece tops lean toward the far, shorter edge.
     const rank = (rank1 - rank8) / (rank1 + rank8 || 1);
     const file = (fileA - fileH) / (fileA + fileH || 1);
-    this.leanU = clamp(file, -1, 1) * 0.2;
-    this.leanV = clamp(-rank, -1, 1) * 0.2;
+    this.leanU = clamp(file, -1, 1) * 0.2 * (this.cfg.positionWeight ?? 1);
+    this.leanV = clamp(-rank, -1, 1) * 0.2 * (this.cfg.positionWeight ?? 1);
     return { u: this.leanU, v: this.leanV };
   }
 
@@ -311,7 +314,7 @@ export class BoardSampler {
         // and outvotes the camera that can still see it. Leave it undecided.
         const glare = v >= 220 && !(zTex > -0.5);
         if (glare) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
-        else occ[sq] = sigmoid(Math.max(zBright, zTex));
+        else occ[sq] = sigmoid(Math.max(zBright * (this.cfg.colorWeight ?? 1), zTex === -Infinity ? -Infinity : zTex * (this.cfg.shapeWeight ?? 1)));
       }
       const thr = Math.max(ref * this.cfg.threshold, 12);
       // Glare flickers on its own. Counting it as a hand freezes the board, so a move on those squares never lands.

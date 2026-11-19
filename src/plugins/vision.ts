@@ -43,6 +43,10 @@ const reader: NodeSpec<ReaderState> = {
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
     { id: "follow", kind: "bool", label: "Follow camera moves", value: true },
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.15, max: 0.6, step: 0.01, value: 0.22 },
+    { id: "shapeWeight", kind: "number", label: "Shape / texture evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
+    { id: "colorWeight", kind: "number", label: "Color / brightness evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
+    { id: "patch", kind: "number", label: "Piece size / sample width", min: 0.35, max: 0.85, step: 0.05, value: 0.6 },
+    { id: "positionWeight", kind: "number", label: "Position / perspective correction", min: 0, max: 2, step: 0.25, value: 1 },
     { id: "weight", kind: "number", label: "Trust", min: 0, max: 2, step: 0.1, value: 1 },
     { id: "clean", kind: "bool", label: "Clean up noise", value: true },
     { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
@@ -100,7 +104,13 @@ const reader: NodeSpec<ReaderState> = {
       // New corners make the learned empty squares stale: learn the start position again, unless a game is under way.
       if (c) { s.cfg.corners = c; if (state.corners && !gameStarted()) { state.autoDone = false; state.calTries = 0; state.calT = -Infinity; } state.corners = String(params.corners); }
     }
+    const settingsKey = JSON.stringify([params.threshold, params.shapeWeight, params.colorWeight, params.patch, params.positionWeight]);
+    if ((state as ReaderState & { settingsKey?: string }).settingsKey !== settingsKey) {
+      (state as ReaderState & { settingsKey?: string }).settingsKey = settingsKey; state.readOf = null;
+    }
     s.cfg.threshold = Number(params.threshold);
+    s.cfg.shapeWeight = Number(params.shapeWeight ?? 1); s.cfg.colorWeight = Number(params.colorWeight ?? 1);
+    s.cfg.positionWeight = Number(params.positionWeight ?? 1); s.cfg.patch = Number(params.patch ?? 0.6);
     if (!state.cleaned) { setFidelity(null); return { obs: null }; } // the first picture is still being cleaned
     const img = state.cleaned!;
     if (params.learn) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; state.readOf = null; }

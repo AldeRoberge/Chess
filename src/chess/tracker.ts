@@ -193,7 +193,7 @@ export class PositionTracker {
     const diff: number[] = [];
     for (let i = 0; i < 64; i++) if (exp[i] !== obsGrid[i]) diff.push(i);
     const extraOnly = diff.every((i) => !exp[i] && !!obsGrid[i]);
-    if (!b.handOver && b.cams > 0 && this.game.history().length > 0
+    if (!b.handOver && b.cams > 0 && (this.lastMove !== null || this.game.history().length > 0)
       && diff.length > 0 && diff.length <= MAX_UNCERTAIN_SQUARES && extraOnly) {
       this.cand = ""; this.candN = 0;
       return this.base("synced", diff, events, b.fidelity);
@@ -317,7 +317,7 @@ export class PositionTracker {
     // disagreement: re-evaluate it on every reading so a clear legal move still wins.
     // Extra blobs alone cannot be a move, even if the camera is confident about them.
     if (!b.handOver && b.cams > 0 && diff.length <= MAX_UNCERTAIN_SQUARES
-      && (minorUncertainty || (this.game.history().length > 0 && extraOnly))) {
+      && (minorUncertainty || ((this.lastMove !== null || this.game.history().length > 0) && extraOnly))) {
       return this.base("synced", diff, events, b.fidelity);
     }
     // No legal move explained the picture. Extra squares the cameras are unsure about are a lamp or a shadow:
