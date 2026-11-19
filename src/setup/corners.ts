@@ -162,37 +162,52 @@ function nudgeEdge(q: Pt[], edge: number, dist: number): Pt[] {
 function squareTones(lum: Float32Array, W: number, H: number, pts: Pt[]): { light: number; dark: number; tol: number } {
   const vals = pts.map((p) => lum[clamp(Math.round(p.y), 0, H - 1) * W + clamp(Math.round(p.x), 0, W - 1)]).sort((a, b) => a - b);
   const dark = vals[Math.floor(vals.length * 0.3)], light = vals[Math.floor(vals.length * 0.7)];
-  // Tight enough that the table, even when it sits near the dark squares, does not count as a square.
-  return { light, dark, tol: Math.max(12, Math.abs(light - dark) * 0.22) };
+  // Tight enough that a light border printed just off the light squares, and the table just off the dark ones, stay outside.
+  return { light, dark, tol: Math.max(12, Math.abs(light - dark) * 0.1) };
 }
 
 const isSquare = (v: number, tone: { light: number; dark: number; tol: number }) => Math.min(Math.abs(v - tone.light), Math.abs(v - tone.dark)) <= tone.tol;
 
-/** True when the strip just inside this edge still alternates light and dark. A solid border or the table does not. */
-function edgeOnBoard(lum: Float32Array, w: number, h: number, q: Pt[], edge: number, gap: number): boolean {
+/** True when the strip just inside this edge alternates in runs about a square wide. Glyphs and the table do not. */
+function edgeOnBoard(lum: Float32Array, w: number, h: number, q: Pt[], edge: number, gap: number, minRun: number): boolean {
   const a = q[edge], b = q[(edge + 1) % 4];
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
   const nx = dy / len, ny = -dx / len;
-  let runs = 0, prev = NaN;
+  let runs = 0, runPx = 0, anchor = NaN;
   for (let dist = len * 0.06; dist < len * 0.94; dist += 2) {
     const t = dist / len;
     const x = Math.round(a.x + dx * t - nx * 2), y = Math.round(a.y + dy * t - ny * 2);
     if (x < 0 || y < 0 || x >= w || y >= h) continue;
     const v = lum[y * w + x];
-    if (Number.isNaN(prev) || Math.abs(v - prev) > gap) { runs++; prev = v; }
+    if (Number.isNaN(anchor) || Math.abs(v - anchor) <= gap) runPx += 2;
+    else { if (runPx >= minRun) runs++; anchor = v; runPx = 2; }
   }
+  if (runPx >= minRun) runs++;
   return runs >= 4;
 }
 
-/** Outermost pixels that match the square tones. For a convex board this is the four corners; a printed border is solid and fails the checker score later. */
-function maskCorners(lum: Float32Array, w: number, h: number, blob: Pt[], tone: { light: number; dark: number; tol: number }, pad: number): Pt[] | null {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const p of blob) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-  const xa = Math.max(0, Math.floor(x0 - pad)), ya = Math.max(0, Math.floor(y0 - pad));
-  const xb = Math.min(w - 1, Math.ceil(x1 + pad)), yb = Math.min(h - 1, Math.ceil(y1 + pad));
-  const pts: Pt[] = [];
-  for (let y = ya; y <= yb; y += 2) for (let x = xa; x <= xb; x += 2) if (isSquare(lum[y * w + x], tone)) pts.push({ x, y });
-  return pts.length >= 40 ? extremes(pts) : null;
+/** Point inside a clockwise convex quad. */
+function insideQuad(q: Pt[], x: number, y: number): boolean {
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4];
+    if ((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x) < 0) return false;
+  }
+  return true;
+}
+
+/** Every pixel of the two square colours, within `within` (a bright table or glare elsewhere in the picture has the same tones). A few checker hits are enough to learn the colours; the outline is the board even when perspective hid most of the grid. */
+function maskCorners(lum: Float32Array, w: number, h: number, tone: { light: number; dark: number; tol: number }, within: Pt[]): Pt[] | null {
+  let tl: Pt | null = null, tr: Pt | null = null, br: Pt | null = null, bl: Pt | null = null, n = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!isSquare(lum[y * w + x], tone) || !insideQuad(within, x, y)) continue;
+    n++;
+    const p = { x, y };
+    if (!tl || p.x + p.y < tl.x + tl.y) tl = p;
+    if (!tr || p.x - p.y > tr.x - tr.y) tr = p;
+    if (!br || p.x + p.y > br.x + br.y) br = p;
+    if (!bl || p.x - p.y < bl.x - bl.y) bl = p;
+  }
+  return n >= 40 && tl && tr && br && bl ? [tl, tr, br, bl] : null;
 }
 
 /**
@@ -210,12 +225,15 @@ function fitQuad(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel
   for (let pass = 0; pass < 2; pass++) for (let e = 0; e < 4; e++) {
     let best = 0, seen = false, misses = 0;
     for (let d = -Math.round(span); d <= span; d++) {
-      if (edgeOnBoard(lum, img.width, img.height, nudgeEdge(walked, e, d), e, gap)) { best = d; seen = true; misses = 0; }
+      if (edgeOnBoard(lum, img.width, img.height, nudgeEdge(walked, e, d), e, gap, period * 0.45)) { best = d; seen = true; misses = 0; }
       else if (seen && ++misses > 3) break;
     }
     if (seen) walked = nudgeEdge(walked, e, best);
   }
-  const masked = maskCorners(lum, img.width, img.height, blob, tone, period * 6);
+  // The outline may only reach a little past the walked quad; the table and glare share the square tones.
+  let reach = walked;
+  for (let e = 0; e < 4; e++) reach = nudgeEdge(reach, e, period * 1.2);
+  const masked = convexQuad(reach, 200) ? maskCorners(lum, img.width, img.height, tone, reach) : null;
   const sw = scoreOf(img, walked, ch), sm = masked ? scoreOf(img, masked, ch) : 0;
   console.log("fit", "walk", sw.toFixed(2), walked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "), "mask", sm.toFixed(2), masked ? masked.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | ") : "none", "tone", Math.round(tone.dark), Math.round(tone.light), "tol", tone.tol.toFixed(1));
   return sm > sw ? masked! : walked;
@@ -247,8 +265,10 @@ export function detectCornersByShape(img: ImageData): ShapeCorners | null {
   const hits = checkerHits(img);
   if (!hits) { console.log("reject no hits"); return null; }
   const blob = largestBlob(hits.pts);
-  if (blob.length < 24) { console.log("reject blob", blob.length, "pts", hits.pts.length); return null; }
-  const fitted = fitQuad(img, blob, hits.sx, hits.sy, hits.channel);
+  // A tilted board matches one period only in patches, so the hits stay sparse. Any of them still names the two square colours.
+  const seed = blob.length >= 24 ? blob : hits.pts.length >= 24 ? hits.pts : null;
+  if (!seed) { console.log("reject blob", blob.length, "pts", hits.pts.length); return null; }
+  const fitted = fitQuad(img, seed, hits.sx, hits.sy, hits.channel);
   const corners = orientByShade(img, fitted, hits.channel);
   const separation = scoreOf(img, corners, hits.channel);
   if (separation < 0.45) {
@@ -343,7 +363,8 @@ export function applyBorderLabels(img: ImageData, corners: Pt[]): LabelOrientati
   };
   for (let e = 0; e < 4; e++) {
     const chars = readEdge(img, H, e);
-    if (!chars) continue;
+    if (!chars) { notes.push(`edge ${e} unreadable`); continue; }
+    if (notes.length < 8) notes.push(`edge ${e} [${chars.join("")}]`);
     const opts = [
       { n: hitsOf(chars, FILES), kind: "file" as const, start: "a" },
       { n: hitsOf(chars, [...FILES].reverse().join("")), kind: "file" as const, start: "h" },
@@ -523,6 +544,7 @@ export async function detectBoardCorners(img: ImageData, opt: DetectOptions = {}
   let labels = false;
   if (corners) {
     const named = applyBorderLabels(img, corners);
+    if (!named.labels) console.log("labels", named.notes, "corners", corners.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "));
     corners = named.corners; labels = named.labels;
   }
   const key = opt.apiKey?.trim() ?? "";

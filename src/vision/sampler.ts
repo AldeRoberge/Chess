@@ -41,6 +41,10 @@ export class BoardSampler {
   ref = new Float32Array(64).fill(NaN);
   rimRef = new Float32Array(64).fill(NaN);
   prev = new Float32Array(64).fill(NaN);
+  /** Texture of an empty square (std-dev of its middle) as measured at calibration; NaN until learned. */
+  spreadGate = NaN;
+  /** ln(brightness / empty brightness) of white and black pieces on light and dark squares, learned from the start position. */
+  private tone: { w: [number, number]; b: [number, number] } | null = null;
   leanU = 0;
   leanV = 0;
   private H: number[] = [];
@@ -127,14 +131,28 @@ export class BoardSampler {
     return out;
   }
 
-  private squares(frame: GrayFrame): { crown: Float32Array; rim: Float32Array } {
+  /** Std-dev of the unclipped samples: an empty square is flat, any piece (even white on white) has shading and edges. */
+  private spreadAt(frame: GrayFrame, pts: Pt[]): number {
+    let n = 0, sum = 0, sq2 = 0;
+    for (const p of pts) {
+      const v = this.pixel(frame, p.x, p.y);
+      if (v === null || v >= SAT) continue;
+      n++; sum += v; sq2 += v * v;
+    }
+    if (n < 4) return NaN;
+    const m = sum / n;
+    return Math.sqrt(Math.max(0, sq2 / n - m * m));
+  }
+
+  private squares(frame: GrayFrame): { crown: Float32Array; rim: Float32Array; spread: Float32Array } {
     this.prepare();
-    const crown = new Float32Array(64), rim = new Float32Array(64);
+    const crown = new Float32Array(64), rim = new Float32Array(64), spread = new Float32Array(64);
     for (let sq = 0; sq < 64; sq++) {
       crown[sq] = this.medianAt(frame, this.crownPts[sq]);
       rim[sq] = this.medianAt(frame, this.rimPts[sq]);
+      spread[sq] = this.spreadAt(frame, this.crownPts[sq]);
     }
-    return { crown, rim };
+    return { crown, rim, spread };
   }
 
   /**
@@ -145,7 +163,9 @@ export class BoardSampler {
   private cue(crown: number, rim: number, ref: number, rim0: number): { drive: number; gate: number } {
     const thr = Math.max(ref * this.cfg.threshold, 12);
     const thrRim = Math.max(ref * this.cfg.threshold * 0.42, 9);
-    const dRef = crown - ref, dRim = crown - rim;
+    const dRef = crown - ref;
+    // How much the middle stands out from its border, beyond the contrast an empty square already has (blur from the neighbouring colour).
+    const dRim = crown - rim - (Number.isFinite(rim0) && Number.isFinite(ref) ? ref - rim0 : 0);
     const useRim = Number.isFinite(rim) && Number.isFinite(rim0)
       && Math.abs(dRim) >= thrRim
       && dRef * dRim >= 0
@@ -154,18 +174,18 @@ export class BoardSampler {
   }
 
   /** For the hover card: the brightnesses and the difference that actually decided this square. */
-  diagnose(frame: GrayFrame, sq: number): { crown: number; rim: number; ref: number; drive: number; gate: number } {
+  diagnose(frame: GrayFrame, sq: number): { crown: number; rim: number; ref: number; drive: number; gate: number; spread: number; spreadGate: number } {
     this.prepare();
     const crown = this.medianAt(frame, this.crownPts[sq]);
     const rim = this.medianAt(frame, this.rimPts[sq]);
     const ref = this.ref[sq];
     const scored = this.cue(crown, rim, ref, this.rimRef[sq]);
-    return { crown, rim, ref, drive: scored.drive, gate: scored.gate };
+    return { crown, rim, ref, drive: scored.drive, gate: scored.gate, spread: this.spreadAt(frame, this.crownPts[sq]), spreadGate: this.spreadGate };
   }
 
   /** Learn empty-square references from a frame of the starting position (ranks 3-6 are empty). */
   calibrateFromStart(frame: GrayFrame) {
-    const { crown, rim } = this.squares(frame);
+    const { crown, rim, spread } = this.squares(frame);
     const light = this.fit(crown, true), dark = this.fit(crown, false);
     const lightRim = this.fit(rim, true), darkRim = this.fit(rim, false);
     for (let sq = 0; sq < 64; sq++) {
@@ -179,6 +199,18 @@ export class BoardSampler {
       this.ref[sq] = open && !spike ? crown[sq] : pred;
       this.rimRef[sq] = open && !spike ? rim[sq] : predRim;
     }
+    // Texture of an empty square: 95th percentile over the open ranks (pieces and spikes aside), with room for sensor noise.
+    const flat = [];
+    for (let sq = 16; sq < 48; sq++) if (Number.isFinite(spread[sq])) flat.push(spread[sq]);
+    flat.sort((a, b) => a - b);
+    this.spreadGate = flat.length >= 8 ? Math.max(flat[Math.floor(flat.length * 0.9)] * 2.2, flat[Math.floor(flat.length * 0.9)] + 7) : NaN;
+    // What a white and a black piece look like next to an empty square, per square colour: the pieces' own start squares.
+    const lr = (sq: number) => (Number.isFinite(crown[sq]) && Number.isFinite(this.ref[sq]) && crown[sq] > 0 ? Math.log(Math.max(1, crown[sq]) / Math.max(1, this.ref[sq])) : NaN);
+    const med = (xs: number[]) => { xs.sort((a, b) => a - b); return xs.length ? xs[xs.length >> 1] : NaN; };
+    const lvl = (from: number, to: number, lightSq: boolean) => { const xs: number[] = []; for (let sq = from; sq < to; sq++) if (((sq % 8 + Math.floor(sq / 8)) % 2 === 0) === lightSq && Number.isFinite(lr(sq))) xs.push(lr(sq)); return med(xs); };
+    const w: [number, number] = [lvl(48, 64, true), lvl(48, 64, false)], b: [number, number] = [lvl(0, 16, true), lvl(0, 16, false)];
+    // Only trust the learned look when white and black are clearly different on both square colours.
+    this.tone = [0, 1].every((k) => Number.isFinite(w[k]) && Number.isFinite(b[k]) && Math.abs(w[k] - b[k]) > 0.25) ? { w, b } : null;
   }
 
   /** Brightness of one colour as a + b·file + c·row, fitted to the open ranks with spikes left out. */
@@ -218,7 +250,7 @@ export class BoardSampler {
   }
 
   read(frame: GrayFrame, weight = 1): SquareObs {
-    const { crown, rim } = this.squares(frame);
+    const { crown, rim, spread } = this.squares(frame);
     const occ = new Float32Array(64), white = new Float32Array(64).fill(0.5);
     const hand = new Uint8Array(64);
     let moving = 0, bad = 0;
@@ -231,10 +263,16 @@ export class BoardSampler {
       const soft = softOf(ref);
       const blown = v >= SAT || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
       if (blown) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
-      else if (v <= 3) { bad++; occ[sq] = sigmoid((Math.abs(drive) - gate) / soft); white[sq] = sigmoid(drive / (soft * 2)); }
       else {
-        occ[sq] = sigmoid((Math.abs(drive) - gate) / soft);
-        white[sq] = sigmoid(drive / (soft * 2));
+        if (v <= 3) bad++;
+        let z = (Math.abs(drive) - gate) / soft;
+        // Texture: an empty square is flat, a piece is not, whatever its colour.
+        if (Number.isFinite(this.spreadGate) && Number.isFinite(spread[sq])) z = Math.max(z, (spread[sq] - this.spreadGate) / Math.max(1.5, this.spreadGate * 0.25));
+        occ[sq] = sigmoid(z);
+        if (this.tone && v > 3) {
+          const lr = Math.log(Math.max(1, v) / Math.max(1, ref)), k = ((sq % 8) + Math.floor(sq / 8)) % 2; // 0 = light square
+          white[sq] = sigmoid((Math.abs(lr - this.tone.b[k]) - Math.abs(lr - this.tone.w[k])) / 0.3);
+        } else white[sq] = sigmoid(drive / (soft * 2));
       }
       const thr = Math.max(ref * this.cfg.threshold, 12);
       if (!Number.isNaN(p) && Math.abs(v - p) > thr * 1.2) { moving++; hand[sq] = 1; }

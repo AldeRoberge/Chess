@@ -85,6 +85,7 @@ describe("checkerboard shape", () => {
     for (const id of ["A", "B"] as const) {
       const lum = renderLuminance({ pieces: [], blobs: [] }, { width: FRAME_W, height: FRAME_H, rig: RIGS[id] });
       const found = detectCornersByShape(grayImage(lum));
+      console.log(id, rigCorners(RIGS[id], 0).map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" | "));
       expect(found, id).toBeTruthy();
       near(found!.corners, rigCorners(RIGS[id], 0), 14);
     }
