@@ -213,6 +213,15 @@ describe("BoardSampler", () => {
     expect(o.occ[glareSq]).toBeLessThan(0.6); // undecided, not a confident white piece
     expect(o.occ[calm]).toBeLessThan(0.15);
   });
+  it("reads an empty square that is bright by nature as empty, not as undecided glare", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
+    const paint = () => boardPaint(corners, (sq) => (light(sq) ? 232 : 60));
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateEmpty(paint());
+    const o = s.read(paint());
+    for (const sq of [sqIndex("d4"), sqIndex("e4"), sqIndex("c4"), sqIndex("f5")]) expect(o.occ[sq]).toBeLessThan(0.15);
+  });
   it("does not treat a lamp flicker as a hand, and does not vote a washed-out square empty", () => {
     const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
     const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;

@@ -287,7 +287,10 @@ export class BoardSampler {
       if (Number.isNaN(v) || !this.calibrated || !Number.isFinite(ref)) { occ[sq] = 0.5; bad++; this.prev[sq] = v; continue; }
       const { drive, gate } = this.cue(v, edge, ref, this.rimRef[sq]);
       const soft = softOf(ref);
-      const blown = v >= SAT || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
+      // Glare is light the square did not have when it was learned empty. A pale square that is bright by nature
+      // (v close to its own empty reference) is just an empty square, not a lamp wash-out.
+      const lifted = v - ref > Math.max(12, ref * 0.05);
+      const blown = (v >= SAT && lifted) || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
       if (blown) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
       else {
         if (v <= 3) bad++;
@@ -312,7 +315,7 @@ export class BoardSampler {
         if (drive > 0 && zTex > -Infinity && zTex < -0.5) zBright = Math.min(zBright, zTex);
         // A lamp that washes the square out is not a vote. Calling it empty erases the knight under the glare
         // and outvotes the camera that can still see it. Leave it undecided.
-        const glare = v >= 220 && !(zTex > -0.5);
+        const glare = v >= 220 && lifted && !(zTex > -0.5);
         if (glare) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
         else occ[sq] = sigmoid(Math.max(zBright * (this.cfg.colorWeight ?? 1), zTex === -Infinity ? -Infinity : zTex * (this.cfg.shapeWeight ?? 1)));
       }
