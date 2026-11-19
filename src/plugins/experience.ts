@@ -1,3 +1,4 @@
+import { calibrationRuntime } from "../vision/calibration";
 import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import type { NodeSpec, Plugin } from "../core/types";
@@ -57,6 +58,7 @@ const scenario: NodeSpec<ScenState> = {
   ],
   init: () => ({ runner: null, id: "" }),
   process(_i, { params, state, now, setFidelity }) {
+    if (calibrationRuntime.active) return { events: [], actions: [] };
     const events: ExperienceEvent[] = [];
     if (!params.play) { state.runner = null; setFidelity(null); return { events, actions: [] }; }
     if (!state.runner || state.id !== params.scenario) {

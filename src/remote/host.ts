@@ -4,11 +4,14 @@
  */
 import { Chess } from "chess.js";
 import { fmtClock } from "../clock/types";
+import { movesFromReading } from "../ui/pieceCoach";
+import { sqName } from "../vision/types";
 import type { GrayFrame } from "../vision/types";
 import { resultText, type PlayMode, type RemoteCommand, type RemoteMove, type RemoteState } from "./protocol";
 
 /** The parts of the shared bus the snapshot reads. */
 export interface BusView {
+  board?: { occ: ArrayLike<number>; white: ArrayLike<number>; cams: number; handOver: boolean } | null;
   game: { fen: string; turn: "w" | "b"; ply: number; over: boolean; status: string; history: string[]; fidelity: number; last: { from: string; to: string; san: string } | null } | null;
   director: { phase: string } | null;
   engineHint: { from: string; to: string } | null;
@@ -36,7 +39,10 @@ export function dropStaleHint(b: Pick<BusView, "game" | "engineHint">) {
 export function snapshot(b: BusView, opts: { now: number; virtualBoard: boolean; framed: ReadonlySet<string>; notice: RemoteState["notice"] }): RemoteState {
   dropStaleHint(b);
   const g = b.game;
+  const setupMoves = (g?.ply ?? 0) === 0 && b.director?.phase !== "game" && b.board && b.board.cams > 0 && !b.board.handOver
+    ? (movesFromReading(b.board.occ, b.board.white) ?? []).map((m) => ({ from: sqName(m.from), to: sqName(m.to), code: m.code })) : [];
   return {
+    setupMoves,
     v: 1, t: opts.now, phase: b.director?.phase ?? "idle", status: g?.status ?? "pending",
     fen: g?.fen ?? new Chess().fen(), turn: g?.turn ?? "w", ply: g?.ply ?? 0, over: g?.over ?? false, result: g?.over ? resultText(g.fen) : null,
     moves: g ? [...g.history] : [], last: g?.last ? { from: g.last.from, to: g.last.to, san: g.last.san } : null,
@@ -81,6 +87,7 @@ export function applyRemoteMove(cmd: RemoteMove, ctx: RemoteCtx): { ok: boolean;
 
 /** Carries out a phone command: a move, a takeback, a resignation, or an agreed draw. */
 export function applyRemoteCommand(cmd: RemoteCommand, ctx: RemoteCtx): { ok: boolean; text: string } {
+  if (cmd.type === "calibrate") return { ok: false, text: "Calibration is unavailable." };
   if (cmd.type === "move") return applyRemoteMove(cmd, ctx);
   if (cmd.type === "takeback") {
     if (ctx.table.busy) return { ok: false, text: "A move is still being played. Try again in a second." };

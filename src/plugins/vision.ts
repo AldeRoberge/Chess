@@ -1,3 +1,4 @@
+import { calibrationRuntime } from "../vision/calibration";
 import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
 import { Fusion } from "../vision/fusion";
@@ -82,7 +83,7 @@ const reader: NodeSpec<ReaderState> = {
     const ready = state.ready;
     state.ready = null;
     // Camera nudged? Keep the corners on the board: re-fit them in small steps whenever the grid stops lining up with the squares.
-    const cur = params.follow ? parseCorners(String(params.corners)) : null;
+    const cur = params.follow && !calibrationRuntime.active ? parseCorners(String(params.corners)) : null;
     if (!cur || (state.follower.locked && String(params.corners) !== state.followWrote)) state.follower.unlock(); // switched off, or the corners were edited by hand
     if (ready) {
       state.analysis = ready.analysis; state.cleaned = ready.cleaned;
@@ -114,7 +115,7 @@ const reader: NodeSpec<ReaderState> = {
     if (!state.cleaned) { setFidelity(null); return { obs: null }; } // the first picture is still being cleaned
     const img = state.cleaned!;
     if (params.learn) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; state.readOf = null; }
-    else if (params.autoCal && !state.autoDone && !gameStarted() && img !== state.readOf && img.t - state.calT >= AUTO_CAL_RETRY_MS && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
+    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && !gameStarted() && img !== state.readOf && img.t - state.calT >= AUTO_CAL_RETRY_MS && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
       // Auto-learn keeps trying until the reading looks like the start position. Learning once from the first frame locked in a
       // dark warm-up frame or the default corners for good: every square then read wrong and the game never started.
       span("calibrateFromStart", () => s.calibrateFromStart(img));

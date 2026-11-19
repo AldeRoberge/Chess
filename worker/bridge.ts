@@ -19,13 +19,18 @@ export interface BridgeState {
 }
 
 interface RoomRow { token: string; code: string; rev: number; state: string | null; queue: string; touched: number }
-interface Command { type: string; from?: string; to?: string; promotion?: string }
+interface Command { type: string; from?: string; to?: string; promotion?: string; action?: string; session?: string; step?: number }
 
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
 function command(raw: unknown): Command | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Record<string, unknown>;
+  if (c.type === "calibrate") {
+    if (!["start", "capture", "apply", "stop", "retry"].includes(String(c.action))) return null;
+    if (c.action !== "start" && (typeof c.session !== "string" || c.session.length > 64 || !Number.isInteger(c.step) || Number(c.step) < 0 || Number(c.step) > 32)) return null;
+    return { type: "calibrate", action: String(c.action), ...(c.action === "start" ? {} : { session: c.session as string, step: c.step as number }) };
+  }
   if (typeof c.type === "string" && ENDING.has(c.type)) return { type: c.type };
   if (c.type !== "move" || typeof c.from !== "string" || typeof c.to !== "string" || !SQUARE.test(c.from) || !SQUARE.test(c.to)) return null;
   if (c.promotion !== undefined && !(typeof c.promotion === "string" && "qrbn".includes(c.promotion) && c.promotion.length === 1)) return null;

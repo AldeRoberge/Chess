@@ -1,3 +1,4 @@
+import { renderCalibration } from "../ui/calibrate";
 /**
  * The phone page (`#/remote`): follow the game on the computer, read the moves on a paper score sheet, step back through them,
  * look at what the camera sees, and send a move. It never runs the cameras or the engine; it only talks to the relay.
@@ -10,7 +11,7 @@ import { pieceSet } from "../ui/pieceSets";
 import { Chess } from "chess.js";
 import { codeFromHash, needsPromotion, positionAt, scoreSheet, sideName, targetsFrom, type RemoteCommand, type RemoteState } from "./protocol";
 
-type Tab = "moves" | "camera" | "info";
+type Tab = "moves" | "camera" | "info" | "calibrate";
 interface Poll { rev: number; clients: number; waiting?: boolean; state?: RemoteState; frames?: Record<string, number> }
 export interface RemoteDeps { fetchFn?: typeof fetch; base?: string; storage?: Pick<Storage, "getItem" | "setItem">; poll?: number }
 
@@ -88,11 +89,11 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const promoEl = el("div", "rm-promo"); promoEl.hidden = true;
   const notice = el("p", "rm-notice"); notice.setAttribute("role", "status");
   const tabs = el("div", "rm-tabs"); tabs.setAttribute("role", "tablist");
-  const tabBtns = (["moves", "camera", "info"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info" }[t]), { moves: "list", camera: "camera", info: "info" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
+  const tabBtns = (["moves", "camera", "info", "calibrate"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info", calibrate: "Calibrate" }[t]), { moves: "list", camera: "camera", info: "info", calibrate: "settings" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
   function build() { page.replaceChildren(head, turn, clocksEl, boardEl, confidence, promoEl, nav, acts, notice, tabs, panel); draw(); }
-  const markTabs = () => tabBtns.forEach((b, i) => { const on = (["moves", "camera", "info"] as Tab[])[i] === tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
+  const markTabs = () => tabBtns.forEach((b, i) => { const on = (["moves", "camera", "info", "calibrate"] as Tab[])[i] === tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
 
   const total = () => st?.moves.length ?? 0;
   function go(p: number | null) {
@@ -107,7 +108,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     if (view === null) return { fen: st.fen, last: st.last ? { from: st.last.from, to: st.last.to } : null };
     const p = positionAt(st.moves, view); return { fen: p.fen, last: p.last };
   }
-  const canPlay = () => !!st && view === null && st.play !== "off" && !st.over && !watch;
+  const canPlay = () => !!st && view === null && st.play !== "off" && !st.over && !watch && !st.calibration;
 
   function drawBoard() {
     const { fen, last: lm } = currentPosition(), g = new Chess(fen), theme = boardTheme(), set = pieceSet().id;
@@ -196,6 +197,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   }
 
   function drawPanel() {
+    if (tab === "calibrate") { renderCalibration(panel, st?.calibration ?? null, c => void sendCmd(c)); return; }
     panel.replaceChildren();
     if (tab === "moves") {
       const rows = scoreSheet(st?.moves ?? []);
@@ -250,7 +252,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     confidenceMeter.hidden = !online || fid === null;
     confidenceMeter.value = fid ?? 0;
     drawTurn(); drawNav(); drawBoard(); drawPromo(); drawPanel(); markTabs();
-    acts.hidden = watch; watchBtn.classList.toggle("on", watch); watchBtn.setAttribute("aria-pressed", String(watch));
+    acts.hidden = watch || !!st?.calibration; watchBtn.classList.toggle("on", watch); watchBtn.setAttribute("aria-pressed", String(watch));
     conn.textContent = online ? (st ? "Live" : "Waiting") : "Offline, retrying…"; conn.classList.toggle("off", !online);
     if (st?.notice && `${st.notice.at}` !== lastNotice) { lastNotice = `${st.notice.at}`; if (sent) showNotice(st.notice.text, st.notice.ok); }
   }

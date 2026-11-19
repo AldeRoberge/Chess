@@ -1,3 +1,4 @@
+import { Calibrate, renderCalibration } from "./ui/calibrate";
 import "./style.css";
 import { chipIcons, chipTone } from "./ui/chipIcons";
 import { installContextMenus, registerContextMenu } from "./ui/contextMenu";
@@ -155,6 +156,7 @@ export function boot(root: HTMLElement): Boot {
             <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
             <button id="settings" class="rb" data-tip="Settings" data-tip-body="Cameras, projector, narration, and players.">${icon("setup", 22)}<span>Settings</span></button>
+            <button id="calibrate" class="rb"><span>Calibrate</span></button>
             <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
           </div><div class="rlabel">Start</div></div>
           <div class="rgroup"><div class="rbtns">
@@ -498,11 +500,24 @@ export function boot(root: HTMLElement): Boot {
     const on = (t: string) => [...graph.nodes.values()].some((n) => n.type === t && n.params.online !== false);
     return on("source.synthetic") && !camFrames().some((c) => [...graph.nodes.values()].some((n) => n.type === "source.webcam" && n.params.online !== false && graph.states.get(n.id)?.frame));
   };
+  const calibrate = new Calibrate(graph, persist);
+  const calibrationDialog = document.createElement("dialog"); calibrationDialog.className = "calibrate-dialog";
+  const calibrationPanel = document.createElement("div"); calibrationDialog.append(calibrationPanel); document.body.append(calibrationDialog);
+  let calibrationSignature = "";
+  const drawCalibration = () => {
+    const signature = JSON.stringify(calibrate.view);
+    if (signature === calibrationSignature) return;
+    calibrationSignature = signature;
+    renderCalibration(calibrationPanel, calibrate.view, c => { const answer = calibrate.command(c); if (!answer.ok) notify(answer.text); calibrationSignature = ""; drawCalibration(); });
+  };
+  document.getElementById("calibrate")!.onclick = () => { calibrationSignature = ""; drawCalibration(); calibrationDialog.showModal(); };
   const remote = new RemoteHost({
     cloud: !!(import.meta as any).env?.PROD,
     base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
     build: (framed, notice, now) => {
       const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
+      s.calibration = calibrate.view;
+      if (calibrate.view) s.play = "off";
       if (virtualTable.over) {
         s.over = true; s.play = "off";
         const e = virtualTable.ended;
@@ -511,7 +526,7 @@ export function boot(root: HTMLElement): Boot {
       return s;
     },
     frames: camFrames,
-    command: (c, now) => applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
+    command: (c, now) => c.type === "calibrate" ? calibrate.command(c) : calibrate.view ? { ok: false, text: "Close Calibrate before playing." } : applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
   });
   document.getElementById("phone")!.onclick = () => {
     if (remote.available === false) notify("The phone connection could not be opened. Reload this page to retry. If it still fails, the server’s phone bridge may be unavailable.", [], "warn", { title: "Phone remote is not running" });
@@ -537,6 +552,7 @@ export function boot(root: HTMLElement): Boot {
     if (now - lastBackup > 300000) { lastBackup = now; if (dirty) { dirty = false; addBackup("Autosave", graph.toJSON(), loadSetup(), true); } }
     if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
     profiler.span("editor", () => editor.frame(now));
+    if (calibrationDialog.open) drawCalibration();
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
     profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {

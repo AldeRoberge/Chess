@@ -16,6 +16,8 @@ export type PlayMode =
 export interface RemoteCamera { id: string; online: boolean; quality: number; hasFrame: boolean }
 
 export interface RemoteState {
+  setupMoves?: { from: string; to: string; code: string }[];
+  calibration?: import("../vision/calibration").CalibrationView | null;
   v: 1;
   /** Host clock (ms since epoch) when this was built. */
   t: number;
@@ -45,7 +47,8 @@ export interface RemoteState {
 }
 
 export interface RemoteMove { type: "move"; from: string; to: string; promotion?: "q" | "r" | "b" | "n" }
-export type RemoteCommand = RemoteMove | { type: "resign" } | { type: "draw" } | { type: "takeback" };
+export type CalibrationCommand = { type: "calibrate"; action: "start" | "capture" | "apply" | "stop" | "retry"; session?: string; step?: number };
+export type RemoteCommand = CalibrationCommand | RemoteMove | { type: "resign" } | { type: "draw" } | { type: "takeback" };
 
 const SQUARE = /^[a-h][1-8]$/;
 const ENDING = new Set(["resign", "draw", "takeback"]);
@@ -54,6 +57,11 @@ const ENDING = new Set(["resign", "draw", "takeback"]);
 export function parseCommand(raw: unknown): RemoteCommand | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Record<string, unknown>;
+  if (c.type === "calibrate") {
+    if (!["start", "capture", "apply", "stop", "retry"].includes(String(c.action))) return null;
+    if (c.action !== "start" && (typeof c.session !== "string" || c.session.length > 64 || !Number.isInteger(c.step) || Number(c.step) < 0 || Number(c.step) > 32)) return null;
+    return { type: "calibrate", action: c.action as CalibrationCommand["action"], ...(c.action === "start" ? {} : { session: c.session as string, step: c.step as number }) };
+  }
   if (typeof c.type === "string" && ENDING.has(c.type)) return { type: c.type as "resign" | "draw" | "takeback" };
   if (c.type !== "move" || typeof c.from !== "string" || typeof c.to !== "string") return null;
   if (!SQUARE.test(c.from) || !SQUARE.test(c.to)) return null;
