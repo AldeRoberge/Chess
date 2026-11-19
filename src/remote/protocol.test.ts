@@ -5,7 +5,10 @@ describe("remote protocol", () => {
   it("accepts a well-formed move and rejects everything else", () => {
     expect(parseCommand({ type: "move", from: "e2", to: "e4" })).toEqual({ type: "move", from: "e2", to: "e4" });
     expect(parseCommand({ type: "move", from: "e7", to: "e8", promotion: "n" })).toEqual({ type: "move", from: "e7", to: "e8", promotion: "n" });
-    for (const bad of [null, "e2e4", 5, {}, { type: "move" }, { type: "resign", from: "e2", to: "e4" }, { type: "move", from: "e9", to: "e4" }, { type: "move", from: "e2", to: "e4", promotion: "k" }, { type: "move", from: "e2", to: "e4", promotion: "qq" }, { type: "move", from: 1, to: 2 }])
+    expect(parseCommand({ type: "resign" })).toEqual({ type: "resign" });
+    expect(parseCommand({ type: "draw" })).toEqual({ type: "draw" });
+    expect(parseCommand({ type: "takeback" })).toEqual({ type: "takeback" });
+    for (const bad of [null, "e2e4", 5, {}, { type: "move" }, { type: "castle" }, { type: "move", from: "e9", to: "e4" }, { type: "move", from: "e2", to: "e4", promotion: "k" }, { type: "move", from: "e2", to: "e4", promotion: "qq" }, { type: "move", from: 1, to: 2 }])
       expect(parseCommand(bad)).toBeNull();
   });
   it("lays the moves out as a score sheet, an odd last move leaving black empty", () => {

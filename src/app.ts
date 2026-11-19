@@ -34,7 +34,7 @@ import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, o
 import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
 import { virtualTable } from "./sim/virtualTable";
-import { RemoteHost, applyRemoteMove, playMode, snapshot } from "./remote/host";
+import { RemoteHost, applyRemoteCommand, playMode, snapshot } from "./remote/host";
 import type { GrayFrame } from "./vision/types";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
@@ -471,9 +471,13 @@ export function boot(root: HTMLElement): Boot {
   };
   const remote = new RemoteHost({
     base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
-    build: (framed, notice, now) => snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice }),
+    build: (framed, notice, now) => {
+      const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
+      if (virtualTable.over) { s.over = true; s.play = "off"; }
+      return s;
+    },
     frames: camFrames,
-    command: (c, now) => applyRemoteMove(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
+    command: (c, now) => applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
   });
   document.getElementById("phone")!.onclick = () => {
     if (remote.available === false) notify("Phone access is built into the dev server. Start the app with npm run dev (or start-chess), then open it on this computer as localhost.", [], "warn", { title: "Phone remote is not running" });

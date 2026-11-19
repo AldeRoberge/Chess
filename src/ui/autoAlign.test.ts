@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
 import { squareToQuad } from "./quadMap";
+import { traceSquareGuide } from "./boardGuide";
 import { AlignFollower, AutoAligner, candidateLayouts, evaluate } from "./autoAlign";
 
 /** A checkerboard seen with some perspective: the unit square is mapped through the quad `c` (a8,h8,h1,a1), a1 dark. */
@@ -35,8 +36,10 @@ describe("auto align", () => {
   it("puts the corners in the right order when they start turned", () => {
     const turned = [TRUE[1], TRUE[2], TRUE[3], TRUE[0]];
     const a = run(new AutoAligner(f, turned, 0));
+    const half = [TRUE[2], TRUE[3], TRUE[0], TRUE[1]];
+    console.log(JSON.stringify({ got: a.corners, costGot: evaluate(f, a.corners).cost, costTrue: evaluate(f, TRUE).cost, costHalf: evaluate(f, half).cost, worstTrue: worst(a.corners, TRUE), worstHalf: worst(a.corners, half) }));
     // with no pieces on it, a board turned half way looks the same: either order is right
-    expect(Math.min(worst(a.corners, TRUE), worst(a.corners, [TRUE[2], TRUE[3], TRUE[0], TRUE[1]]))).toBeLessThan(4.5);
+    expect(Math.min(worst(a.corners, TRUE), worst(a.corners, half))).toBeLessThan(4.5);
   });
   it("follows a small camera move", () => {
     let t = 0; const fol = new AlignFollower(0, () => t);
@@ -45,6 +48,22 @@ describe("auto align", () => {
     expect(evaluate(g, fit).q).toBeLessThan(evaluate(f, fit).q);
     let out: Pt[] | null = null; for (let i = 0; i < 200 && !out; i++) { t += 600; out = fol.tick(g, fit, 1000); }
     expect(out).not.toBeNull(); expect(worst(out!, shifted)).toBeLessThan(4.5);
+  });
+  it("takes its perspective from the square edges, including when the rim is covered", () => {
+    const skew = [{ x: TRUE[0].x + 16, y: TRUE[0].y - 6 }, { x: TRUE[1].x - 8, y: TRUE[1].y + 10 }, { x: TRUE[2].x - 14, y: TRUE[2].y + 12 }, { x: TRUE[3].x + 11, y: TRUE[3].y - 9 }];
+    const g = traceSquareGuide(f, skew);
+    expect(g).not.toBeNull();
+    expect(worst(g!.corners, TRUE)).toBeLessThan(8);
+    const covered = { ...f, data: new Uint8ClampedArray(f.data) }, m = squareToQuad(TRUE);
+    for (let v = 0; v <= 1.001; v += 0.003) for (let u = 0; u <= 1.001; u += 0.003) {
+      const r = Math.min(7, Math.floor(v * 8)), c = Math.min(7, Math.floor(u * 8));
+      if (r >= 2 && r <= 5 && c >= 2 && c <= 5) continue;
+      const p = m(Math.min(u, 0.999), Math.min(v, 0.999)), x = Math.round(p.x), y = Math.round(p.y);
+      if (x >= 0 && y >= 0 && x < covered.width && y < covered.height) covered.data[y * covered.width + x] = 110;
+    }
+    const mid = traceSquareGuide(covered, skew);
+    expect(mid).not.toBeNull();
+    expect(worst(mid!.corners, TRUE)).toBeLessThan(10);
   });
   it("leaves a steady grid alone", () => {
     let t = 0; const fol = new AlignFollower(0, () => t); fol.lock(f, TRUE); t += 600;

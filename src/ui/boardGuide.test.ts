@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
-import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, edgeIcons, scoreAlignment, snapLevel } from "./boardGuide";
+import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, edgeIcons, scoreAlignment, snapLevel, traceSquareGuide } from "./boardGuide";
 import { squareToQuad } from "./quadEditor";
 
 /** A flat checkerboard: squares of `sq` px with the board's a8 corner at (x0, y0). a1 is dark unless `flip`. */
@@ -43,14 +43,37 @@ describe("alignment score", () => {
     expect(q(flat, corners())).toMatchObject({ q: 0, flipped: false }); expect(q(board(), corners(40, 700, 20)).q).toBe(0);
     const flipped = q(board(40, 80, 20, true), corners()); expect(flipped.flipped).toBe(true); expect(flipped.q).toBeLessThanOrEqual(0.45);
   });
+  it("treats a pure shift as a shift, and a pulled corner as a tilt", () => {
+    const f = board();
+    expect(q(f, corners()).warp).toBeLessThan(0.025);
+    expect(q(f, corners(40, 80, 20, 5, 0)).warp).toBeLessThan(0.04);
+    const pulled: Pt[] = [{ x: 80, y: 20 }, { x: 400, y: 20 }, { x: 400, y: 340 }, { x: 40, y: 300 }];
+    expect(q(f, pulled).warp).toBeGreaterThan(q(f, corners()).warp + 0.015);
+  });
+  it("rebuilds the corners from the square edges, and still does when only the middle is visible", () => {
+    const f = board(), truth = corners();
+    const off = corners(40, 80, 20, 6, -4);
+    const g = traceSquareGuide(f, off);
+    expect(g).not.toBeNull();
+    expect(Math.max(...g!.corners.map((p, i) => Math.hypot(p.x - truth[i].x, p.y - truth[i].y)))).toBeLessThan(4);
+    // pieces and the border hide the rim; the empty middle is what is left to trace
+    const bare = board();
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (r >= 2 && r <= 5 && c >= 2 && c <= 5) continue;
+      for (let y = 20 + r * 40; y < 20 + (r + 1) * 40; y++) for (let x = 80 + c * 40; x < 80 + (c + 1) * 40; x++) bare.data[y * 480 + x] = 110;
+    }
+    const mid = traceSquareGuide(bare, off);
+    expect(mid).not.toBeNull();
+    expect(Math.max(...mid!.corners.map((p, i) => Math.hypot(p.x - truth[i].x, p.y - truth[i].y)))).toBeLessThan(6);
+  });
 });
 
 describe("alignment meter and colours", () => {
   it("smooths the score and says what to do", () => {
-    const m = new AlignmentMeter(); expect(m.feed({ q: 0, flipped: false, contrast: 0, error: 0, outside: 0, fine: 0 })).toBe(0); expect(m.label).toMatch(/Can't see/);
-    m.feed({ q: 1, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0 }); expect(m.q).toBeCloseTo(0.25); expect(m.good).toBe(false); expect(m.label).toMatch(/Not lined up/);
-    m.feed({ q: 0.6, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0 }, 1); expect(m.label).toMatch(/closer/); m.feed({ q: 0.95, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0 }, 1); expect(m.good).toBe(true); expect(m.label).toBe("Nicely aligned");
-    m.feed({ q: 0.4, flipped: true, contrast: 90, error: 0, outside: 0, fine: 0 }, 1); expect(m.good).toBe(false); expect(m.label).toMatch(/flipped/);
+    const m = new AlignmentMeter(); expect(m.feed({ q: 0, flipped: false, contrast: 0, error: 0, outside: 0, fine: 0, warp: 0 })).toBe(0); expect(m.label).toMatch(/Can't see/);
+    m.feed({ q: 1, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0, warp: 0 }); expect(m.q).toBeCloseTo(0.25); expect(m.good).toBe(false); expect(m.label).toMatch(/Not lined up/);
+    m.feed({ q: 0.6, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0, warp: 0 }, 1); expect(m.label).toMatch(/closer/); m.feed({ q: 0.95, flipped: false, contrast: 90, error: 0, outside: 0, fine: 0, warp: 0 }, 1); expect(m.good).toBe(true); expect(m.label).toBe("Nicely aligned");
+    m.feed({ q: 0.4, flipped: true, contrast: 90, error: 0, outside: 0, fine: 0, warp: 0 }, 1); expect(m.good).toBe(false); expect(m.label).toMatch(/flipped/);
   });
   it("goes from orange to green", () => {
     expect(alignColor(0)).toBe("hsl(28 92% 54%)"); expect(alignColor(1)).toBe("hsl(130 92% 54%)"); expect(alignColor(-3)).toBe(alignColor(0)); expect(alignColor(9, 40)).toBe("hsl(130 92% 40%)");

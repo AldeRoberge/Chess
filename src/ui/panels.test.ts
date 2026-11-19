@@ -64,6 +64,24 @@ describe("TablePanel", () => {
     p.frame(32); expect(p.root.querySelector(".muted")!.textContent).toBe("game · Stockfish 1500 · tracker: synced · e4 e5");
     bus.director = { ...bus.director, mode: "human" } as any; p.frame(48); expect(p.root.querySelector(".muted")!.textContent).toContain("2 players");
   });
+  it("says when the real board is ready, and shows the first move the cameras accept", () => {
+    const p = new TablePanel();
+    p.frame(0);
+    expect(p.root.querySelector(".play-status strong")!.textContent).toBe("Getting ready");
+    bus.cameras = [{ id: "A", online: true, quality: 1, reliability: 1 }];
+    bus.board = { settled: true, handOver: false, cams: 1, fidelity: 1, occ: new Float32Array(64), white: new Float32Array(64) } as any;
+    bus.game = { status: "synced", ply: 0, turn: "w", over: false, history: [], last: null, lifted: undefined, diff: [] } as any;
+    p.frame(1000);
+    const box = p.root.querySelector(".play-status")!;
+    expect(box.getAttribute("role")).toBe("status");
+    expect(box.getAttribute("data-tone")).toBe("ready");
+    expect(box.querySelector("strong")!.textContent).toBe("Ready");
+    bus.game = { status: "moved", ply: 1, turn: "b", over: false, history: ["e4"], last: null, lifted: undefined, diff: [] } as any;
+    p.frame(2000);
+    expect(virtualTable.game.history()).toEqual(["e4"]);
+    expect(p.root.querySelector(".moves")!.textContent).toContain("e4");
+    expect(box.querySelector("strong")!.textContent).toBe("Move seen");
+  });
   it("copies the PGN and FEN, even when the clipboard is missing, and lists every move", () => {
     const p = new TablePanel();
     virtualTable.game.move("e4"); virtualTable.game.move("e5"); p.frame(0);
@@ -109,6 +127,35 @@ describe("TablePanel", () => {
     expect(p.root.querySelector(".over-banner")!.textContent).toBe("Draw");
     p.root.querySelectorAll("button")[1].click(); expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
     setBoardTheme("green"); setPieceSet("chessnut");
+  });
+  it("takes back a ply, resigns, agrees a draw, and the scoresheet jumps to a past position", () => {
+    const p = new TablePanel();
+    const btn = (label: string) => [...p.root.querySelectorAll("button")].find((b) => b.textContent === label)!;
+    virtualTable.game.move("e4"); virtualTable.game.move("e5"); p.frame(0);
+    expect(p.root.querySelector(".moves")!.textContent).toContain("1. e4 e5");
+    expect(p.root.querySelector(".moves")!.textContent).toContain("Live");
+    [...p.root.querySelectorAll<HTMLButtonElement>(".moves button")].find((b) => b.textContent === "e4")!.click();
+    p.frame(8); expect([...p.root.querySelectorAll(".moves button")].find((b) => b.textContent === "e4")!.getAttribute("aria-current")).toBe("true");
+    [...p.root.querySelectorAll<HTMLButtonElement>(".moves button")].find((b) => b.textContent === "e5")!.click();
+    p.frame(16); expect([...p.root.querySelectorAll(".moves button")].find((b) => b.textContent === "e5")!.getAttribute("aria-current")).toBe("true");
+    p.root.querySelector<HTMLButtonElement>('[aria-label="Follow the live game"]')!.click();
+    expect(p.root.querySelector('[aria-label="Follow the live game"]')!.getAttribute("aria-pressed")).toBe("true");
+    btn("Takeback").click(); expect(virtualTable.game.history()).toEqual(["e4"]);
+    btn("Resign").click(); expect(virtualTable.ended).toEqual({ kind: "resign", color: "b" });
+    expect(p.root.querySelector(".over-banner")!.textContent).toBe("White wins");
+    btn("Takeback").click(); expect(virtualTable.ended).toBeNull(); expect(p.root.querySelector<HTMLElement>(".over-banner")!.hidden).toBe(true);
+    btn("Draw").click(); expect(virtualTable.ended).toEqual({ kind: "draw" }); expect(p.root.querySelector(".over-banner")!.textContent).toBe("Draw");
+    btn("Resign").click(); expect(virtualTable.ended).toEqual({ kind: "draw" }); // already over
+  });
+  it("snaps a dragged piece onto a legal square and names cameras on the info line", () => {
+    const p = new TablePanel(), cv = p.root.querySelector("canvas")!; rect(cv);
+    at(cv, "mousedown", 4.5, 6.5); at(cv, "mousemove", 4.2, 4.2); p.frame(0);
+    expect(virtualTable.pointer!.x).toBeCloseTo(4.5); expect(virtualTable.pointer!.y).toBeCloseTo(4.5);
+    at(cv, "mousemove", 0.4, 0.4);
+    expect(virtualTable.pointer!.x).toBeCloseTo(0.4); expect(virtualTable.pointer!.y).toBeCloseTo(0.4);
+    cv.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 0, clientY: 0 }));
+    bus.cameras = [{ id: "A", online: false, quality: 0, reliability: 0 }, { id: "B", online: true, quality: 0.8, reliability: 0.9 }];
+    p.frame(0); expect(p.root.querySelector(".muted")!.textContent).toContain("Camera A is offline"); expect(p.root.querySelector(".muted")!.textContent).toContain("Camera B is online");
   });
 });
 

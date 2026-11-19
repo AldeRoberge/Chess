@@ -1,0 +1,47 @@
+/** What the table panel says about whether a real game can start. */
+export interface PlayNote {
+  tone: "wait" | "ready" | "go" | "bad";
+  title: string;
+  detail: string;
+}
+
+export interface PlayView {
+  cameras: number;
+  board: { settled: boolean; handOver: boolean; cams: number } | null;
+  /** The cameras see the pieces in the starting position. */
+  startPosition: boolean;
+  game: { status: string; ply: number; turn: "w" | "b"; over: boolean; history: string[]; lifted?: string } | null;
+  phase: string | null;
+  botColor: "w" | "b" | null;
+  hint: { from: string; to: string } | null;
+}
+
+const note = (tone: PlayNote["tone"], title: string, detail: string): PlayNote => ({ tone, title, detail });
+
+/** Plain status for the right-hand table panel: not ready, ready for the first move, or whose turn it is. */
+export function playStatus(v: PlayView): PlayNote {
+  const g = v.game;
+  const seeing = (v.board?.cams ?? 0) > 0 || v.cameras > 0;
+  const last = g?.history.at(-1);
+  if (g?.status === "lifted" || g?.lifted) return note("go", "Piece in hand", "Put it on its square, then move your hand away.");
+  if (g?.status === "pending" && g.ply > 0) return note("go", "Watching your move", "Hold still once the piece is down. It counts when the picture settles.");
+  if (g?.status === "illegal") return note("bad", "Not a legal move", "Put the piece back, or finish a legal move.");
+  if (g?.over) return note("ready", "Game over", last ? `Last move ${last}.` : "The game has ended.");
+
+  const playing = (v.phase ?? "idle") === "game";
+  if (!playing) {
+    if (g && g.ply > 0) return note("go", "Move seen", `${last ?? "Your move"} is in. Starting the game.`);
+    if (!seeing) return note("wait", "Getting ready", "Waiting for the cameras to see the board.");
+    if (!v.board || v.board.handOver || !v.board.settled) return note("wait", "Getting ready", "Keep your hands off the board until the picture settles.");
+    if ((g?.ply ?? 0) === 0 && g?.status !== "synced" && !v.startPosition) return note("wait", "Getting ready", "Still reading the starting position.");
+    return note("ready", "Ready", "Make your first move on the board. The game starts when you do.");
+  }
+
+  const yourTurn = !v.botColor || g?.turn !== v.botColor;
+  if (!yourTurn) {
+    if (v.hint) return note("go", "Stockfish played", `Move the piece from ${v.hint.from} to ${v.hint.to} on the board.`);
+    return note("go", "Stockfish is thinking", "Its move will show here. Play that move on the board.");
+  }
+  if ((g?.ply ?? 0) === 0) return note("ready", "Your move", "Play your first move on the board.");
+  return note("ready", "Your move", last ? `Last move ${last}. Play the next one on the board.` : "Play your move on the board.");
+}

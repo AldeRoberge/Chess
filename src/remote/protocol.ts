@@ -41,14 +41,16 @@ export interface RemoteState {
 }
 
 export interface RemoteMove { type: "move"; from: string; to: string; promotion?: "q" | "r" | "b" | "n" }
-export type RemoteCommand = RemoteMove;
+export type RemoteCommand = RemoteMove | { type: "resign" } | { type: "draw" } | { type: "takeback" };
 
 const SQUARE = /^[a-h][1-8]$/;
+const ENDING = new Set(["resign", "draw", "takeback"]);
 
-/** Reads an untrusted command body. Returns null for anything that is not a well-formed move. */
+/** Reads an untrusted command body. Returns null for anything that is not a well-formed move, resignation, draw, or takeback. */
 export function parseCommand(raw: unknown): RemoteCommand | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Record<string, unknown>;
+  if (typeof c.type === "string" && ENDING.has(c.type)) return { type: c.type as "resign" | "draw" | "takeback" };
   if (c.type !== "move" || typeof c.from !== "string" || typeof c.to !== "string") return null;
   if (!SQUARE.test(c.from) || !SQUARE.test(c.to)) return null;
   const promotion = c.promotion;

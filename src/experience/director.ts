@@ -63,6 +63,7 @@ export class Director {
     }
     if (seat) this.seat = seat;
     this.emptySince = seat ? 0 : this.emptySince || now;
+    this.openOnFirstMove(now, events, gameEvents);
 
     switch (this.phase) {
       case "idle":
@@ -105,7 +106,7 @@ export class Director {
       case "game": {
         const over = gameEvents.find((e) => e.type === "mate" || e.type === "draw");
         if (over) this.go("outro", now, events, { result: over.type === "mate" ? `échec et mat, ${over.data?.color === "w" ? "victoire des blancs" : "victoire des noirs"}` : "partie nulle" });
-        else if (!seat && now - this.emptySince > this.cfg.leaveMs * 3) { events.push({ type: "leave", t: now }); this.go("outro", now, events); }
+        else if (this.seat && !seat && now - this.emptySince > this.cfg.leaveMs * 3) { events.push({ type: "leave", t: now }); this.go("outro", now, events); }
         break;
       }
       case "outro":
@@ -119,4 +120,20 @@ export class Director {
   }
   private lastStep = 0;
   private dwellMs = new Map<string, number>();
+
+  /**
+   * A piece moved on the real board starts the game immediately.
+   * Waiting for a detected seat and the intro left the first move with nobody to answer it.
+   */
+  private openOnFirstMove(now: number, events: ExperienceEvent[], gameEvents: ExperienceEvent[]) {
+    if (this.phase === "game" || this.phase === "outro") return;
+    if (!gameEvents.some((e) => e.type === "move")) return;
+    if (!this.mode) {
+      this.mode = this.cfg.preset === "human" ? "human" : "engine";
+      this.elo = this.cfg.presetElo;
+      events.push({ type: "mode", t: now, data: { mode: this.mode, elo: this.elo } });
+    }
+    this.dwellMs.clear();
+    this.go("game", now, events);
+  }
 }

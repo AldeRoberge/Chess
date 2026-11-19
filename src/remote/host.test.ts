@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
-import { RemoteHost, applyRemoteMove, dropStaleHint, encodeFrame, playMode, snapshot, type BusView } from "./host";
+import { RemoteHost, applyRemoteCommand, applyRemoteMove, dropStaleHint, encodeFrame, playMode, snapshot, type BusView } from "./host";
 import type { RemoteState } from "./protocol";
 
 const game = (over = false) => ({ fen: new Chess().fen(), turn: "w" as const, ply: 0, over, status: "synced", history: ["e4"], fidelity: 0.9, last: { from: "e2", to: "e4", san: "e4" } });
@@ -32,6 +32,26 @@ describe("remote host", () => {
     const c = ctx({ mode: "hint" }); expect(applyRemoteMove({ type: "move", from: "g1", to: "f3" }, c)).toEqual({ ok: true, text: "Nf3 sent. Play g1 to f3 on the board." }); expect(c.bus.engineHint).toEqual({ from: "g1", to: "f3" });
     expect(applyRemoteMove({ type: "move", from: "e2", to: "e4" }, ctx({ mode: "off", botTurn: true })).text).toContain("bot's turn");
     expect(applyRemoteMove({ type: "move", from: "e2", to: "e4" }, ctx({ mode: "off" })).text).toContain("No game");
+    expect(applyRemoteMove({ type: "move", from: "e2", to: "e4" }, ctx({ table: { busy: false, play: vi.fn(), over: true } })).text).toContain("over");
+  });
+  it("takes back, resigns, and agrees a draw from a phone", () => {
+    const takeback = vi.fn(() => true);
+    expect(applyRemoteCommand({ type: "takeback" }, ctx({ table: { busy: false, play: vi.fn(), takeback } }))).toEqual({ ok: true, text: "Takeback applied." });
+    expect(applyRemoteCommand({ type: "takeback" }, ctx({ mode: "off", table: { busy: false, play: vi.fn(), takeback: vi.fn(() => true) } }))).toEqual({ ok: true, text: "Takeback applied." });
+    expect(applyRemoteCommand({ type: "takeback" }, ctx({ table: { busy: true, play: vi.fn(), takeback: vi.fn() } })).text).toContain("still being played");
+    expect(applyRemoteCommand({ type: "takeback" }, ctx({ table: { busy: false, play: vi.fn() } })).text).toContain("nothing to take back");
+    const resign = vi.fn(() => true);
+    expect(applyRemoteCommand({ type: "resign" }, ctx({ table: { busy: false, play: vi.fn(), resign } }))).toEqual({ ok: true, text: "White resigns." });
+    expect(resign).toHaveBeenCalledWith("w");
+    expect(applyRemoteCommand({ type: "resign" }, ctx({ fen: "8/8/8/8/8/8/8/k6K b - - 0 1", table: { busy: false, play: vi.fn(), resign: vi.fn(() => true) } })).text).toBe("Black resigns.");
+    expect(applyRemoteCommand({ type: "resign" }, ctx({ table: { busy: false, play: vi.fn() } })).text).toContain("cannot resign");
+    expect(applyRemoteCommand({ type: "resign" }, ctx({ table: { busy: false, play: vi.fn(), resign: vi.fn(() => false) } })).text).toContain("already over");
+    expect(applyRemoteCommand({ type: "resign" }, ctx({ mode: "off" })).text).toContain("No game");
+    expect(applyRemoteCommand({ type: "draw" }, ctx({ table: { busy: false, play: vi.fn(), agreeDraw: vi.fn(() => true) } }))).toEqual({ ok: true, text: "Draw agreed." });
+    expect(applyRemoteCommand({ type: "draw" }, ctx({ table: { busy: false, play: vi.fn() } })).text).toContain("cannot agree");
+    expect(applyRemoteCommand({ type: "draw" }, ctx({ table: { busy: false, play: vi.fn(), agreeDraw: vi.fn(() => false) } })).text).toContain("already over");
+    expect(applyRemoteCommand({ type: "draw" }, ctx({ mode: "off", botTurn: true })).text).toContain("bot's turn");
+    expect(applyRemoteCommand({ type: "move", from: "e2", to: "e4" }, ctx())).toEqual({ ok: true, text: "Playing e4." });
   });
   it("takes a phone's arrow off once the position changes, and never touches another source's hint", () => {
     const b = bus(); applyRemoteMove({ type: "move", from: "g1", to: "f3" }, { ...ctx({ mode: "hint" }), bus: b });

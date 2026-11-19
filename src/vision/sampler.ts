@@ -1,4 +1,8 @@
-import { applyH, boardToImage } from "./homography";
+import { SQUARE, boardToWorld } from "../world/coords";
+import { profileHeight } from "../world/profiles";
+import { cameraPoseFromBoard } from "./boardPose";
+import { applyH, boardToImage, invertH } from "./homography";
+import { cameraMatrix, project } from "./triangulate";
 import { clamp, sigmoid, type GrayFrame, type Pt, type SquareObs } from "./types";
 
 export interface SamplerConfig {
@@ -53,15 +57,18 @@ export class BoardSampler {
   private key = "";
   private crownPts: Pt[][] = [];
   private rimPts: Pt[][] = [];
+  /** Where a king's waist lands, in squares, toward the far side of an oblique camera. ~0 from above. */
+  private rise = { u: 0, v: 0 };
 
   constructor(public cam: string, public cfg: SamplerConfig = defaultSamplerConfig()) {}
 
-  private prepare() {
-    const key = JSON.stringify(this.cfg.corners) + this.cfg.grid + this.cfg.patch;
+  private prepare(w = 0, h = 0) {
+    const key = JSON.stringify(this.cfg.corners) + this.cfg.grid + this.cfg.patch + w + "x" + h;
     if (key === this.key) return;
     this.key = key;
     this.H = boardToImage(this.cfg.corners);
     this.lean();
+    this.rise = w > 0 && h > 0 ? this.bodyRise(w, h) : { u: 0, v: 0 };
     const { grid, patch } = this.cfg;
     this.crownPts = [];
     this.rimPts = [];
@@ -81,6 +88,60 @@ export class BoardSampler {
       }
       this.crownPts.push(crown);
       this.rimPts.push(rim);
+    }
+  }
+
+  /**
+   * How far (in squares, toward the far side) a point at a king's waist appears, once the camera's
+   * picture of it is dropped back onto the board. Overhead this is ~0; from a low side camera the
+   * king shows up about a square away from the wood it stands on.
+   */
+  private bodyRise(w: number, h: number): { u: number; v: number } {
+    if (this.cfg.corners.length !== 4) return { u: 0, v: 0 };
+    try {
+      const fov = 52;
+      const pose = cameraPoseFromBoard(this.cfg.corners, w, h, fov);
+      const P = cameraMatrix(pose.pos, pose.target, fov, w, h);
+      const height = profileHeight("k") * SQUARE * 0.8 * 0.62;
+      const [x, y, z] = boardToWorld(4, 4);
+      const top = project(P, [x, y + height, z]);
+      if (!Number.isFinite(top.x)) return { u: 0, v: 0 };
+      const back = applyH(invertH(this.H), top.x, top.y);
+      let du = back.x - 4, dv = back.y - 4;
+      const mag = Math.hypot(du, dv);
+      const cap = 1.15;
+      if (mag > cap) { du *= cap / mag; dv *= cap / mag; }
+      return { u: du, v: dv };
+    } catch {
+      return { u: 0, v: 0 };
+    }
+  }
+
+  /**
+   * A low camera sees a tall piece (the king most of all) covering the squares behind it. Those squares
+   * read as a second, fainter piece of the same colour. Drop that trail so the square the piece left
+   * can go empty, and the square it stands on is the one that stays.
+   */
+  private dropCrowns(occ: Float32Array, white: Float32Array, drive: Float32Array) {
+    const { u, v } = this.rise;
+    const mag = Math.hypot(u, v);
+    if (mag < 0.45) return;
+    const su = Math.abs(u) > 0.3 ? Math.sign(u) : 0;
+    const sv = Math.abs(v) > 0.3 ? Math.sign(v) : 0;
+    if (!su && !sv) return;
+    const steps = Math.min(3, Math.max(1, Math.round(mag)));
+    const keep = Float32Array.from(occ);
+    for (let sq = 0; sq < 64; sq++) {
+      if (keep[sq] < 0.8) continue;
+      let f = sq % 8, r = Math.floor(sq / 8), prev = drive[sq];
+      for (let s = 0; s < steps; s++) {
+        f += su; r += sv;
+        if (f < 0 || f > 7 || r < 0 || r > 7) break;
+        const t = r * 8 + f;
+        // A real piece is about as strong as the one in front of it. A crown is a lot fainter, and the same colour.
+        if (keep[t] > 0.5 && drive[t] < prev * 0.55 && Math.abs(white[t] - white[sq]) < 0.35) { occ[t] = Math.min(occ[t], 0.25); prev = drive[t]; }
+        else break;
+      }
     }
   }
 
@@ -127,7 +188,7 @@ export class BoardSampler {
 
   /** Median brightness of each square's centre patch (what the hover and the tests read). */
   measure(frame: GrayFrame): Float32Array {
-    this.prepare();
+    this.prepare(frame.width, frame.height);
     const out = new Float32Array(64);
     for (let sq = 0; sq < 64; sq++) out[sq] = this.medianAt(frame, this.crownPts[sq]);
     return out;
@@ -149,7 +210,7 @@ export class BoardSampler {
   }
 
   private squares(frame: GrayFrame): { crown: Float32Array; rim: Float32Array; spread: Float32Array; lo: Float32Array; hi: Float32Array } {
-    this.prepare();
+    this.prepare(frame.width, frame.height);
     const crown = new Float32Array(64), rim = new Float32Array(64), spread = new Float32Array(64), lo = new Float32Array(64), hi = new Float32Array(64);
     for (let sq = 0; sq < 64; sq++) {
       crown[sq] = this.medianAt(frame, this.crownPts[sq]);
@@ -180,7 +241,7 @@ export class BoardSampler {
 
   /** For the hover card: the brightnesses and the difference that actually decided this square. */
   diagnose(frame: GrayFrame, sq: number): { crown: number; rim: number; ref: number; drive: number; gate: number; spread: number; spreadGate: number } {
-    this.prepare();
+    this.prepare(frame.width, frame.height);
     const crown = this.medianAt(frame, this.crownPts[sq]);
     const rim = this.medianAt(frame, this.rimPts[sq]);
     const ref = this.ref[sq];
@@ -264,29 +325,31 @@ export class BoardSampler {
     const hand = new Uint8Array(64);
     let moving = 0, bad = 0;
     const softOf = (ref: number) => Math.max(1, ref * this.cfg.softness);
+    const driveAbs = new Float32Array(64);
     for (let sq = 0; sq < 64; sq++) {
       const v = crown[sq], edge = rim[sq], ref = this.ref[sq];
       const p = this.prev[sq];
       if (Number.isNaN(v) || !this.calibrated || !Number.isFinite(ref)) { occ[sq] = 0.5; bad++; this.prev[sq] = v; continue; }
       const { drive, gate } = this.cue(v, edge, ref, this.rimRef[sq]);
+      driveAbs[sq] = Math.abs(drive);
       const soft = softOf(ref);
       const blown = v >= SAT || (v >= 235 && Math.abs(v - edge) < gate && drive > gate);
       if (blown) { occ[sq] = 0.5; white[sq] = 0.5; bad++; }
       else {
         if (v <= 3) bad++;
-        let z = (Math.abs(drive) - gate) / soft;
-        // Texture: an empty square is flat, a piece is not, whatever its colour.
-        if (Number.isFinite(this.spreadGate) && Number.isFinite(spread[sq])) z = Math.max(z, (spread[sq] - this.spreadGate) / Math.max(1.5, this.spreadGate * 0.25));
+        let zBright = (Math.abs(drive) - gate) / soft;
+        // Texture: an empty square is flat, a piece is not. A king's cross is this kind of evidence, and a smooth shadow is not.
+        const zTex = Number.isFinite(this.spreadGate) && Number.isFinite(spread[sq]) ? (spread[sq] - this.spreadGate) / Math.max(1.5, this.spreadGate * 0.25) : -Infinity;
         if (this.tone && v > 3 && Number.isFinite(lo[sq])) {
           const k = ((sq % 8) + Math.floor(sq / 8)) % 2, d = Math.log(Math.max(1, lo[sq]) / Math.max(1, ref)), u = Math.log(Math.max(1, hi[sq]) / Math.max(1, ref));
           const dw = Math.hypot(d - this.tone.w[k][0], u - this.tone.w[k][1]), db = Math.hypot(d - this.tone.b[k][0], u - this.tone.b[k][1]);
           white[sq] = sigmoid((db - dw) / 0.3);
           // Ghost guard: a shadow, a lamp gradient or a wobbly corner shifts the square's brightness, but it looks like neither a
-          // white nor a black piece. When the evidence is only borderline and the square matches neither learned piece look, call it empty.
+          // white nor a black piece. It may only discount the brightness cue — a textured piece (the king) still counts.
           const alike = Math.min(dw, db), empty = Math.hypot(d, u);
-          if (z < GHOST_Z && alike > GHOST_LOOK && alike > empty * 0.9) z -= (alike - GHOST_LOOK) / 0.1;
+          if (zBright < GHOST_Z && alike > GHOST_LOOK && alike > empty * 0.9) zBright -= (alike - GHOST_LOOK) / 0.1;
         } else white[sq] = sigmoid(drive / (soft * 2));
-        occ[sq] = sigmoid(z);
+        occ[sq] = sigmoid(Math.max(zBright, zTex));
       }
       const thr = Math.max(ref * this.cfg.threshold, 12);
       if (!Number.isNaN(p) && Math.abs(v - p) > thr * 1.2) { moving++; hand[sq] = 1; }
@@ -296,6 +359,7 @@ export class BoardSampler {
       }
       this.prev[sq] = v;
     }
+    this.dropCrowns(occ, white, driveAbs);
     return {
       cam: this.cam, t: frame.t,
       quality: clamp(1 - (bad / 64) * 2, 0, 1),

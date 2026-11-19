@@ -113,4 +113,12 @@ describe("phone page", () => {
     [...document.querySelectorAll<HTMLButtonElement>(".rm-copies button")].find((b) => b.textContent === "Copy PGN")!.click();
     expect(String(write.mock.calls.at(-1)?.[0])).toContain("[Result");
   });
+  it("sends takeback, resign, and draw from the action row", async () => {
+    const posts: unknown[] = [];
+    const f = vi.fn((_u: string, init?: RequestInit) => { if (init?.method === "POST") posts.push(JSON.parse(String(init.body))); return json({ rev: 1, clients: 1, state: state() }); });
+    start(f); await flush();
+    q('[aria-label="Takeback"]').click(); q('[aria-label="Resign"]').click(); q('[aria-label="Draw"]').click(); await flush();
+    expect(posts).toEqual([{ type: "takeback" }, { type: "resign" }, { type: "draw" }]);
+    expect(q(".rm-notice").textContent).toContain("Sending draw");
+  });
 });

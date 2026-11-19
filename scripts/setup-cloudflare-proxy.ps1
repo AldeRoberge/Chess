@@ -25,7 +25,7 @@ param(
 $ErrorActionPreference = "Continue"
 function Step($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
 function Plain([securestring]$s) { [System.Net.NetworkCredential]::new("", $s).Password }
-function Wr { & npx --yes wrangler @args; if ($LASTEXITCODE -ne 0) { throw "wrangler $($args -join ' ') failed" } }
+function Wr { & npx wrangler @args; if ($LASTEXITCODE -ne 0) { throw "wrangler $($args -join ' ') failed" } }
 
 if (-not (Get-Command npx -ErrorAction SilentlyContinue)) { throw "Missing 'npx' (install Node.js)." }
 Set-Location (git rev-parse --show-toplevel)
@@ -33,8 +33,11 @@ $cfg = Join-Path (Get-Location) "wrangler.jsonc"
 if (-not (Test-Path $cfg)) { throw "wrangler.jsonc not found." }
 
 Step "Cloudflare login"
-Write-Host "(first run downloads wrangler, this can take a minute)"
-$who = (npx --yes wrangler whoami 2>&1 | Out-String)
+if (-not (Test-Path "node_modules/.bin/wrangler.cmd")) {
+  Write-Host "Installing project dependencies once (wrangler is a devDependency)..."
+  npm install; if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+}
+$who = (npx wrangler whoami 2>&1 | Out-String)
 Write-Host $who
 if ($who -match "not authenticated|You are not|Not logged|error") {
   Write-Host "Opening the browser to log in. Approve it there, then come back (Ctrl+C to abort)." -ForegroundColor Yellow
@@ -45,11 +48,11 @@ Step "KV namespace KEYS"
 $text = Get-Content $cfg -Raw
 if ($text -match "REPLACE_WITH_KV_NAMESPACE_ID") {
   $id = $null
-  $out = (npx --yes wrangler kv namespace create KEYS 2>&1 | Out-String)
+  $out = (npx wrangler kv namespace create KEYS 2>&1 | Out-String)
   if ($out -match '"id":\s*"([0-9a-f]{32})"') { $id = $Matches[1] }
   else {
     Write-Host "Create did not return an id (already exists?). Looking it up..."
-    $list = (npx --yes wrangler kv namespace list 2>$null | Out-String) | ConvertFrom-Json
+    $list = (npx wrangler kv namespace list 2>$null | Out-String) | ConvertFrom-Json
     $id = ($list | Where-Object { $_.title -eq "KEYS" -or $_.title -like "*-KEYS" } | Select-Object -First 1).id
   }
   if (-not $id) { throw "Could not get the KV namespace id.`n$out" }
@@ -71,7 +74,7 @@ if (-not $pass) {
   $pass = [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+","-").Replace("/","_")
   Write-Host "Generated passphrase (save it in your password manager): $pass" -ForegroundColor Yellow
 }
-$pass | npx --yes wrangler secret put ADMIN_PASSPHRASE
+$pass | npx wrangler secret put ADMIN_PASSPHRASE
 if ($LASTEXITCODE -ne 0) { throw "secret put failed" }
 
 Step "API keys"

@@ -100,7 +100,7 @@ export function createRelay(opts: RelayOptions = {}) {
         const body = await readBody(req, JSON_LIMIT); let raw: unknown = null;
         try { raw = body ? JSON.parse(body.toString("utf8")) : null; } catch { raw = null; }
         const cmd = parseCommand(raw);
-        if (!cmd) send(res, 400, { error: "That is not a move. Send from and to squares such as e2 and e4." });
+        if (!cmd) send(res, 400, { error: "That is not a command. Send a move such as e2 to e4, or resign, draw, or takeback." });
         else if (!state || now() - state.t > 10_000) send(res, 503, { error: "The computer is not sharing a game right now." });
         else if (queue.length >= QUEUE_LIMIT) send(res, 429, { error: "Too many moves waiting. Try again in a moment." });
         else { queue.push(cmd); send(res, 200, { ok: true }); }

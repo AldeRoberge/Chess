@@ -8,7 +8,7 @@ import { boardTheme } from "../ui/boardThemes";
 import { withIcon } from "../ui/icons";
 import { pieceSet } from "../ui/pieceSets";
 import { Chess } from "chess.js";
-import { codeFromHash, needsPromotion, positionAt, scoreSheet, sideName, targetsFrom, type RemoteState } from "./protocol";
+import { codeFromHash, needsPromotion, positionAt, scoreSheet, sideName, targetsFrom, type RemoteCommand, type RemoteState } from "./protocol";
 
 type Tab = "moves" | "camera" | "info";
 interface Poll { rev: number; clients: number; waiting?: boolean; state?: RemoteState; frames?: Record<string, number> }
@@ -60,13 +60,21 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const next = navBtn("next", "", "Next move", () => go((view ?? total()) + 1)), last = navBtn("last", "", "Latest move", () => go(null));
   const live = navBtn("live", "Live", "Follow the live game", () => go(null), "live"), flip = navBtn("flip", "Flip", "Turn the board around", () => { flipped = !flipped; draw(); });
   nav.append(first, prev, next, last, live, flip);
+  const acts = el("div", "rm-acts");
+  const act = (ic: string, label: string, type: "takeback" | "resign" | "draw") => {
+    const b = withIcon(el("button", "rm-btn", label), ic, 18); b.type = "button";
+    b.setAttribute("aria-label", label);
+    b.onclick = () => void sendCmd({ type });
+    return b;
+  };
+  acts.append(act("undo", "Takeback", "takeback"), act("flag", "Resign", "resign"), act("people", "Draw", "draw"));
   const promoEl = el("div", "rm-promo"); promoEl.hidden = true;
   const notice = el("p", "rm-notice"); notice.setAttribute("role", "status");
   const tabs = el("div", "rm-tabs"); tabs.setAttribute("role", "tablist");
   const tabBtns = (["moves", "camera", "info"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info" }[t]), { moves: "list", camera: "camera", info: "info" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
-  function build() { page.replaceChildren(head, turn, boardEl, promoEl, nav, notice, tabs, panel); draw(); }
+  function build() { page.replaceChildren(head, turn, boardEl, promoEl, nav, acts, notice, tabs, panel); draw(); }
   const markTabs = () => tabBtns.forEach((b, i) => { const on = (["moves", "camera", "info"] as Tab[])[i] === tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
 
   const total = () => st?.moves.length ?? 0;
@@ -132,11 +140,14 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   }
 
   async function sendMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
-    const body = { type: "move", from, to, ...(promotion ? { promotion } : {}) };
-    sent = `${from}${to}`; showNotice(`Sending ${from} to ${to}…`, true);
+    return sendCmd({ type: "move", from, to, ...(promotion ? { promotion } : {}) });
+  }
+  async function sendCmd(body: RemoteCommand) {
+    sent = body.type === "move" ? `${body.from}${body.to}` : body.type;
+    showNotice(body.type === "move" ? `Sending ${body.from} to ${body.to}…` : `Sending ${body.type}…`, true);
     try {
       const r = await fetchFn(`${api}cmd?code=${encodeURIComponent(code)}&cid=${cid}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); showNotice(j.error ?? "The computer did not accept the move.", false); }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); showNotice(j.error ?? "The computer did not accept the command.", false); }
     } catch { showNotice("Could not reach the computer. Check the Wi-Fi and try again.", false); }
   }
   function showNotice(text: string, ok: boolean) { notice.textContent = text; notice.classList.toggle("bad", !ok); }

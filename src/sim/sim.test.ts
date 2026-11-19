@@ -132,6 +132,17 @@ describe("VirtualTable", () => {
     expect(t.play("e5", 0)).toBe(false); expect(t.play("Qh8", 0)).toBe(false); expect(t.busy).toBe(false);
     expect(t.play("e2e4", 0)).toBe(true); expect(t.busy).toBe(true);
   });
+  it("takes back a ply, records a resignation or an agreed draw, and reset clears them", () => {
+    const t = new VirtualTable(); t.game.move("e4"); t.game.move("e5");
+    expect(t.takeback()).toBe(true); expect(t.game.history()).toEqual(["e4"]);
+    expect(t.resign("w")).toBe(true); expect(t.over).toBe(true); expect(t.ended).toEqual({ kind: "resign", color: "w" });
+    expect(t.resign("b")).toBe(false); expect(t.agreeDraw()).toBe(false);
+    expect(t.takeback()).toBe(true); expect(t.ended).toBeNull(); expect(t.over).toBe(false);
+    expect(t.agreeDraw()).toBe(true); expect(t.ended).toEqual({ kind: "draw" });
+    t.reset(); expect(t.ended).toBeNull(); expect(t.takeback()).toBe(false);
+    t.play("e4", 0); expect(t.takeback()).toBe(false); // still busy
+    t.reset(); t.resign("w"); expect(t.play("e4", 0)).toBe(false);
+  });
   it("choreographs a move: hand arrives, piece is lifted, travels, drops, hand leaves", () => {
     const t = new VirtualTable(); t.play("Nf3", 1000);
     t.tick(1000); expect(t.hand).toEqual({ x: 6.5, y: 7.5 }); expect(t.carried).toBeNull();

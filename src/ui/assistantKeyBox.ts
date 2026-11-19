@@ -1,5 +1,5 @@
 import { AI_DEFAULT_MODEL, loadAiSettings, saveAiSettings } from "../workflows/ai";
-import { effectiveKey } from "../net/vendorFetch";
+import { effectiveKey, loadServerKeys } from "../net/vendorFetch";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
@@ -25,5 +25,7 @@ export class KeyBox {
     save.onclick = () => { saveAiSettings({ apiKey: key.value, model: model.value.trim() || AI_DEFAULT_MODEL, remember: rem.checked }); this.root.classList.remove("open"); this.sync(); };
     this.root.replaceChildren(el("p", "", "Messages go straight from this page to OpenAI with your own key. The assistant never sees API keys, and never sets them."), key, model, keep, save);
     this.sync();
+    // The form is built before the worker says which keys it holds: once it does, close the form if the server has one.
+    void loadServerKeys().then(() => { if (this.apiKey().trim()) this.root.classList.remove("open", "need"); });
   }
 }

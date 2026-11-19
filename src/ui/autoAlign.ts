@@ -1,6 +1,6 @@
 import { findBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
-import { GOOD, iconLevels, scoreAlignment } from "./boardGuide";
+import { GOOD, type GridGuide, guideDrift, iconLevels, scoreAlignment, traceSquareGuide } from "./boardGuide";
 import { squareToQuad } from "./quadMap";
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -20,7 +20,7 @@ const convex = (c: Pt[]) => {
 };
 
 export interface Eval {
-  /** Lower is better: the grid lines' distance from the real edges (in squares) plus a penalty for squares that show no contrast. */
+  /** Lower is better: distance from the real edges, a tilt penalty, a penalty for leaving the traced square lines, and a penalty for squares that show no contrast. */
   cost: number;
   q: number;
   error: number;
@@ -28,11 +28,17 @@ export interface Eval {
   contrast: number;
 }
 
-/** How well a quad fits the picture. The colour-order penalty is left out here: it is only used to choose between rotations. */
-export function evaluate(f: GrayFrame, c: Pt[]): Eval {
+/** How well a quad fits the picture. `guide` is the square edges already traced; leaving them costs, so the corners keep that perspective. The colour-order penalty is left out here: it is only used to choose between rotations. */
+export function evaluate(f: GrayFrame, c: Pt[], guide?: GridGuide | null): Eval {
   if (!convex(c)) return { cost: Infinity, q: 0, error: 1, flipped: false, contrast: 0 };
   const a = scoreAlignment(f, squareToQuad(c));
-  return { cost: a.fine + (1 - clamp(a.contrast / 40, 0, 1)) * 0.15 + a.outside * 0.3, q: a.q, error: a.error, flipped: a.flipped, contrast: a.contrast };
+  const drift = guide ? guideDrift(guide, squareToQuad(c), sideOf(c) / 8) : 0;
+  return { cost: a.fine + a.warp * 0.85 + drift * 0.7 + (1 - clamp(a.contrast / 40, 0, 1)) * 0.15 + a.outside * 0.3, q: a.q, error: a.error, flipped: a.flipped, contrast: a.contrast };
+}
+
+/** Traces the square edges once and, when they agree, moves the corners onto the perspective they describe. */
+function withGuide(f: GrayFrame, pts: Pt[]): { corners: Pt[]; guide: GridGuide | null } {
+  return traceSquareGuide(f, pts) ?? { corners: pts, guide: null };
 }
 
 const DIRS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
@@ -41,13 +47,13 @@ const DIRS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1,
  * Hill climbing on the quad: at each step size, nudge the whole quad and then each corner in 8 directions, keeping what
  * lowers the cost, until nothing helps. Yields after every corner so a caller can spread the work over frames.
  */
-function* climb(f: GrayFrame, start: Pt[], steps: number[], maxIter: number, show?: (p: Pt[]) => void): Generator<void, { pts: Pt[]; ev: Eval }> {
-  let pts = start, ev = evaluate(f, pts);
+function* climb(f: GrayFrame, start: Pt[], steps: number[], maxIter: number, show?: (p: Pt[]) => void, guide?: GridGuide | null): Generator<void, { pts: Pt[]; ev: Eval }> {
+  let pts = start, ev = evaluate(f, pts, guide);
   for (const st of steps) {
     for (let it = 0; it < maxIter; it++) {
       let improved = false;
       for (const [dx, dy] of DIRS) {
-        const t = pts.map((p) => ({ x: p.x + dx * st, y: p.y + dy * st })), e = evaluate(f, t);
+        const t = pts.map((p) => ({ x: p.x + dx * st, y: p.y + dy * st })), e = evaluate(f, t, guide);
         if (e.cost < ev.cost - 1e-4) { pts = t; ev = e; improved = true; }
       }
       yield;
@@ -57,7 +63,7 @@ function* climb(f: GrayFrame, start: Pt[], steps: number[], maxIter: number, sho
         for (let guard = 0; moved && guard < 6; guard++) {
           moved = false;
           for (const [dx, dy] of DIRS) {
-            const t = pts.map((p, j) => (j === i ? { x: p.x + dx * st, y: p.y + dy * st } : p)), e = evaluate(f, t);
+            const t = pts.map((p, j) => (j === i ? { x: p.x + dx * st, y: p.y + dy * st } : p)), e = evaluate(f, t, guide);
             if (e.cost < ev.cost - 1e-4) { pts = t; ev = e; improved = moved = true; }
           }
         }
@@ -107,7 +113,8 @@ export interface AlignStatus { phase: "idle" | "find" | "try" | "merge" | "polis
 
 /**
  * Finds the board from scratch and settles the grid on it. It tries ten different layouts, refines each one against the
- * picture, then merges them slowly (a step at a time, re-fitting at each) into one that sits on the square edges.
+ * picture, reads the straight edges of the squares (the empty middle counts the most) and uses those lines as the
+ * perspective, then merges them slowly (a step at a time, re-fitting at each) into one that sits on the square edges.
  * Call `step(budgetMs)` every frame; read `corners`, `progress`, `confidence` and `label` to show it.
  */
 export class AutoAligner implements AlignStatus {
@@ -132,7 +139,7 @@ export class AutoAligner implements AlignStatus {
     this.phase = "find"; this.label = "Looking for the board…"; yield;
     const cands = candidateLayouts(f, this.start);
     if (!cands.length) { this.phase = "failed"; this.label = "No board found. Drag the corners onto it."; return; }
-    const N = cands.length, done: { pts: Pt[]; ev: Eval }[] = [];
+    const N = cands.length, done: { pts: Pt[]; ev: Eval; guide: GridGuide | null }[] = [];
     this.phase = "try";
     for (let i = 0; i < N; i++) {
       this.label = `Trying layout ${i + 1} of ${N}`; this.progress = 0.05 + 0.6 * (i / N); this.set(cands[i]); yield;
@@ -140,8 +147,11 @@ export class AutoAligner implements AlignStatus {
       const coarse = yield* climb(f, cands[i], [sq * 0.4, sq * 0.2, sq * 0.1, sq * 0.05], 20, (p) => this.set(p));
       this.progress = 0.05 + 0.6 * ((i + 0.7) / N);
       const turned = pickRotation(f, coarse.pts, this.start);
-      const fine = yield* climb(f, turned, [2, 1, 0.5], 8, (p) => this.set(p));
-      done.push(fine); this.confidence = fine.ev.q; this.set(fine.pts);
+      this.label = "Lining up with the square edges…"; this.set(turned); yield;
+      const guided = withGuide(f, turned);
+      this.set(guided.corners); yield;
+      const fine = yield* climb(f, guided.corners, [2, 1, 0.5], 8, (p) => this.set(p), guided.guide);
+      done.push({ pts: fine.pts, ev: fine.ev, guide: guided.guide }); this.confidence = fine.ev.q; this.set(fine.pts);
     }
     // keep the layouts that agree with the best one; the rest found something else (a table edge, a shadow)
     const best = done.reduce((a, b) => (b.ev.cost < a.ev.cost ? b : a)), sq = sideOf(best.pts) / 8;
@@ -154,14 +164,16 @@ export class AutoAligner implements AlignStatus {
     for (let m = 1; m <= M; m++) {
       this.label = `Merging ${keep.length} layouts (${m}/${M})`; this.progress = 0.7 + 0.2 * (m / M);
       const mix = best.pts.map((p, i) => ({ x: p.x + (target[i].x - p.x) * (m / M), y: p.y + (target[i].y - p.y) * (m / M) }));
-      const r = yield* climb(f, mix, [0.8, 0.4], 3);
-      cur = r.pts; if (r.ev.cost < top.ev.cost) top = r;
+      const r = yield* climb(f, mix, [0.8, 0.4], 3, undefined, best.guide);
+      cur = r.pts; if (evaluate(f, r.pts).cost < evaluate(f, top.pts).cost) top = { pts: r.pts, ev: r.ev, guide: best.guide };
       this.set(cur); this.confidence = r.ev.q;
       const until = this.now() + this.paceMs; while (this.now() < until) yield;
     }
-    this.phase = "polish"; this.label = "Fine tuning…"; this.progress = 0.92; this.set(top.pts); yield;
-    const fin = yield* climb(f, top.pts, [0.5, 0.25, 0.12], 12, (p) => this.set(p));
-    const result = fin.ev.cost <= top.ev.cost ? fin : top;
+    this.phase = "polish"; this.label = "Lining up with the square edges…"; this.progress = 0.92; this.set(top.pts); yield;
+    const polished = withGuide(f, top.pts);
+    this.set(polished.corners); yield;
+    const fin = yield* climb(f, polished.corners, [0.5, 0.25, 0.12], 12, (p) => this.set(p), polished.guide);
+    const result = evaluate(f, fin.pts).cost <= evaluate(f, top.pts).cost ? fin : top;
     this.set(result.pts);
     // sure only when the grid fits, the colours are right, and the ten attempts landed in the same place
     const agree = keep.length < 2 ? 0.7 : clamp(1 - spreadOf(keep.map((d) => d.pts), result.pts) / 0.5, 0, 1);
@@ -177,7 +189,7 @@ export class AutoAligner implements AlignStatus {
  * board does not drag the grid away). If that cannot recover the fit for a while, it says the board is lost.
  */
 export class AlignFollower {
-  private base: Eval | null = null; private last = 0; private job: Generator<void, { pts: Pt[]; ev: Eval }> | null = null; private from: Pt[] = []; private bad = 0;
+  private base: Eval | null = null; private last = 0; private job: Generator<void, { pts: Pt[]; ev: Eval }> | null = null; private from: Pt[] = []; private bad = 0; private guide: GridGuide | null = null;
   status: "locked" | "adjusting" | "lost" | "idle" = "idle";
   constructor(private checkMs = 500, private now: () => number = () => performance.now()) {}
   get locked() { return this.base !== null; }
@@ -193,15 +205,16 @@ export class AlignFollower {
       const ev = evaluate(f, pts);
       if (ev.error <= this.base.error + 0.035 && ev.q >= this.base.q - 0.15) { this.bad = 0; this.status = "locked"; return null; }
       this.from = pts; this.status = "adjusting";
-      const st = sideOf(pts) / 8;
-      this.job = climb(f, pts, [st * 0.2, st * 0.1, st * 0.05, 1, 0.5, 0.25], 12);
+      const guided = withGuide(f, pts); this.guide = guided.guide;
+      const st = sideOf(guided.corners) / 8;
+      this.job = climb(f, guided.corners, [st * 0.2, st * 0.1, st * 0.05, 1, 0.5, 0.25], 12, undefined, this.guide);
     }
     const end = t + budgetMs;
     while (this.now() < end) {
       const r = this.job.next();
       if (!r.done) continue;
       this.job = null;
-      const { pts: out, ev } = r.value, was = evaluate(f, this.from);
+      const { pts: out, ev } = r.value, was = evaluate(f, this.from, this.guide);
       if (ev.cost < was.cost - 0.005 && ev.q >= Math.max(0.45, this.base.q - 0.15)) { this.base = ev; this.bad = 0; this.status = "locked"; this.last = this.now(); return out; }
       this.bad++; this.status = this.bad >= 4 ? "lost" : "locked";
       return null;

@@ -58,8 +58,9 @@ describe("relay", () => {
     expect((await call("/remote/api/cmd?code=4321", { method: "POST", body: "nonsense" })).status).toBe(400);
     expect((await call("/remote/api/cmd?code=4321", { method: "POST", body: JSON.stringify({ type: "move", from: "z9", to: "e4" }) })).status).toBe(400);
     expect((await call("/remote/api/cmd?code=4321", { method: "POST", body: JSON.stringify(move) })).status).toBe(200);
+    expect((await call("/remote/api/cmd?code=4321", { method: "POST", body: JSON.stringify({ type: "resign" }) })).status).toBe(200);
     const got = await (await call("/remote/host/state", { method: "POST", body: JSON.stringify(state()) })).json();
-    expect(got.commands).toEqual([move]);
+    expect(got.commands).toEqual([move, { type: "resign" }]);
     expect((await (await call("/remote/host/state", { method: "POST", body: JSON.stringify(state()) })).json()).commands).toEqual([]);
     for (let i = 0; i < 20; i++) await call("/remote/api/cmd?code=4321", { method: "POST", body: JSON.stringify(move) });
     expect((await call("/remote/api/cmd?code=4321", { method: "POST", body: JSON.stringify(move) })).status).toBe(429);

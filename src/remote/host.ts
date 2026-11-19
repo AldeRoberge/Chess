@@ -45,14 +45,24 @@ export function snapshot(b: BusView, opts: { now: number; virtualBoard: boolean;
   };
 }
 
-/** The virtual table, as far as a remote move needs it. */
-export interface TableLike { busy: boolean; play(move: string, now: number): boolean }
+/** The virtual table, as far as a remote command needs it. */
+export interface TableLike {
+  busy: boolean;
+  over?: boolean;
+  play(move: string, now: number): boolean;
+  takeback?(): boolean;
+  resign?(color: "w" | "b"): boolean;
+  agreeDraw?(): boolean;
+}
+
+export type RemoteCtx = { mode: PlayMode; fen: string; bus: { engineHint: { from: string; to: string } | null }; table: TableLike; now: number; botTurn: boolean };
 
 /**
  * Carries out one move from a phone. On the virtual table the virtual hand plays it; on a real board it becomes the green arrow
  * (and a line for the narrator's log) and a person plays it. Always answers with a sentence the phone can show.
  */
-export function applyRemoteMove(cmd: RemoteMove, ctx: { mode: PlayMode; fen: string; bus: { engineHint: { from: string; to: string } | null }; table: TableLike; now: number; botTurn: boolean }): { ok: boolean; text: string } {
+export function applyRemoteMove(cmd: RemoteMove, ctx: RemoteCtx): { ok: boolean; text: string } {
+  if (ctx.table.over) return { ok: false, text: "The game is over." };
   if (ctx.mode === "off") return { ok: false, text: ctx.botTurn ? "It is the bot's turn. Wait for its move." : "No game is being played right now." };
   let move; try { move = new Chess(ctx.fen).move({ from: cmd.from, to: cmd.to, promotion: cmd.promotion ?? "q" }); } catch { move = null; }
   if (!move) return { ok: false, text: `${cmd.from}${cmd.to} is not a legal move here. Pick another.` };
@@ -64,6 +74,26 @@ export function applyRemoteMove(cmd: RemoteMove, ctx: { mode: PlayMode; fen: str
   const hint = { from: move.from, to: move.to };
   ctx.bus.engineHint = hint; own = { hint, fen: ctx.fen };
   return { ok: true, text: `${move.san} sent. Play ${move.from} to ${move.to} on the board.` };
+}
+
+/** Carries out a phone command: a move, a takeback, a resignation, or an agreed draw. */
+export function applyRemoteCommand(cmd: RemoteCommand, ctx: RemoteCtx): { ok: boolean; text: string } {
+  if (cmd.type === "move") return applyRemoteMove(cmd, ctx);
+  if (cmd.type === "takeback") {
+    if (ctx.table.busy) return { ok: false, text: "A move is still being played. Try again in a second." };
+    if (!ctx.table.takeback?.()) return { ok: false, text: "There is nothing to take back." };
+    return { ok: true, text: "Takeback applied." };
+  }
+  if (ctx.mode === "off") return { ok: false, text: ctx.botTurn ? "It is the bot's turn. Wait for its move." : "No game is being played right now." };
+  const color: "w" | "b" = ctx.fen.split(" ")[1] === "b" ? "b" : "w";
+  if (cmd.type === "resign") {
+    if (!ctx.table.resign) return { ok: false, text: "This board cannot resign." };
+    if (!ctx.table.resign(color)) return { ok: false, text: "The game is already over." };
+    return { ok: true, text: `${color === "w" ? "White" : "Black"} resigns.` };
+  }
+  if (!ctx.table.agreeDraw) return { ok: false, text: "This board cannot agree a draw." };
+  if (!ctx.table.agreeDraw()) return { ok: false, text: "The game is already over." };
+  return { ok: true, text: "Draw agreed." };
 }
 
 /** Turns a grayscale camera frame into a small JPEG. Null when the browser cannot draw it. */
