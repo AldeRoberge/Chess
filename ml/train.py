@@ -77,6 +77,17 @@ def pack(t):
 xt, yt = load("train")
 xv, yv = load("val")
 xr, yr = load("real")
+# Fine-tune on augmented copies of the real frame. "holdout" trains on files a-d only and judges the model
+# on files e-h of the untouched frame; "all" uses every square (the shipped model), so its real score is optimistic.
+REAL = sys.argv[2] if len(sys.argv) > 2 else "none"
+if REAL != "none":
+    xa, ya = load("realaug")
+    col = torch.arange(len(xa), device=DEV) % 8
+    keep = col < 4 if REAL == "holdout" else col >= 0
+    xt, yt = torch.cat([xt] + [xa[keep]] * 3), torch.cat([yt] + [ya[keep]] * 3)
+    if REAL == "holdout":
+        hold = (torch.arange(64, device=DEV) % 8) >= 4
+        xr, yr = xr[hold], yr[hold]
 print(f"train {len(xt)} val {len(xv)} real {len(xr)}; classes {torch.bincount(yt).tolist()}")
 net = Net().to(DEV)
 print("device", DEV)

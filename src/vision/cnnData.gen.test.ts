@@ -40,7 +40,9 @@ describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
     for (let n = 0; n < N; n++) {
       const g = randomGame(rand);
       table.game = g;
-      const rig = randomRig(rand, n), o = { width: FRAME_W, height: FRAME_H, rig, shadows: rand() < 0.7 };
+      // board and piece tones vary a lot between real sets: pale "white" pieces can be barely brighter than a light square
+      const light = 100 + rand() * 80, dark = Math.max(35, light - 15 - rand() * 70), w = rand() < 0.5 ? 130 + rand() * 115 : light + 5 + rand() * 60, b = 10 + rand() * 90;
+      const rig = randomRig(rand, n), o = { width: FRAME_W, height: FRAME_H, rig, shadows: rand() < 0.7, tones: { light, dark, w, b } };
       const lum = renderLuminance(table.scene3d(), o);
       const truth = label(g);
       for (let k = 0; k < 2; k++) {
@@ -56,6 +58,21 @@ describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
     writeFileSync(`${out}.x`, xs);
     writeFileSync(`${out}.y`, ys);
   }, 3_600_000);
+
+  it("augments the real camera frame into extra training crops", () => {
+    const M = Number(process.env.CNN_REAL ?? 300), rand = rng(99), gauss = () => (rand() + rand() + rand() - 1.5) * 2;
+    const real = readFileSync("src/vision/fixtures/real-start-B.gray"), base = parseCorners("304,55;397,216;147,292;112,93")!;
+    const xs = new Uint8Array(M * 64 * CROP * CROP), ys = new Uint8Array(M * 64), truth = label(new Chess());
+    for (let m = 0; m < M; m++) {
+      const noise = rand() * 18, gain = 0.6 + rand() * 0.8, grad = rand() * 0.3, d = new Uint8ClampedArray(real.length), draw = rng(m + 5);
+      for (let i = 0; i < d.length; i++) d[i] = real[i] * gain * (1 - grad * ((i % 480) / 480)) + (draw() + draw() + draw() - 1.5) * 2 * noise;
+      const crops = extractCrops({ width: 480, height: 360, data: d, t: 0 }, base.map((p) => ({ x: p.x + gauss() * 1.6, y: p.y + gauss() * 1.6 })));
+      for (let i = 0; i < crops.length; i++) xs[m * 64 * CROP * CROP + i] = Math.min(255, Math.round(crops[i] * 127.5));
+      ys.set(truth, m * 64);
+    }
+    writeFileSync("ml/data/realaug.x", xs);
+    writeFileSync("ml/data/realaug.y", ys);
+  });
 
   it("cuts the real camera frame of the start position into crops", () => {
     const frame: GrayFrame = { width: 480, height: 360, data: new Uint8ClampedArray(readFileSync("src/vision/fixtures/real-start-B.gray")), t: 0 };
