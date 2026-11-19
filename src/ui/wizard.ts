@@ -326,8 +326,15 @@ export class SetupWizard {
       });
     }
     Array.from(this.stepsEl.children).forEach((li, i) => {
+      if (i === this.step && !li.classList.contains("cur")) {
+        const item = li as HTMLElement;
+        // Move only the step strip, never its vertically scrolling ancestors.
+        const left = item.offsetLeft - this.stepsEl.offsetLeft;
+        if (left < this.stepsEl.scrollLeft) this.stepsEl.scrollLeft = left;
+        else if (left + item.offsetWidth > this.stepsEl.scrollLeft + this.stepsEl.clientWidth)
+          this.stepsEl.scrollLeft = left + item.offsetWidth - this.stepsEl.clientWidth;
+      }
       li.classList.toggle("cur", i === this.step);
-      if (i === this.step) (li as HTMLElement).scrollIntoView?.({ block: "nearest", inline: "nearest" }); // keeps the current step in view in the phone strip
       li.classList.toggle("sel", i === this.step && this.zone === "steps");
     });
     this.progress.replaceChildren(...STEPS.map((_, i) => el("i", i < this.step ? "done" : i === this.step ? "cur" : "")), el("span", "", `Step ${this.step + 1} of ${STEPS.length}`));

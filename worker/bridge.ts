@@ -1,5 +1,5 @@
-// The public half of the phone remote. The game stays on the computer running `npm run dev`; that computer
-// pushes the position here, and a phone on alderoberge.com reads it with the same join code.
+// The phone remote for both production browser hosts and local dev hosts.
+// The host publishes the position here, and phones read it with the same join code.
 // One Durable Object holds the live room. A wrong code learns nothing, and only the computer that opened the room can publish.
 
 const JSON_LIMIT = 64 * 1024, FRAME_LIMIT = 512 * 1024, QUEUE_LIMIT = 20, SEEN_MS = 6000, HOST_STALE_MS = 20_000, STATE_STALE_MS = 10_000;
@@ -19,13 +19,18 @@ export interface BridgeState {
 }
 
 interface RoomRow { token: string; code: string; rev: number; state: string | null; queue: string; touched: number }
-interface Command { type: string; from?: string; to?: string; promotion?: string }
+interface Command { type: string; from?: string; to?: string; promotion?: string; action?: string; session?: string; step?: number }
 
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
 function command(raw: unknown): Command | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Record<string, unknown>;
+  if (c.type === "calibrate") {
+    if (!["start", "capture", "apply", "stop", "retry"].includes(String(c.action))) return null;
+    if (c.action !== "start" && (typeof c.session !== "string" || c.session.length > 64 || !Number.isInteger(c.step) || Number(c.step) < 0 || Number(c.step) > 32)) return null;
+    return { type: "calibrate", action: String(c.action), ...(c.action === "start" ? {} : { session: c.session as string, step: c.step as number }) };
+  }
   if (typeof c.type === "string" && ENDING.has(c.type)) return { type: c.type };
   if (c.type !== "move" || typeof c.from !== "string" || typeof c.to !== "string" || !SQUARE.test(c.from) || !SQUARE.test(c.to)) return null;
   if (c.promotion !== undefined && !(typeof c.promotion === "string" && "qrbn".includes(c.promotion) && c.promotion.length === 1)) return null;
@@ -88,6 +93,11 @@ export class GameBridge {
       if (token.length < 16) return json({ error: "missing host token" }, 401);
       const mine = !!this.token && token === this.token;
       if (this.token && !mine && now - this.touched < HOST_STALE_MS) return json({ error: "another computer is hosting this game" }, 409);
+      if (route === "host/info" && req.method === "POST") {
+        if (!mine) { this.rev = 0; this.state = null; this.queue = []; this.frames.clear(); }
+        this.token = token; this.code = code; this.touched = now; this.save();
+        return json({ code, clients: this.clients(now), urls: [`${url.origin}/chess/#/remote?code=${code}`] });
+      }
       if (route === "host/state" && req.method === "POST") {
         const raw = await req.text();
         if (raw.length > JSON_LIMIT) return json({ error: "request too large" }, 413);
@@ -100,6 +110,7 @@ export class GameBridge {
         return json({ ok: true, commands, clients: this.clients(now), code });
       }
       if (route === "host/frame" && req.method === "POST") {
+        if (!mine) return json({ error: "wrong host token" }, 401);
         const cam = url.searchParams.get("cam") ?? "";
         const buf = new Uint8Array(await req.arrayBuffer());
         if (!/^[\w-]{1,24}$/.test(cam) || !buf.length || buf.length > FRAME_LIMIT) return json({ error: "Send a camera id and a JPEG under 512 KB." }, 400);
@@ -146,19 +157,40 @@ export class GameBridge {
 
 interface BridgeEnv { BRIDGE?: BridgeNamespace; KEYS?: { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void> } }
 
+// Polling is frequent: a KV write per request exhausts the daily quota within minutes.
+// Best-effort per-isolate throttling keeps the relay independent of the API-key store.
+const requestCounts = new Map<string, number>();
+let requestMinute = -1;
+
 /** Sends /chess/remote/* to the live room. Returns null when the URL is not a remote route. */
 export async function handleRemote(req: Request, env: BridgeEnv, url: URL): Promise<Response | null> {
   if (!url.pathname.startsWith("/chess/remote/")) return null;
   const code = url.searchParams.get("code") ?? "";
-  if (!/^\d{4,8}$/.test(code)) return json({ error: "Wrong or missing join code. Check the code on the computer." }, 401);
+  const session = url.pathname === "/chess/remote/host/session" && req.method === "POST";
+  if (!session && !/^\d{4,8}$/.test(code)) return json({ error: "Wrong or missing join code. Check the code on the computer." }, 401);
   if (!env.BRIDGE) return json({ error: "Phone bridge is not configured on this worker." }, 503);
   const ip = req.headers.get("CF-Connecting-IP") || "unknown";
-  if (env.KEYS) {
-    const minute = Math.floor(Date.now() / 60000);
-    const key = `bridge:${ip}:${minute}`;
-    const n = Number((await env.KEYS.get(key)) || 0) + 1;
-    if (n > 1200) return json({ error: "rate limit: slow down" }, 429);
-    await env.KEYS.put(key, String(n), { expirationTtl: 120 });
+  const minute = Math.floor(Date.now() / 60000);
+  if (minute !== requestMinute) { requestCounts.clear(); requestMinute = minute; }
+  const key = `${session ? "session:" : "poll:"}${ip}`;
+  const n = (requestCounts.get(key) ?? 0) + 1;
+  if (n > (session ? 20 : 1200) || (!requestCounts.has(key) && requestCounts.size >= 10000)) return json({ error: "rate limit: slow down" }, 429);
+  requestCounts.set(key, n);
+  if (session) {
+    // Allocate a separate room per code; two host PCs must never overwrite one another.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const bytes = crypto.getRandomValues(new Uint32Array(1));
+      const joinCode = String(100000 + bytes[0] % 900000);
+      const token = crypto.randomUUID();
+      const target = new URL("/chess/remote/host/info", url); target.searchParams.set("code", joinCode);
+      const response = await env.BRIDGE.get(env.BRIDGE.idFromName(joinCode)).fetch(new Request(target, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+      }));
+      if (response.status === 409) continue;
+      if (!response.ok) return response;
+      return json({ ...await response.json() as object, token });
+    }
+    return json({ error: "Could not allocate a phone room. Try again." }, 503);
   }
-  return env.BRIDGE.get(env.BRIDGE.idFromName("live")).fetch(req);
+  return env.BRIDGE.get(env.BRIDGE.idFromName(code)).fetch(req);
 }

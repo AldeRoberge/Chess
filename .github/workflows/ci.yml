@@ -34,4 +34,5 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
-      - run: npm run check
+      # The slow camera simulation matrix runs locally with npm run test:simulation.
+      - run: npm run check:ci

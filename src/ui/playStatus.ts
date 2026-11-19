@@ -23,17 +23,24 @@ export function playStatus(v: PlayView): PlayNote {
   const g = v.game;
   const seeing = (v.board?.cams ?? 0) > 0 || v.cameras > 0;
   const last = g?.history.at(-1);
+  if (g?.over) return note("ready", "Game over", last ? `Last move ${last}.` : "The game has ended.");
   if (g?.status === "lifted" || g?.lifted) return note("go", "Piece in hand", "Put it on its square, then move your hand away.");
-  if (g?.status === "pending" && g.ply > 0) return note("go", "Watching your move", "Hold still once the piece is down. It counts when the picture settles.");
+  // Pending describes the current camera reading; it does not undo an accepted move.
+  if (g?.status === "pending" && g.ply > 0) {
+    const reason = v.board?.handOver
+      ? "Movement detected over the board. Waiting for a stable camera reading."
+      : "The camera reading does not yet match the tracked position. Checking again.";
+    return note("go", "Checking the board", `${last ?? "Your last move"} has counted. ${reason}`);
+  }
+  if (g?.status === "unclear") return note("wait", "Can't read the board", "The camera disagrees with the game on too many squares to be a move. Check the light and the board corners, or set up the start position and press Learn now.");
   if (g?.status === "illegal" && g.ply === 0) return note("wait", "Set up a new game", "Put every piece back on its starting square.");
   if (g?.status === "illegal") return note("bad", "Not a legal move", "Put the piece back, or finish a legal move. To start over, set up the starting position.");
-  if (g?.over) return note("ready", "Game over", last ? `Last move ${last}.` : "The game has ended.");
 
   const playing = (v.phase ?? "idle") === "game";
   if (!playing) {
     if (g && g.ply > 0) return note("go", "Move seen", `${last ?? "Your move"} is in. Starting the game.`);
     if (!seeing) return note("wait", "Getting ready", "Waiting for the cameras to see the board.");
-    if (!v.board || v.board.handOver || !v.board.settled) return note("wait", "Getting ready", "Keep your hands off the board until the picture settles.");
+    if (!v.board || !v.board.settled || v.board.handOver) return note("wait", "Getting ready", v.board?.handOver ? "Movement detected over the board. Waiting for a stable camera reading." : "Waiting for a stable camera reading.");
     if ((g?.ply ?? 0) === 0 && g?.status !== "synced" && !v.startPosition) return note("wait", "Getting ready", "Still reading the starting position.");
     return note("ready", "Ready", "Make your first move on the board. The game starts when you do.");
   }

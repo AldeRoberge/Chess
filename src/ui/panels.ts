@@ -112,7 +112,11 @@ export class TablePanel {
     this.banner.hidden = true; this.banner.setAttribute("role", "status");
     this.playBox.dataset.tone = "wait"; this.playBox.setAttribute("role", "status"); this.playBox.append(this.playTitle, this.playDetail);
     this.caption.hidden = true; this.caption.setAttribute("aria-live", "polite");
-    this.root.append(this.topSeat, this.cv, this.botSeat, this.caption, this.playBox, actions, this.banner, this.promo, this.moves, this.info);
+    // Two columns: the board with its player rows, and the status, actions and moves. In a narrow dock both are display:contents (one stacked column); in the wide simple view they sit side by side and the board is sized to the height (style.css).
+    const boardCol = el("div", "cc-board"), sideCol = el("div", "cc-side");
+    boardCol.append(this.topSeat, this.cv, this.botSeat);
+    sideCol.append(this.caption, this.playBox, actions, this.banner, this.promo, this.moves, this.info);
+    this.root.append(boardCol, sideCol);
     this.info.textContent = "Click a piece, then a square. Hover a menu button to test dwell selection. Arrow keys and Enter play too. [ and ] step through the moves.";
     const pos = (e: MouseEvent) => { const r = this.cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * (8 + 2 * this.margin) - this.margin, y: ((e.clientY - r.top) / r.height) * (8 + 2 * this.margin) - this.margin }; };
     this.cv.onmousemove = (e) => {

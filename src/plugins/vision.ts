@@ -1,6 +1,9 @@
-import { averageFrames, enhance, noEnhance, resample } from "../vision/enhance";
+import { calibrationRuntime } from "../vision/calibration";
+import { FrameCleaner, type Cleaned } from "../vision/cleaner";
+import { cleanPool } from "../vision/cleanPool";
 import { Fusion } from "../vision/fusion";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
+import { loadSquareCnn } from "../vision/squareModel";
 import { Stabilizer } from "../vision/stabilizer";
 import type { BoardBelief, GrayFrame, SquareObs } from "../vision/types";
 import type { NodeSpec, Plugin } from "../core/types";
@@ -8,14 +11,24 @@ import { bus } from "../core/bus";
 import { applyH, boardToImage, invertH } from "../vision/homography";
 import { sqIndex, sqName } from "../vision/types";
 import { drawChevrons } from "../world/chevrons";
-import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, frameScale, parseCorners, withDetail, type DetailRow } from "./shared";
+import { brief, CAM_PRESETS, drawBoard, drawFrame, drawReaderBoard, readerTiles, fenPieces, fmtCorners, frameScale, looksLikeStart, parseCorners, withDetail, type DetailRow } from "./shared";
 import { FRAME_H, FRAME_W } from "../sim/rigs";
-import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
+import { boardHover, boardSquareAt, markSquares, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
 import { AlignFollower, evaluate } from "../ui/autoAlign";
 import { GOOD } from "../ui/boardGuide";
 
-interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number }
+interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; calT: number; calTries: number; lastT: number; cleaner: FrameCleaner; key: string; inflight: number; epoch: number; ready: Cleaned | null; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number }
+const AUTO_CAL_RETRY_MS = 1000, AUTO_CAL_MAX_TRIES = 8, AUTO_CAL_MIN_LUMA = 20;
+/** A move has been played: the pieces are no longer where the start-position calibration assumes. */
+const gameStarted = () => (bus.game?.ply ?? 0) > 0;
+/** Average brightness, sampled sparsely: a webcam still warming up sends near-black frames. */
+function meanLuma(f: GrayFrame): number {
+  const d = f.data, step = Math.max(1, Math.floor(d.length / 4096));
+  let sum = 0, n = 0;
+  for (let i = 0; i < d.length; i += step) { sum += d[i]; n++; }
+  return n ? sum / n : 0;
+}
 /** Board square (0 = a8) under an image pixel for these corners, or null when the pixel is off the board. */
 function squareAtPixel(corners: { x: number; y: number }[], x: number, y: number): number | null {
   const q = applyH(invertH(boardToImage(corners)), x, y);
@@ -23,6 +36,11 @@ function squareAtPixel(corners: { x: number; y: number }[], x: number, y: number
   return q.x >= 0 && q.y >= 0 && c < 8 && r < 8 ? r * 8 + c : null;
 }
 
+/** The reader preview: the camera picture on top (160×120), the board it reads from that picture below (160×160). */
+const READER_BASE: [number, number] = [160, 280];
+const readerSplit = (w: number, h: number) => { const fh = Math.min(w * 0.75, h * (120 / 280)); return { fh, bh: h - fh }; };
+
+let readerSeq = 0;
 const reader: NodeSpec<ReaderState> = {
   type: "vision.boardReader", title: "Board Reader", category: "Vision",
   inputs: [{ id: "frame", type: "frame" }], outputs: [{ id: "obs", type: "obs" }],
@@ -30,61 +48,113 @@ const reader: NodeSpec<ReaderState> = {
     { id: "cam", kind: "text", label: "Camera id", value: "A" },
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
     { id: "follow", kind: "bool", label: "Follow camera moves", value: true },
+    { id: "cnn", kind: "bool", label: "Neural square reader (beta)", value: false },
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.15, max: 0.6, step: 0.01, value: 0.22 },
+    { id: "shapeWeight", kind: "number", label: "Shape / texture evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
+    { id: "colorWeight", kind: "number", label: "Color / brightness evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
+    { id: "patch", kind: "number", label: "Piece size / sample width", min: 0.35, max: 0.85, step: 0.05, value: 0.6 },
+    { id: "positionWeight", kind: "number", label: "Position / perspective correction", min: 0, max: 2, step: 0.25, value: 1 },
+    { id: "softness", kind: "number", label: "Decision softness", min: 0.02, max: 0.2, step: 0.005, value: 0.06 },
+    { id: "grid", kind: "number", label: "Sample dots per axis", min: 3, max: 10, step: 1, value: 6 },
     { id: "weight", kind: "number", label: "Trust", min: 0, max: 2, step: 0.1, value: 1 },
     { id: "clean", kind: "bool", label: "Clean up noise", value: true },
     { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
     { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
   ],
-  previewSize: [160, 120],
+  previewSize: READER_BASE,
   frameOf: (s) => s.frame,
-  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0 }),
+  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, calT: -Infinity, calTries: 0, lastT: -1, cleaner: new FrameCleaner(), key: `reader${++readerSeq}`, inflight: 0, epoch: 0, ready: null, raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0 }),
   process({ frame }, { params, state, setFidelity, span }) {
     const s = state.sampler;
     s.cam = String(params.cam);
-    if (!frame) { state.frame = state.raw = state.analysis = state.cleaned = null; state.recent = []; state.obs = null; state.follower.unlock(); setFidelity(null); return { obs: null }; }
+    if (!frame) { if (state.raw) cleanPool().forget(state.key); state.frame = state.raw = state.analysis = state.cleaned = state.ready = null; state.cleaner.recent = []; state.epoch++; state.inflight = 0; state.obs = null; state.follower.unlock(); setFidelity(null); return { obs: null }; }
     // The picture you line up stays at the camera's resolution. The squares are read from a 480×360 average of it, which is the space the saved corners are in.
-    const fresh = frame !== state.raw;
-    if (fresh) { state.raw = frame; state.analysis = resample(frame, FRAME_W, FRAME_H); }
-    const analysis = state.analysis!;
-    // Camera nudged? Keep the corners on the board: re-fit them in small steps whenever the grid stops lining up with the squares.
-    const cur = params.follow ? parseCorners(String(params.corners)) : null;
-    if (!cur || (state.follower.locked && String(params.corners) !== state.followWrote)) state.follower.unlock(); // switched off, or the corners were edited by hand
-    if (cur && fresh) {
-      if (!state.follower.locked) {
-        const now = performance.now();
-        if (now - state.lockTry > 1000) { state.lockTry = now; if (evaluate(analysis, cur).q >= GOOD) { state.follower.lock(analysis, cur); state.followWrote = String(params.corners); } }
-      } else {
-        const fixed = span("follow camera", () => state.follower.tick(analysis, cur, 4));
-        if (fixed) { params.corners = state.followWrote = fmtCorners(fixed); }
-        else if (state.follower.status === "lost") state.follower.unlock();
-      }
-    }
-    if (state.corners !== params.corners) { const c = parseCorners(String(params.corners)); if (c) { s.cfg.corners = c; state.corners = String(params.corners); } }
-    s.cfg.threshold = Number(params.threshold);
     // Clean-up: a median filter plus the mean of the last few frames of a still board (benchmarked: far fewer phantom and missed pieces than reading raw frames).
     // The mean restarts whenever the board is changing (a hand, a moved piece), so motion is never smeared into the picture the reader samples. The preview is not averaged.
-    if (fresh || !state.cleaned) {
-      const keep = Math.max(1, Math.round(Number(params.average) || 1));
-      if (state.obs && state.obs.motion > 0.02) state.recent = [];
-      state.recent.push(analysis);
-      if (state.recent.length > keep) state.recent.splice(0, state.recent.length - keep);
-      const mean = state.recent.length > 1 ? averageFrames(state.recent) : analysis;
-      state.cleaned = span("clean up picture", () => enhance(mean, { ...noEnhance(), denoise: params.clean ? "median" : "none" }));
-      state.frame = frame.width === FRAME_W && frame.height === FRAME_H ? state.cleaned : frame;
+    // In the browser this runs in a worker and its result is read on the next tick; a frame that arrives while one is still being cleaned is skipped.
+    if (frame !== state.raw) {
+      state.raw = frame;
+      const opts = { width: FRAME_W, height: FRAME_H, keep: Number(params.average), clean: !!params.clean, reset: !!(state.obs && state.obs.motion > 0.02) };
+      const pool = cleanPool();
+      if (!pool.supported) state.ready = span("clean up picture", () => state.cleaner.run(frame, opts));
+      else {
+        const t = performance.now();
+        if (state.inflight && t - state.inflight > 2000) { state.epoch++; state.inflight = 0; } // a lost answer must never stall the reader
+        if (!state.inflight) {
+          state.inflight = t;
+          const epoch = state.epoch;
+          void pool.clean(state.key, frame, opts).then((r) => { if (epoch === state.epoch) { state.inflight = 0; state.ready = r; } });
+        }
+      }
     }
+    const ready = state.ready;
+    state.ready = null;
+    // Camera nudged? Keep the corners on the board: re-fit them in small steps whenever the grid stops lining up with the squares.
+    const cur = params.follow && !calibrationRuntime.active ? parseCorners(String(params.corners)) : null;
+    if (!cur || (state.follower.locked && String(params.corners) !== state.followWrote)) state.follower.unlock(); // switched off, or the corners were edited by hand
+    if (ready) {
+      state.analysis = ready.analysis; state.cleaned = ready.cleaned;
+      state.frame = frame.width === FRAME_W && frame.height === FRAME_H ? ready.cleaned : frame;
+      const analysis = ready.analysis;
+      if (cur) {
+        if (!state.follower.locked) {
+          const now = performance.now();
+          if (now - state.lockTry > 1000) { state.lockTry = now; if (evaluate(analysis, cur).q >= GOOD) { state.follower.lock(analysis, cur); state.followWrote = String(params.corners); } }
+        } else {
+          const fixed = span("follow camera", () => state.follower.tick(analysis, cur, 4));
+          if (fixed) { params.corners = state.followWrote = fmtCorners(fixed); }
+          else if (state.follower.status === "lost") state.follower.unlock();
+        }
+      }
+    }
+    if (state.corners !== params.corners) {
+      const c = parseCorners(String(params.corners));
+      // New corners make the learned empty squares stale: learn the start position again, unless a game is under way.
+      if (c) { s.cfg.corners = c; if (state.corners && !gameStarted()) { state.autoDone = false; state.calTries = 0; state.calT = -Infinity; } state.corners = String(params.corners); }
+    }
+    const settingsKey = JSON.stringify([params.threshold, params.shapeWeight, params.colorWeight, params.patch, params.positionWeight, params.softness, params.grid]);
+    if ((state as ReaderState & { settingsKey?: string }).settingsKey !== settingsKey) {
+      (state as ReaderState & { settingsKey?: string }).settingsKey = settingsKey; state.readOf = null;
+    }
+    s.cfg.threshold = Number(params.threshold);
+    s.cfg.shapeWeight = Number(params.shapeWeight ?? 1); s.cfg.colorWeight = Number(params.colorWeight ?? 1);
+    s.cfg.positionWeight = Number(params.positionWeight ?? 1); s.cfg.patch = Number(params.patch ?? 0.6);
+    s.cfg.softness = Number(params.softness ?? 0.06); s.cfg.grid = Math.round(Number(params.grid ?? 6));
+    s.cfg.engine = params.cnn ? "cnn" : "rules";
+    if (params.cnn && !BoardSampler.cnn) void loadSquareCnn(); // reads fall back to the brightness reader until the model has loaded
+    if (!state.cleaned) { setFidelity(null); return { obs: null }; } // the first picture is still being cleaned
     const img = state.cleaned!;
-    if (params.learn || (params.autoCal && !state.autoDone && !s.calibrated)) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; }
+    if (params.learn) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; state.readOf = null; }
+    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && !gameStarted() && img !== state.readOf && img.t - state.calT >= AUTO_CAL_RETRY_MS && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
+      // Auto-learn keeps trying until the reading looks like the start position. Learning once from the first frame locked in a
+      // dark warm-up frame or the default corners for good: every square then read wrong and the game never started.
+      span("calibrateFromStart", () => s.calibrateFromStart(img));
+      state.calT = img.t; state.calTries++;
+      state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight)));
+      if (looksLikeStart(state.obs) || state.calTries >= AUTO_CAL_MAX_TRIES) state.autoDone = true;
+    }
     if (img !== state.readOf || !state.obs) { state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight))); } // one read per camera frame
     setFidelity(state.obs.quality * (1 - Math.min(1, state.obs.motion * 4)));
     return { obs: state.obs };
   },
+  dispose(s) { cleanPool().forget(s.key); },
   hover(p, w, h, s) {
-    const v = visualSize(w, h, [160, 120]), f = s.frame;
+    const v = visualSize(w, h, READER_BASE), f = s.frame, { fh, bh } = readerSplit(v.w, v.h);
     if (p.x > v.w || p.y > v.h) return null;
+    if (p.y > fh) { // the board under the picture: this square as the reader reads it
+      const q = boardSquareAt({ x: p.x, y: p.y - fh }, v.w, bh);
+      if (q === null || !s.obs) return null;
+      const t = readerTiles(s.obs, bus.game?.fen)[q];
+      const rows: TipRow[] = [{ label: "Square", value: `${sqName(q)} (${isLightSquare(q) ? "light" : "dark"})` },
+        { label: "Reads as", value: t.occupied ? (t.piece ? pieceLabel(t.piece) : `${t.white ? "white" : "black"} piece (type unknown)`) : "empty" },
+        { label: "Confidence", value: pct(t.conf), bar: t.conf, tone: tone(t.conf) },
+        { label: "Says occupied", value: pct(s.obs.occ[q]), bar: s.obs.occ[q] }];
+      return { title: sqName(q), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4", body: "What this camera alone reads on the square, before the cameras are fused. The piece type comes from the tracked game; the reader itself only tells empty, white and black apart.", rows,
+        mark: (ctx) => { ctx.save(); ctx.translate(0, fh); markSquares(ctx, v.w, bh, q); ctx.restore(); } };
+    }
     if (!f) return { title: "No camera picture", tag: "Board Reader", body: "Wire a camera into this node: it reads the 64 squares from the picture.", rows: [{ label: "Calibrated", value: s.sampler.calibrated ? "yes" : "no", tone: s.sampler.calibrated ? "ok" : "warn" }] };
-    const { r, x, y, inside } = framePixel(f, p, v.w, v.h);
+    const { r, x, y, inside } = framePixel(f, p, v.w, fh);
     if (!inside) return null;
     const cfg = s.sampler.cfg, lum = f.data[Math.floor(y) * f.width + Math.floor(x)];
     const sc = frameScale(f.width, f.height), ax = x / sc.sx, ay = y / sc.sy;
@@ -132,8 +202,11 @@ const reader: NodeSpec<ReaderState> = {
     };
   },
   preview(ctx, w, h, s) {
-    withDetail(ctx, w, h, [160, 120], (pw, ph) => {
-      const r = drawFrame(ctx, pw, ph, s.frame);
+    withDetail(ctx, w, h, READER_BASE, (pw, ph) => {
+      const { fh, bh } = readerSplit(pw, ph);
+      const r = drawFrame(ctx, pw, fh, s.frame);
+      // what the reader sees, tile by tile, under the picture it reads
+      ctx.save(); ctx.translate(0, fh); ctx.beginPath(); ctx.rect(0, 0, pw, bh); ctx.clip(); drawReaderBoard(ctx, pw, bh, s.obs, bus.game?.fen); ctx.restore();
       if (!s.frame || !r) return;
       const sc = frameScale(s.frame.width, s.frame.height);
       const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * sc.sx * r.s, y: r.y + p.y * sc.sy * r.s }), c = s.sampler.cfg.corners;

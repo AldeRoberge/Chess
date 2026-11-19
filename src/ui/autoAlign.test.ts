@@ -24,6 +24,14 @@ const run = (a: AutoAligner) => { for (let i = 0; i < 5000 && a.step(50); i++); 
 
 describe("auto align", () => {
   const f = render(TRUE);
+  it("retains an already good alignment without exploring replacement layouts", () => {
+    expect(evaluate(f, TRUE).q).toBeGreaterThanOrEqual(0.7);
+    const a = new AutoAligner(f, TRUE, 0);
+    run(a);
+    expect(a.phase).toBe("done");
+    expect(a.corners).toEqual(TRUE);
+    expect(a.label).toBe("Kept existing alignment");
+  });
   it("guesses from the picture and from earlier alignments, not from shifted copies", () => {
     const c = candidateLayouts(f, TRUE);
     expect(c.length).toBeGreaterThan(0);
@@ -100,4 +108,27 @@ describe("auto align", () => {
     let t = 0; const fol = new AlignFollower(0, () => t); fol.lock(f, TRUE); t += 600;
     expect(fol.tick(f, TRUE, 1000)).toBeNull(); expect(fol.status).toBe("locked");
   });
+});
+
+describe("alignConcurrency", () => {
+  it("scales with threads, leaves one for the page, caps at 8 and stays at least 1", async () => {
+    const { alignConcurrency } = await import("./autoAlign");
+    expect(alignConcurrency({ hardwareConcurrency: 32 })).toBe(8);
+    expect(alignConcurrency({ hardwareConcurrency: 8 })).toBe(7);
+    expect(alignConcurrency({ hardwareConcurrency: 1 })).toBe(1);
+    expect(alignConcurrency({ hardwareConcurrency: 16, deviceMemory: 2 })).toBe(2);
+  });
+});
+
+describe("AlignBatch", () => {
+  it("aligns several boards, never more than the limit at once", async () => {
+    const { AlignBatch } = await import("./autoAlign");
+    const fr = render(TRUE), off = TRUE.map((p, i) => ({ x: p.x + [10, -8, 7, -9][i], y: p.y + [-7, 8, 9, -6][i] }));
+    const b = new AlignBatch([1, 2, 3, 4, 5].map((n) => ({ id: `c${n}`, frame: fr, start: off })), 3, 0, undefined, 2);
+    let peak = 0; const seen = new Set<number>();
+    for (let i = 0; i < 5000 && b.step(50); i++) { peak = Math.max(peak, b.active); seen.add(b.active); }
+    expect(peak).toBe(3); expect(seen.has(2)).toBe(true); // starts with 2, then scales up to the limit
+    expect(b.results.size).toBe(5);
+    for (const r of b.results.values()) { expect(r.phase).toBe("done"); expect(worst(r.corners, TRUE)).toBeLessThan(4.5); }
+  }, 60000);
 });

@@ -5,7 +5,7 @@ export type Dialog = string;
 export type Route = { page: Page } | { page: "settings"; step: string | null };
 
 export const PAGES: Page[] = ["table", "world", "log", "perf", "assistant"];
-export const PAGE_TITLES: Record<Page | "settings", string> = { table: "Table", world: "3D / Mapping", log: "Log", perf: "Performance", assistant: "Assistant", settings: "Settings" };
+export const PAGE_TITLES: Record<Page | "settings", string> = { table: "Game", world: "World", log: "Log", perf: "Performance", assistant: "Assistant", settings: "Settings" };
 
 export function parseRoute(hash: string, stepIds: readonly string[] = []): Route {
   const [page, step] = hash.replace(/^#\/?/, "").split("/").map((s) => decodeURIComponent(s.trim().toLowerCase()));

@@ -64,7 +64,11 @@ export function boardHover(p: P, w: number, h: number, b: BoardBelief | null | u
     if (o.fen) {
       const agree = (piece !== null) === seenPiece && (!piece || !seenPiece || (piece === piece.toUpperCase()) === white > 0.5);
       rows.push({ label: "Cameras vs. game", value: agree ? "agree" : "disagree", tone: agree ? "ok" : "bad" });
-      verdict = agree ? "" : " The cameras and the tracked game disagree here.";
+      // The red glow on a square is low certainty; a tinted disc on an empty square is something seen where the game has nothing.
+      verdict = agree ? (b.conf[sq] < 0.5 ? " Red glow: the cameras are unsure about this square." : "")
+        : !piece ? " The cameras see something here that the game says is empty (the tinted disc; red means they are unsure). If it is not part of a move, it is usually a tall piece leaning over from the next square, a shadow, or glare."
+        : !seenPiece ? " The game has a piece here that the cameras do not see. A hand or a taller piece in front may be hiding it."
+        : " The cameras see a piece of the other colour here.";
     }
     if (b.handOver) rows.push({ label: "Hand over board", value: "readings frozen", tone: "warn" });
   } else rows.push({ label: "Cameras", value: "no reading yet", tone: "warn" });
