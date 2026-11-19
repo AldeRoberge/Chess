@@ -6,6 +6,7 @@ export const PARAM_DOCS: Record<string, string> = {
   "vision.boardReader.threshold": "How different a square must look from its empty colour, or from its own corners, before it counts as holding a piece. Lower = more sensitive but more false pieces; higher = misses faint pieces.",
   "vision.boardReader.weight": "How much this camera's vote counts when several cameras are fused. 0 ignores it, 1 is normal, 2 doubles its say.",
   "vision.boardReader.autoCal": "Learns what the empty squares look like automatically while the start position is on the board.",
+  "vision.boardReader.autoFind": "When the board stays unreadable for a few seconds (the grid is off the squares, or the start position is never recognised), find the corners again automatically and re-learn the squares. Shows a Calibration in progress window; at most 3 tries, 30 s apart, until the board reads well again.",
   "vision.boardReader.learn": "Tick once with the pieces in the start position to re-learn the reference now. It un-ticks itself.",
   "vision.fuse.staleMs": "If a camera sends nothing for this long, it is dropped from the vote so a frozen feed can't mislead the board.",
   "vision.fuse.handMotion": "Hand detector sensitivity. If more than this fraction of squares changed between frames, a hand is assumed over the board and the reading is treated as unsettled. A couple of squares of lamp flicker never count. Higher = tolerates more movement before flagging a hand.",

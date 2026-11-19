@@ -8,19 +8,88 @@ import { bus } from "../core/bus";
 import { applyH, boardToImage, invertH } from "../vision/homography";
 import { sqIndex, sqName } from "../vision/types";
 import { drawChevrons } from "../world/chevrons";
-import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, frameScale, parseCorners, withDetail, type DetailRow } from "./shared";
+import { brief, CAM_PRESETS, drawBoard, drawFrame, fenPieces, fmtCorners, frameScale, looksLikeStart, parseCorners, withDetail, type DetailRow } from "./shared";
 import { FRAME_H, FRAME_W } from "../sim/rigs";
 import { boardHover, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
-import { AlignFollower, evaluate } from "../ui/autoAlign";
-import { GOOD } from "../ui/boardGuide";
+import { AlignFollower, AutoAligner, evaluate, rememberLayout, rememberedLayouts } from "../ui/autoAlign";
+import { GOOD, iconLevels } from "../ui/boardGuide";
+import { findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
+import { CalibrationWatch, type WatchReading } from "../vision/autoCalibrate";
 
-interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number }
+interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; lastT: number; recent: GrayFrame[]; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number }
 /** Board square (0 = a8) under an image pixel for these corners, or null when the pixel is off the board. */
 function squareAtPixel(corners: { x: number; y: number }[], x: number, y: number): number | null {
   const q = applyH(invertH(boardToImage(corners)), x, y);
   const c = Math.floor(q.x), r = Math.floor(q.y);
   return q.x >= 0 && q.y >= 0 && c < 8 && r < 8 ? r * 8 + c : null;
+}
+
+/** Drops this reader's calibration (no camera, node removed) and its window. */
+function stopCalibration(state: ReaderState, now: number) {
+  if (state.aligner) { state.aligner = null; state.watch.ended(now); }
+  if (bus.calibration?.cam === state.sampler.cam) bus.calibration = null;
+}
+
+const storage = () => (typeof localStorage === "undefined" ? undefined : localStorage);
+
+/**
+ * When the board stays unreadable, find the corners again (the same search as Auto detect in the corners editor) and
+ * re-learn the empty squares when the start position stands on the board. Shows "Calibration in progress..." on the bus
+ * while it runs. CalibrationWatch keeps it from looping: a cooldown, three tries, and Dismiss holds it off.
+ */
+function autoCalibrate(state: ReaderState, params: Record<string, number | string | boolean>, f: GrayFrame, now: number, fresh: boolean) {
+  const cam = state.sampler.cam, view = bus.calibration, mine = view?.cam === cam;
+  if (mine && bus.calibrationDismiss) { bus.calibrationDismiss = false; state.aligner = null; state.watch.dismiss(now); bus.calibration = null; return; }
+  if (mine && view.phase !== "running" && now >= (view.hideAt ?? 0)) bus.calibration = null;
+  if (!params.autoFind) { if (state.aligner) stopCalibration(state, now); return; }
+  // Judge the board twice a second: how well the grid fits, how much of it reads, and whether the start position shows.
+  if (fresh && now - state.checkAt >= 500) {
+    state.checkAt = now;
+    const corners = parseCorners(String(params.corners)), o = state.obs, g = bus.game;
+    state.fit = corners ? evaluate(f, corners).q : 0;
+    const r: WatchReading = {
+      now, fit: state.fit, quality: o?.quality ?? 0,
+      startSeen: looksLikeStart(o) || g?.status === "synced", started: (g?.ply ?? 0) > 0,
+      still: !!o && o.motion <= 0.02 && !Array.from(o.handSquares as ArrayLike<number>).some(Boolean),
+    };
+    if (state.aligner) {
+      if (state.watch.healthy(r)) { // reads well again on its own: nothing left to do
+        state.aligner = null; state.watch.ended(now);
+        bus.calibration = { cam, phase: "done", label: "The board reads well again.", progress: 1, hideAt: now + 1500 };
+        return;
+      }
+    } else {
+      const why = state.watch.feed(r);
+      const busy = !!bus.calibration && !mine && bus.calibration.phase === "running"; // one camera at a time
+      if (why && busy) state.watch.ended(now);
+      else if (why) {
+        let seed: { x: number; y: number }[] | null = null;
+        try { const q = findCheckerCorners(f); seed = q ? orientBoardCorners(f, q) : null; } catch { seed = null; }
+        const store = storage();
+        state.aligner = new AutoAligner(f, seed ?? corners, 60, undefined, store ? rememberedLayouts(f.width, f.height, store) : []);
+        state.follower.unlock();
+        bus.calibration = { cam, phase: "running", label: why === "no-start" ? "The start position is not showing. Looking for the board…" : "Looking for the board…", progress: 0 };
+      }
+    }
+  }
+  const al = state.aligner;
+  if (!al) return;
+  al.step(8);
+  bus.calibration = { cam, phase: "running", label: al.label, progress: al.progress };
+  if (!al.done) return;
+  state.aligner = null; state.watch.ended(now);
+  if (al.phase === "done" && al.corners.length === 4 && al.confidence >= Math.max(0.45, state.fit + 0.05)) {
+    params.corners = fmtCorners(al.corners);
+    const store = storage(); if (store) rememberLayout(al.corners, f.width, f.height, store);
+    // The old reference was learned under the old grid: learn again, but only with the start position on the board.
+    let start = false;
+    try { const lv = iconLevels(f, al.corners, al.confidence); start = lv.reduce((a, b) => a + b, 0) / lv.length >= 0.5; } catch { start = false; }
+    if (start && (bus.game?.ply ?? 0) === 0) params.learn = true;
+    bus.calibration = { cam, phase: "done", label: start ? "Board found. Squares re-learned." : "Board found. Set up the start position so the squares can be learned.", progress: 1, hideAt: now + 4000 };
+  } else {
+    bus.calibration = { cam, phase: "failed", label: "Could not find the board. Open Board corners and drag them onto it.", progress: 1, hideAt: now + 6000 };
+  }
 }
 
 const reader: NodeSpec<ReaderState> = {
@@ -35,15 +104,16 @@ const reader: NodeSpec<ReaderState> = {
     { id: "clean", kind: "bool", label: "Clean up noise", value: true },
     { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
+    { id: "autoFind", kind: "bool", label: "Auto-calibrate when lost", value: true },
     { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
   ],
   previewSize: [160, 120],
   frameOf: (s) => s.frame,
-  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0 }),
-  process({ frame }, { params, state, setFidelity, span }) {
+  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, lastT: -1, recent: [], raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1 }),
+  process({ frame }, { now, params, state, setFidelity, span }) {
     const s = state.sampler;
     s.cam = String(params.cam);
-    if (!frame) { state.frame = state.raw = state.analysis = state.cleaned = null; state.recent = []; state.obs = null; state.follower.unlock(); setFidelity(null); return { obs: null }; }
+    if (!frame) { stopCalibration(state, now); state.frame = state.raw = state.analysis = state.cleaned = null; state.recent = []; state.obs = null; state.follower.unlock(); setFidelity(null); return { obs: null }; }
     // The picture you line up stays at the camera's resolution. The squares are read from a 480×360 average of it, which is the space the saved corners are in.
     const fresh = frame !== state.raw;
     if (fresh) { state.raw = frame; state.analysis = resample(frame, FRAME_W, FRAME_H); }
@@ -51,7 +121,7 @@ const reader: NodeSpec<ReaderState> = {
     // Camera nudged? Keep the corners on the board: re-fit them in small steps whenever the grid stops lining up with the squares.
     const cur = params.follow ? parseCorners(String(params.corners)) : null;
     if (!cur || (state.follower.locked && String(params.corners) !== state.followWrote)) state.follower.unlock(); // switched off, or the corners were edited by hand
-    if (cur && fresh) {
+    if (cur && fresh && !state.aligner) {
       if (!state.follower.locked) {
         const now = performance.now();
         if (now - state.lockTry > 1000) { state.lockTry = now; if (evaluate(analysis, cur).q >= GOOD) { state.follower.lock(analysis, cur); state.followWrote = String(params.corners); } }
@@ -77,6 +147,7 @@ const reader: NodeSpec<ReaderState> = {
     const img = state.cleaned!;
     if (params.learn || (params.autoCal && !state.autoDone && !s.calibrated)) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; }
     if (img !== state.readOf || !state.obs) { state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight))); } // one read per camera frame
+    span("auto-calibrate", () => autoCalibrate(state, params, analysis, now, fresh));
     setFidelity(state.obs.quality * (1 - Math.min(1, state.obs.motion * 4)));
     return { obs: state.obs };
   },

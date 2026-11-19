@@ -7,6 +7,7 @@ import type { ClockEstimate } from "../clock/types";
 import type { ExperienceEvent } from "./events";
 import type { PieceOverlay as PieceView } from "../world/pieceOverlay";
 import type { FxCall } from "../fx/types";
+import type { CalibrationView } from "../vision/autoCalibrate";
 
 export interface ClockView { mode: "digits" | "circle" | "square"; showCert: boolean; clock: ClockEstimate }
 export interface PoseData { id: string; joints: ([number, number, number] | null)[]; seat?: string }
@@ -37,6 +38,10 @@ export const bus = {
   fxSpawns: [] as FxCall[],
   /** Set from the top-bar Pause button: holds the scenario player between moves without resetting it. */
   scenarioPaused: false,
+  /** A board reader that lost the board is finding the corners again by itself: drives the "Calibration in progress..." window. */
+  calibration: null as CalibrationView | null,
+  /** Set by that window's Dismiss button; the calibrating reader stops and holds off until the board reads well again. */
+  calibrationDismiss: false,
 };
 
 export function pushLog<T>(arr: T[], items: T[], max = 60) {

@@ -465,3 +465,11 @@ aside{container-type:inline-size}
 body.simple main{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
 body.simple #graph,body.simple #resize,body.simple #selgroup{display:none!important}
 body.simple aside{border-left:0!important;border-top:0!important}
+/* "Calibration in progress..." window: a board reader that lost the board is finding the corners again by itself */
+.cal-win{position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:9998;display:grid;gap:8px;min-width:min(340px,90vw);max-width:90vw;padding:14px 16px;border-radius:8px;background:var(--ink-2,#0e141f);border:1px solid var(--signal,#35e0b4);box-shadow:0 10px 40px rgba(0,0,0,.55);color:var(--text,#e6edf7)}
+.cal-win[hidden]{display:none}
+.cal-win[data-phase=failed]{border-color:#ff8a5a}
+.cal-win .cal-label{font-size:13px;opacity:.85}
+.cal-win .cal-bar{height:8px;border-radius:4px;background:var(--ink-3,#1a2433);overflow:hidden;border:1px solid var(--line,#2a3a52)}
+.cal-win .cal-bar i{display:block;height:100%;width:0;background:var(--signal,#35e0b4);transition:width .15s}
+.cal-win .qe-btn{justify-self:end}
