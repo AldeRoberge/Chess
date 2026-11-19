@@ -335,7 +335,7 @@ export const STEPS: Step[] = [
         visual: eloVisual(c.cfg.opponent.elo),
         hint: c.cfg.opponent.mode === "human" ? "Not used while every game is two people." : "Elo is the chess rating the computer plays at: higher is harder to beat." },
     ] },
-  { id: "room", title: "Room", blurb: "Projectors and lights. Scan your room and aim each projector later from the 3D / Mapping tab.",
+  { id: "room", title: "Room", blurb: "Projectors and lights. Scan your room and aim each projector later from the World tab.",
     items: (c) => [
       { kind: "slider", label: "Projectors", min: 0, max: 3, step: 1, get: () => c.cfg.projectors.count, set: (v) => { c.cfg.projectors.count = v; } },
       { kind: "toggle", label: "People tracking", get: () => c.cfg.tracking.pose, set: (v) => { c.cfg.tracking.pose = v; }, hint: "Tracks players in 3D with the cameras (MediaPipe pose, GPU). Replaces the virtual player." },

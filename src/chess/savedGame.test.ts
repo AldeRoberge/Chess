@@ -61,7 +61,8 @@ describe("PositionTracker resume and set-up detection", () => {
   it("does not start over on an unsure picture of the start position", () => {
     const t = new PositionTracker();
     t.resume(["e4", "e5", "Nf3", "Nc6", "Bb5"]);
-    expect(t.observe(settled(new Chess(), 0.4)).status).toBe("illegal");
+    const r = t.observe(settled(new Chess(), 0.4));
+    expect(r.status).not.toBe("illegal"); expect(r.ply).toBe(5); // too unsure to be a new game, and too unsure to blame the player
   });
 });
 

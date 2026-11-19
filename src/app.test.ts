@@ -370,7 +370,7 @@ describe("phone remote", () => {
     const copy = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: copy }, configurable: true });
     const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
     root.querySelector<HTMLElement>("#phone")!.click();
-    expect(document.querySelector(".notice-title")!.textContent).toBe("Watch and play from a phone"); expect(document.querySelector(".notice-msg")!.textContent).toContain("4321"); expect(document.querySelector(".notice-details")!.textContent).toContain("10.0.0.5");
+    expect(document.querySelector(".notice-title")!.textContent).toBe("This PC’s join code: 4321"); expect(document.querySelector(".notice-msg")!.textContent).toContain("4321"); expect(document.querySelector(".notice-details")!.textContent).toContain("10.0.0.5");
     [...document.querySelectorAll<HTMLElement>(".notice button")].find((b) => b.textContent === "Copy address")!.click(); expect(copy).toHaveBeenCalledWith("http://10.0.0.5:5173/#/remote?code=4321");
     bus.game = { fen: virtualTable.game.fen(), turn: "w", ply: 0, over: false, status: "synced", history: [], fidelity: 1, last: null } as never;
     for (let i = 0; i < 3; i++) { app.step(1000 * (i + 2)); await new Promise((r) => setTimeout(r, 10)); }

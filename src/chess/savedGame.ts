@@ -35,7 +35,8 @@ export function saveGame(moves: readonly string[], who: { mode?: SavedGame["mode
 
 /** The game to resume, or null when there is none (or what is stored is not a legal, unfinished game). */
 export function loadGame(): SavedGame | null {
-  const raw = store()?.getItem(SAVED_GAME_KEY);
+  let raw: string | null | undefined;
+  try { raw = store()?.getItem(SAVED_GAME_KEY); } catch { return null; } // storage blocked: nothing to resume
   if (!raw) return null;
   try {
     const d = JSON.parse(raw) as Partial<SavedGame>;

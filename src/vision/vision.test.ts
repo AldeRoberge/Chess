@@ -67,7 +67,7 @@ describe("BoardSampler", () => {
 
   it("default config exposes sane tunables", () => {
     const d = defaultSamplerConfig();
-    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(6);
+    expect(d.threshold).toBeGreaterThan(0); expect(d.corners).toHaveLength(4); expect(d.grid).toBe(8);
   });
   it("is uncalibrated until it has seen the start position, and then reads every piece's colour", () => {
     const t = new VirtualTable(), s = new BoardSampler("A", cfg());
@@ -142,6 +142,21 @@ describe("BoardSampler", () => {
     expect(s.read(flatFrame(255)).quality).toBe(0);
     expect(s.read(flatFrame(0)).quality).toBe(0);
   });
+  it("keeps readable pieces through fusion and stabilization when half the board is washed out", () => {
+    const corners = defaultSamplerConfig().corners;
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    const bg = (sq: number) => sq % 8 < 4 ? 255 : 50;
+    s.calibrateEmpty(boardPaint(corners, (sq) => bg(sq)));
+    const piece = sqIndex("g2");
+    const frame = boardPaint(corners, (sq, u, v) => sq === piece && Math.hypot(u - 6.5, v - 6.5) < 0.35 ? 190 : bg(sq));
+    const o = s.read(frame);
+    expect(o.quality).toBeGreaterThan(0);
+    expect(o.occ[piece]).toBeGreaterThan(0.7);
+    const fusion = new Fusion(), stab = new Stabilizer();
+    let result: BoardBelief;
+    for (let t = 0; t < 30; t++) result = stab.step(fusion.fuse([{ ...o, t }], t));
+    expect(result!.occ[piece]).toBe(1);
+  });
   it("treats board points that fall outside the image as unknown", () => {
     const s = new BoardSampler("A", { ...cfg(), corners: [{ x: -900, y: -900 }, { x: -800, y: -900 }, { x: -800, y: -800 }, { x: -900, y: -800 }] });
     expect(Number.isNaN(s.measure(flatFrame(100))[0])).toBe(true);
@@ -198,6 +213,15 @@ describe("BoardSampler", () => {
     expect(o.occ[glareSq]).toBeLessThan(0.6); // undecided, not a confident white piece
     expect(o.occ[calm]).toBeLessThan(0.15);
   });
+  it("reads an empty square that is bright by nature as empty, not as undecided glare", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
+    const paint = () => boardPaint(corners, (sq) => (light(sq) ? 232 : 60));
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateEmpty(paint());
+    const o = s.read(paint());
+    for (const sq of [sqIndex("d4"), sqIndex("e4"), sqIndex("c4"), sqIndex("f5")]) expect(o.occ[sq]).toBeLessThan(0.15);
+  });
   it("does not treat a lamp flicker as a hand, and does not vote a washed-out square empty", () => {
     const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
     const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
@@ -245,6 +269,15 @@ function boardPaint(corners: { x: number; y: number }[], colour: (sq: number, u:
 const obs = (cam: string, occ: number, white: number, extra: Partial<SquareObs> = {}): SquareObs => ({ cam, t: 1000, quality: 1, weight: 1, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), motion: 0, handSquares: new Uint8Array(64), ...extra });
 
 describe("Fusion", () => {
+  it("keeps unusable and undecided camera readings unknown rather than confidently empty", () => {
+    for (const extra of [{ quality: 0 }, { weight: 0 }]) {
+      const b = new Fusion().fuse([obs("A", 0.99, 0.99, extra)], 1000);
+      expect(b.occ[0]).toBe(0.5); expect(b.conf[0]).toBe(0);
+      expect(b.fidelity).toBe(0); expect(b.cams).toBe(0);
+    }
+    const b = new Fusion().fuse([obs("A", 0.5, 0.5)], 1000);
+    expect(b.occ[0]).toBe(0.5); expect(b.conf[0]).toBe(0);
+  });
   it("reports zero fidelity and an undecided board with no cameras", () => {
     const b = new Fusion().fuse([], 1000);
     expect(b.fidelity).toBe(0); expect(b.cams).toBe(0); expect(b.occ[0]).toBe(0.5); expect(b.handOver).toBe(false);
@@ -269,10 +302,11 @@ describe("Fusion", () => {
     const b = new Fusion().fuse([obs("A", 0.9, 0.9, { motion: 0.04 })], 1000, 500, 0.02);
     expect(b.handOver).toBe(false);
   });
-  it("does not keep a piece where every camera is only mildly unsure", () => {
-    // 0.62 and 0.62 used to add up, in log-odds, to a square that stayed occupied after the piece left
+  it("preserves moderate multi-camera evidence without converting it into absence", () => {
+    // Moderate positive evidence must remain positive, regardless of camera count.
     const b = new Fusion().fuse([obs("A", 0.62, 0.8), obs("B", 0.62, 0.8)], 1000);
-    expect(b.occ[0]).toBeLessThan(0.05);
+    expect(b.occ[0]).toBeGreaterThan(0.5);
+    expect(b.occ[0]).toBeLessThan(0.8);
     expect(new Fusion().fuse([obs("A", 0.8, 0.8), obs("B", 0.62, 0.8)], 1000).occ[0]).toBeGreaterThan(0.7);
   });
   it("colour evidence only counts where a piece is believed present", () => {
@@ -299,6 +333,32 @@ describe("Fusion", () => {
 const belief = (over: Partial<BoardBelief> = {}, occ = 1, white = 1): BoardBelief => ({ t: 0, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), conf: new Float32Array(64).fill(1), fidelity: 0.9, handOver: false, settled: false, cams: 2, ...over });
 
 describe("Stabilizer", () => {
+  it("resolves sustained weak evidence but rejects flicker and unknown squares", () => {
+    const s = new Stabilizer();
+    let last: BoardBelief;
+    for (let t = 0; t <= 2000; t += 100) {
+      const b = belief({ t }, 0.5, 0.5);
+      b.occ[0] = 0.6;
+      b.occ[1] = t % 200 ? 0.6 : 0.4;
+      last = s.step(b);
+    }
+    expect(last!.occ[0]).toBe(1);
+    expect(last!.occ[1]).toBe(0);
+    expect(last!.occ[2]).toBe(0);
+    for (let t = 2100; t <= 4000; t += 100) last = s.step(belief({ t }, 0.4, 0.4));
+    expect(last!.occ[0]).toBe(0);
+    expect(last!.white[0]).toBe(0);
+  });
+
+  it("does not count time under a hand or offline as sustained evidence", () => {
+    const s = new Stabilizer();
+    s.step(belief({ t: 0 }, 0.6));
+    s.step(belief({ t: 1000, handOver: true }, 0.6));
+    expect(s.step(belief({ t: 1100 }, 0.6)).occ[0]).toBe(0);
+    s.step(belief({ t: 2000, cams: 0 }, 0.6));
+    expect(s.step(belief({ t: 2100 }, 0.6)).occ[0]).toBe(0);
+  });
+
   it("needs sustained evidence to turn a square on (hysteresis) and settles after a quiet period", () => {
     const s = new Stabilizer();
     let last = s.step(belief({ t: 0 }, 0.5, 0.5));
@@ -369,4 +429,23 @@ describe("triangulation", () => {
     expect(Math.hypot(g[0] - foot[0], g[2] - foot[2])).toBeLessThan(1e-6);
     expect(rayToPlane([0, 0, 0], new Array(12).fill(0), { x: 1, y: 1 })).toBeNull();
   });
+});
+
+it("retains moderate single-camera evidence until a piece stabilizes", () => {
+  const fusion = new Fusion(), stabilizer = new Stabilizer();
+  const observation: SquareObs = {
+    cam: "A", t: 0, quality: 1, weight: 1, motion: 0,
+    occ: new Float32Array(64).fill(0.01), white: new Float32Array(64).fill(0.95),
+    handSquares: new Uint8Array(64),
+  };
+  observation.occ[42] = 0.69; // faint knight on c3
+  let result: BoardBelief | undefined;
+  for (let i = 0; i < 40; i++) {
+    observation.t = i * 100;
+    const fused = fusion.fuse([observation], observation.t);
+    expect(fused.occ[42]).toBeGreaterThan(0.5);
+    result = stabilizer.step(fused);
+  }
+  expect(result!.occ[42]).toBe(1);
+  expect(result!.settled).toBe(true);
 });

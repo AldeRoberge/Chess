@@ -1,3 +1,4 @@
+import { calibrationRuntime } from "../vision/calibration";
 import { Chess } from "chess.js";
 import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
@@ -38,6 +39,7 @@ const track: NodeSpec<TrackState> = {
   inputs: [{ id: "board", type: "board" }, { id: "director", type: "any" }, { id: "control", type: "event" }],
   outputs: [{ id: "game", type: "game" }, { id: "events", type: "event" }],
   params: [
+    { id: "margin", kind: "number", label: "Legal move evidence margin", min: 0.3, max: 1.2, step: 0.1, value: 0.5 },
     { id: "confirm", kind: "number", label: "Confirm frames", min: 1, max: 8, step: 1, value: 2 },
     { id: "maxCost", kind: "number", label: "Max mismatch cost", min: 0.2, max: 2, step: 0.1, value: 0.8 },
     { id: "minConf", kind: "number", label: "Min square confidence", min: 0, max: 1, step: 0.05, value: 0.5 },
@@ -47,7 +49,9 @@ const track: NodeSpec<TrackState> = {
   previewSize: [140, 140],
   init: () => { const tracker = new PositionTracker(); return { tracker, res: null, board: null, prevPhase: "idle", gen: newGameGeneration(), resumed: resumeSaved(tracker) }; },
   process({ board, director, control }, { params, state, setFidelity, span, now }) {
+    if (calibrationRuntime.active) return { game: state.res, events: [] };
     const t = state.tracker;
+    t.cfg.margin = Number(params.margin ?? 0.5);
     t.cfg.confirm = Number(params.confirm); t.cfg.maxCost = Number(params.maxCost); t.cfg.minConf = Number(params.minConf); t.cfg.promotion = params.promotion as "q";
     const phase = (director as DirectorOut | undefined)?.phase ?? "idle";
     const restart = ((control as ExperienceEvent[] | undefined) ?? []).some((e) => e.type === "scenario-start");
@@ -127,6 +131,7 @@ const engine: NodeSpec<EngState> = {
   ],
   init: () => ({ engine: null, loading: false, thinkingFen: "", hintFen: "", out: [], info: "", now: 0 }),
   process({ game, director }, { params, state, now }) {
+    if (calibrationRuntime.active) { state.thinkingFen = ""; return { events: [] }; }
     state.now = now;
     const g = game as TrackResult | undefined, d = director as DirectorOut | undefined;
     const out: ExperienceEvent[] = [];
@@ -134,11 +139,12 @@ const engine: NodeSpec<EngState> = {
     bus.botColor = params.color === "w" ? "w" : "b";
     if (!state.engine && !state.loading) { state.loading = true; void createEngine().then((e) => { state.engine = e; state.loading = false; state.info = e.constructor.name; }); }
     if (state.hintFen && state.hintFen !== g.fen) { bus.engineHint = null; state.hintFen = ""; }
-    if (state.engine && g.status === "synced" && !g.over && g.turn === params.color && state.thinkingFen !== g.fen) {
+    if (state.engine && (g.status === "synced" || g.status === "moved") && !g.over && g.turn === params.color && state.thinkingFen !== g.fen) {
       state.thinkingFen = g.fen;
       state.engine.setElo(d.elo);
       const fen = g.fen;
       void state.engine.bestMove(fen).then((uci) => {
+        if (calibrationRuntime.active) { state.thinkingFen = ""; return; }
         const c = new Chess(fen);
         const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
         state.hintFen = fen;

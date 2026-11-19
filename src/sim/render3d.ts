@@ -27,11 +27,13 @@ export interface RenderOptions {
   t?: number;
   /** cast soft shadows of pieces and arms on the table, and shade the arms */
   shadows?: boolean;
+  /** Override the surface brightnesses (light and dark squares, white and black pieces). Used to train readers on boards that look different from the default. */
+  tones?: Partial<{ light: number; dark: number; w: number; b: number }>;
 }
 
 const SCALE = SQUARE * 0.8; // piece units -> metres (matches the 3D view)
 const HALF = SQUARE * 4;
-const L_LIGHT = 135, L_DARK = 110, L_TABLE = 40, L_FLOOR = 12, L_W = 235, L_B = 22, L_HAND = 200;
+const LIGHT_SQ = 135, DARK_SQ = 110, L_TABLE = 40, L_FLOOR = 12, WHITE_PIECE = 235, BLACK_PIECE = 22, L_HAND = 200;
 
 /**
  * Software ray-caster that produces what an IR camera sees of a real game: tilted perspective,
@@ -40,6 +42,7 @@ const L_LIGHT = 135, L_DARK = 110, L_TABLE = 40, L_FLOOR = 12, L_W = 235, L_B = 
  */
 export function renderLuminance(scene: Scene3D, o: RenderOptions): Float32Array {
   const { width: W, height: H } = o;
+  const L_LIGHT = o.tones?.light ?? LIGHT_SQ, L_DARK = o.tones?.dark ?? DARK_SQ, L_W = o.tones?.w ?? WHITE_PIECE, L_B = o.tones?.b ?? BLACK_PIECE;
   const depth = new Float32Array(W * H).fill(Infinity);
   const lum = new Float32Array(W * H);
   const cam = cameraBasis(o.rig, W, H);

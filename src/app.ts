@@ -1,3 +1,4 @@
+import { Calibrate, renderCalibration } from "./ui/calibrate";
 import "./style.css";
 import { chipIcons, chipTone } from "./ui/chipIcons";
 import { installContextMenus, registerContextMenu } from "./ui/contextMenu";
@@ -25,6 +26,8 @@ import { detectEnv } from "./setup/system";
 import { Sfx } from "./ui/sfx";
 import { SetupWizard } from "./ui/wizard";
 import { NodeEditor } from "./ui/editor";
+import { alignAllBoards } from "./ui/alignAll";
+import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
 import { clearPrefs, loadPrefs, patchPrefs } from "./setup/prefs";
@@ -35,6 +38,7 @@ import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
 import { virtualTable } from "./sim/virtualTable";
 import { RemoteHost, applyRemoteCommand, playMode, snapshot } from "./remote/host";
+import { drawFrame } from "./plugins/shared";
 import type { GrayFrame } from "./vision/types";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
@@ -53,6 +57,7 @@ import { STEPS } from "./ui/wizardSteps";
 import { icon, withIcon } from "./ui/icons";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
 import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
+import { installJoinBadge } from "./ui/joinBadge";
 import { PAGES, formatRoute, parseRoute, routeTitle, sameRoute, type Route } from "./ui/route";
 
 export interface Boot { graph: Graph; editor: NodeEditor; go(r: Route): void; route(): Route; step(now: number): void; start(): void; openWizard(): void; wizard: () => SetupWizard | null }
@@ -154,6 +159,8 @@ export function boot(root: HTMLElement): Boot {
             <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
             <button id="settings" class="rb" data-tip="Settings" data-tip-body="Cameras, projector, narration, and players.">${icon("setup", 22)}<span>Settings</span></button>
+            <button id="calibrate" class="rb"><span>Calibrate</span></button>
+            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8)."><span>Align boards</span></button>
             <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
           </div><div class="rlabel">Start</div></div>
           <div class="rgroup"><div class="rbtns">
@@ -254,12 +261,21 @@ export function boot(root: HTMLElement): Boot {
   editor.onView = () => { clearTimeout(viewTimer); viewTimer = setTimeout(() => patchPrefs({ view: editor.getView() }), 400); };
   document.getElementById("graph")!.append(editor.root);
   const tools = document.createElement("div"); tools.className = "ne-tools";
-  const tool = (label: string, ic: string, tip: string, body: string, fn: () => void) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; withIcon(b, ic, 15); b.dataset.tip = tip; b.dataset.tipBody = body; b.onclick = fn; tools.append(b); return b; };
+  const tool = (label: string, ic: string, tip: string, body: string, fn: () => void) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.setAttribute("aria-label", tip); withIcon(b, ic, 15); b.dataset.tip = tip; b.dataset.tipBody = body; b.onclick = fn; tools.append(b); return b; };
   tool("Section", "plus", "Add section", "Wrap the selected nodes (or the middle of the view) in a titled, coloured frame. Drag its title to move everything inside.", () => editor.addGroup());
   tool("Organize", "grid", "Organize into sections", "Lay the workflow out in bands: demo & input, analysis, game & experience, output (sound & narration). Undo with Ctrl+Z.", () => editor.organize());
   document.getElementById("graph")!.append(tools);
 
   const table = new TablePanel(); tips.add(table.tips);
+  const inputPreview = document.createElement("section"); inputPreview.className = "simple-input";
+  const inputHeader = document.createElement("div"); inputHeader.className = "simple-input-header";
+  const inputTitle = document.createElement("strong"); inputTitle.textContent = "Input webcam";
+  const adjustCorners = document.createElement("button"); adjustCorners.type = "button"; adjustCorners.textContent = "Adjust corners";
+  adjustCorners.onclick = () => go({ page: "settings", step: "board" });
+  const inputCanvas = document.createElement("canvas"); inputCanvas.width = 480; inputCanvas.height = 360;
+  inputCanvas.setAttribute("aria-label", "Input webcam preview");
+  inputHeader.append(inputTitle, adjustCorners); inputPreview.append(inputHeader, inputCanvas);
+  table.root.querySelector(".cc-side")!.prepend(inputPreview);
   const world = new WorldPanel(graph), log = new LogPanel(); tips.add(log.tips);
   const perf = new PerfPanel(graph, { reveal: (id) => editor.reveal(id), setHeat: (on) => setHeat(on), heatOn: () => editor.heatOn });
   tips.add(perf.tips);
@@ -277,7 +293,7 @@ export function boot(root: HTMLElement): Boot {
     sound: () => ({ on: soundOn, muted: mixer.get().muted }), now: () => performance.now(),
   });
   const assistant = new AssistantPanel(assistantHost, { speak: speakAssistant });
-  const panels: [string, { root: HTMLElement }][] = [["Table", table], ["3D / Mapping", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
+  const panels: [string, { root: HTMLElement }][] = [["Game", table], ["World", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
   const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);
   const themeSel = document.getElementById("theme") as HTMLSelectElement, modeBtn = document.getElementById("mode")!;
@@ -294,8 +310,9 @@ export function boot(root: HTMLElement): Boot {
   const tabs = document.getElementById("tabs")!, dock = document.getElementById("dock")!;
   let active = 0;
   const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
-  const TAB_INFO = ["Virtual table: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing.", "Chat with the AI: it sees the game, cameras and setup, and can change them for you."];
-  panels.forEach(([name], i) => { const b = document.createElement("button"); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span>${name}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  const TAB_INFO = ["The game: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing.", "Chat with the AI: it sees the game, cameras and setup, and can change them for you."];
+  const TAB_SHORT = ["Table", "3D", "Log", "Perf", "AI"]; // phone bar: icon over a one-word label
+  panels.forEach(([name], i) => { const b = document.createElement("button"); b.setAttribute("aria-label", name); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span class="tl">${name}</span><span class="ts" aria-hidden="true">${TAB_SHORT[i]}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
   assistant.onNudge = () => { if (active !== 4) tabs.children[4]?.classList.add("ping"); };
   show(prefs.tab !== undefined && prefs.tab >= 0 && prefs.tab < panels.length ? prefs.tab : 0);
 
@@ -487,10 +504,24 @@ export function boot(root: HTMLElement): Boot {
     const on = (t: string) => [...graph.nodes.values()].some((n) => n.type === t && n.params.online !== false);
     return on("source.synthetic") && !camFrames().some((c) => [...graph.nodes.values()].some((n) => n.type === "source.webcam" && n.params.online !== false && graph.states.get(n.id)?.frame));
   };
+  const calibrate = new Calibrate(graph, persist);
+  const calibrationDialog = document.createElement("dialog"); calibrationDialog.className = "calibrate-dialog"; calibrationDialog.setAttribute("aria-label", "Calibrate piece detection");
+  const calibrationPanel = document.createElement("div"); calibrationDialog.append(calibrationPanel); document.body.append(calibrationDialog);
+  let calibrationSignature = "";
+  const drawCalibration = () => {
+    const signature = JSON.stringify(calibrate.view);
+    if (signature === calibrationSignature) return;
+    calibrationSignature = signature;
+    renderCalibration(calibrationPanel, calibrate.view, c => { const answer = calibrate.command(c); if (!answer.ok) notify(answer.text); calibrationSignature = ""; drawCalibration(); });
+  };
+  document.getElementById("calibrate")!.onclick = () => { calibrationSignature = ""; drawCalibration(); calibrationDialog.showModal(); };
   const remote = new RemoteHost({
+    cloud: !!(import.meta as any).env?.PROD,
     base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
     build: (framed, notice, now) => {
       const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
+      s.calibration = calibrate.view ? { ...calibrate.view, results: calibrate.view.results.map(r => ({ ...r, errors: r.errors.slice(0, 12) })) } : null;
+      if (calibrate.view) s.play = "off";
       if (virtualTable.over) {
         s.over = true; s.play = "off";
         const e = virtualTable.ended;
@@ -499,10 +530,19 @@ export function boot(root: HTMLElement): Boot {
       return s;
     },
     frames: camFrames,
-    command: (c, now) => applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
+    command: (c, now) => c.type === "calibrate" ? calibrate.command(c) : calibrate.view ? { ok: false, text: "Close Calibrate before playing." } : applyRemoteCommand(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
   });
+  document.getElementById("alignall")!.onclick = async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement; if (btn.disabled) return;
+    const label = btn.querySelector("span")!, was = label.textContent; btn.disabled = true;
+    try {
+      const r = await alignAllBoards(graph, (d, t) => { label.textContent = `Aligning ${d}/${t}`; });
+      if (r.aligned) { editor.rebuild(); persist(); }
+      notify(r.total ? `Aligned ${r.aligned} of ${r.total} board${r.total === 1 ? "" : "s"}, up to ${alignConcurrency()} at a time.` : "No camera with a live picture and a board grid was found.", [], r.aligned === r.total && r.total ? "info" : "warn", { title: "Align boards" });
+    } finally { label.textContent = was; btn.disabled = false; }
+  };
   document.getElementById("phone")!.onclick = () => {
-    if (remote.available === false) notify("Phone access is built into the dev server. Start the app with npm run dev (or start-chess), then open it on this computer as localhost.", [], "warn", { title: "Phone remote is not running" });
+    if (remote.available === false) notify("The phone connection could not be opened. Reload this page to retry. If it still fails, the server’s phone bridge may be unavailable.", [], "warn", { title: "Phone remote is not running" });
     else if (remote.available === null) notify("Still checking for the phone connection. Try again in a second.", [], "info", { title: "Phone remote" });
     else {
       const away = remote.urls.some((u) => u.includes("alderoberge.com"));
@@ -512,10 +552,11 @@ export function boot(root: HTMLElement): Boot {
       const address = remote.urls.find((u) => u.includes("alderoberge.com")) ?? remote.urls[0] ?? "";
       notify(`${lead} ${remote.clients ? `${remote.clients} phone${remote.clients === 1 ? " is" : "s are"} connected now.` : "No phone is connected yet."}`,
         [{ label: "Copy address", run: () => { void navigator.clipboard?.writeText(address).catch(() => {}); } }], "info",
-        { title: "Watch and play from a phone", details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
+        { title: `This PC’s join code: ${remote.code}`, details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
     }
   };
   const calWin = new CalibrationOverlay(() => { bus.calibrationDismiss = true; });
+  installJoinBadge(remote, () => document.getElementById("phone")!.click());
   const step = (now: number) => {
     remote.tick(now);
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }
@@ -526,10 +567,21 @@ export function boot(root: HTMLElement): Boot {
     if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
     calWin.render(bus.calibration);
     profiler.span("editor", () => editor.frame(now));
+    if (calibrationDialog.open) drawCalibration();
+    document.getElementById("calibrate")!.classList.toggle("on", !!calibrate.view);
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
     profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {
-      if (active === 0) table.frame(now);
+      if (active === 0) {
+        table.frame(now);
+        if (document.body.classList.contains("simple")) {
+          const webcams = [...graph.nodes.values()].filter((n) => n.type === "source.webcam");
+          const source = webcams.find((n) => n.params.online !== false) ?? webcams[0];
+          const state = source ? graph.states.get(source.id) as { frame?: GrayFrame | null; err?: string } | undefined : undefined;
+          const ctx = inputCanvas.getContext("2d");
+          if (ctx) drawFrame(ctx, 480, 360, source?.params.online === false ? null : state?.frame, state?.err || (source ? "Webcam offline" : "Add a webcam in Settings / Cameras"));
+        }
+      }
       else if (active === 1) world.frame(now);
       else if (active === 2) log.frame();
       else if (active === 3) perf.frame(now);

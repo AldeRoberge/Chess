@@ -130,7 +130,7 @@ export function findCheckerCorners(f: GrayFrame): Pt[] | null {
   const vals = full.map((p) => data[clampN(Math.round(p.y), 0, h - 1) * w + clampN(Math.round(p.x), 0, w - 1)]).sort((a, b) => a - b);
   const dark = vals[Math.floor(vals.length * 0.3)], light = vals[Math.floor(vals.length * 0.7)];
   if (light - dark < 12) return null;
-  const q = fitChecker(data, w, h, extremes(full), period, (light + dark) / 2, Math.max(14, (light - dark) * 0.4));
+  const q = fitCheckerGrid(f, fitChecker(data, w, h, extremes(full), period, (light + dark) / 2, Math.max(14, (light - dark) * 0.4)), period);
   const area = Math.abs(q.reduce((s, p, i) => { const n = q[(i + 1) % 4]; return s + p.x * n.y - n.x * p.y; }, 0)) / 2;
   return area > w * h * 0.02 ? q : null;
 }
@@ -215,12 +215,20 @@ function clockwise(c: Pt[]): boolean {
 
 /** Long alternating runs along the strip just inside the edge: eight squares, not grain and not a solid lamp. */
 function edgeAlternates(data: Uint8ClampedArray, w: number, h: number, q: Pt[], edge: number, minRun: number, gap: number, mid: number): boolean {
+  const { levels, flips } = edgeFlips(data, w, h, q, edge, minRun, gap, mid, -3);
+  // A real edge crosses nearly every square. A few accidental flips in the table grain do not.
+  return levels >= 6 && flips >= 5;
+}
+
+/** Dark/light runs and their flips along a line `off` px outside the edge (negative is inside). */
+function edgeFlips(data: Uint8ClampedArray, w: number, h: number, q: Pt[], edge: number, minRun: number, gap: number, mid: number, off: number): { levels: number; flips: number } {
   const a = q[edge], b = q[(edge + 1) % 4];
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, nx = dy / len, ny = -dx / len;
   const levels: number[] = []; let runPx = 0, anchor = NaN;
-  const close = () => { if (runPx >= minRun) levels.push(anchor); };
+  // Only clearly dark or clearly light runs count: mid-grey table grain alternates too, but never that far from the middle.
+  const close = () => { if (runPx >= minRun && Math.abs(anchor - mid) >= gap * 0.75) levels.push(anchor); };
   for (let dist = len * 0.08; dist < len * 0.92; dist += 2) {
-    const t = dist / len, x = Math.round(a.x + dx * t - nx * 3), y = Math.round(a.y + dy * t - ny * 3);
+    const t = dist / len, x = Math.round(a.x + dx * t + nx * off), y = Math.round(a.y + dy * t + ny * off);
     if (x < 0 || y < 0 || x >= w || y >= h) continue;
     const v = data[y * w + x];
     if (Number.isNaN(anchor) || Math.abs(v - anchor) <= gap) { if (Number.isNaN(anchor)) anchor = v; runPx += 2; }
@@ -229,12 +237,19 @@ function edgeAlternates(data: Uint8ClampedArray, w: number, h: number, q: Pt[], 
   close();
   let flips = 0;
   for (let i = 1; i < levels.length; i++) if ((levels[i] - mid) * (levels[i - 1] - mid) < 0) flips++;
-  // A real edge crosses nearly every square. A few accidental flips in the table grain do not.
-  return levels.length >= 6 && flips >= 5;
+  return { levels: levels.length, flips };
+}
+
+/** Moves one corner of a quad `d` px along the outward normal of `edge`. */
+function nudgeCorner(q: Pt[], edge: number, which: 0 | 1, d: number): Pt[] {
+  const a = q[edge], b = q[(edge + 1) % 4];
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, nx = dy / len, ny = -dx / len;
+  const i = (edge + which) % 4;
+  return q.map((p, j) => (j === i ? { x: p.x + nx * d, y: p.y + ny * d } : p));
 }
 
 function fitChecker(data: Uint8ClampedArray, w: number, h: number, q: Pt[], period: number, mid: number, gap: number): Pt[] {
-  // Positive moves an edge outward. Grow from the squares already found and stop at the first break,
+  // Positive moves an edge outward. Grow from the squares already found and stop once a whole square breaks,
   // so a lamp or the speckled table beyond the board cannot pull the corner across the picture.
   const reach = Math.round(period * 2), minRun = Math.max(4, period * 0.22);
   const ok = (cur: Pt[], e: number, d: number) => {
@@ -252,12 +267,71 @@ function fitChecker(data: Uint8ClampedArray, w: number, h: number, q: Pt[], peri
       }
       if (!found) continue;
     }
-    let best = start;
+    // Rows with pieces on them stop alternating part-way across a square, so a short break is allowed;
+    // a full square of no alternation is the table or a lamp and ends the walk.
+    let best = start, miss = 0, streak = 0;
     for (let d = start + 1; d <= reach; d++) {
-      if (!ok(cur, e, d)) break;
-      best = d;
+      if (ok(cur, e, d)) { miss = 0; if (++streak >= 2 || d === start + 1) best = d; }
+      else { streak = 0; if (++miss > period * 0.9) break; }
     }
     if (best !== 0) cur = nudgeEdge(cur, e, best);
+  }
+  // Growing only slides edges, so a quad seeded at the wrong angle keeps it. Tilt each edge onto the board's rim:
+  // the line just inside crosses every square and the line just outside is off the board and crosses none.
+  const rim = (c: Pt[], e: number) => {
+    if (!clockwise(c)) return -Infinity;
+    // Several lines on each side so a slightly tilted edge still scores part-way; inside, pieces on the back rank can
+    // break a line up, so the best one counts.
+    let inside = 0, outside = 0;
+    for (const off of [3, 8, 13]) {
+      inside = Math.max(inside, Math.min(7, edgeFlips(data, w, h, c, e, minRun, gap, mid, -off).flips));
+      outside += edgeFlips(data, w, h, c, e, minRun, gap, mid, off).flips;
+    }
+    return inside - outside;
+  };
+  const total = (c: Pt[]) => rim(c, 0) + rim(c, 1) + rim(c, 2) + rim(c, 3);
+  let score = total(cur);
+  // Coupled corners make a corner-by-corner search stall, so first place each edge's line on its own: slide and
+  // tilt it over the span the squares already found, keep the best rim, then corner the quad where the lines meet.
+  // The squares found first are often only the empty middle ranks, so the search reaches two and a half squares out.
+  {
+    const lo = -Math.round(period * 0.75), hi = Math.round(period * 2.5), lines: [Pt, Pt][] = [];
+    for (let e = 0; e < 4; e++) {
+      let best: [Pt, Pt] = [cur[e], cur[(e + 1) % 4]], bestS = -Infinity;
+      for (let da = lo; da <= hi; da += 2) for (let db = lo; db <= hi; db += 2) {
+        const c = nudgeCorner(nudgeCorner(cur, e, 0, da), e, 1, db);
+        const sc = rim(c, e) * 2 + Math.min(7, edgeFlips(data, w, h, c, e, minRun, gap, mid, -3).flips);
+        if (sc > bestS) { bestS = sc; best = [c[e], c[(e + 1) % 4]]; }
+      }
+      lines.push(best);
+    }
+    const meet = (p: [Pt, Pt], q: [Pt, Pt]): Pt | null => {
+      const r = { x: p[1].x - p[0].x, y: p[1].y - p[0].y }, s2 = { x: q[1].x - q[0].x, y: q[1].y - q[0].y };
+      const den = r.x * s2.y - r.y * s2.x; if (Math.abs(den) < 1e-6) return null;
+      const t = ((q[0].x - p[0].x) * s2.y - (q[0].y - p[0].y) * s2.x) / den;
+      return { x: p[0].x + r.x * t, y: p[0].y + r.y * t };
+    };
+    const quad = [0, 1, 2, 3].map((i) => meet(lines[(i + 3) % 4], lines[i]));
+    if (quad.every((p) => p && p.x > -w && p.y > -h && p.x < 2 * w && p.y < 2 * h)) {
+      const c = quad as Pt[], sc = total(c);
+      if (sc >= score) { score = sc; cur = c; }
+    }
+  }
+  for (const [range, step] of [[6, 2], [3, 1]]) {
+    for (let pass = 0; pass < 4; pass++) {
+      let moved = false;
+      for (let i = 0; i < 4; i++) {
+        let best = cur;
+        for (let oy = -range; oy <= range; oy += step) for (let ox = -range; ox <= range; ox += step) for (const both of [false, true]) {
+          if (!ox && !oy) continue;
+          // One corner on its own, or a whole edge (this corner and the next) slid together.
+          const c = cur.map((p, j) => (j === i || (both && j === (i + 1) % 4) ? { x: p.x + ox, y: p.y + oy } : p)), s = total(c);
+          if (s > score) { score = s; best = c; }
+        }
+        if (best !== cur) { cur = best; moved = true; }
+      }
+      if (!moved) break;
+    }
   }
   return cur;
 }
@@ -267,6 +341,52 @@ function at(f: GrayFrame, c: Pt[], u: number, v: number): number {
   const x = clampN(Math.round(w00 * a.x + w10 * b.x + w11 * d.x + w01 * e.x), 0, f.width - 1);
   const y = clampN(Math.round(w00 * a.y + w10 * b.y + w11 * d.y + w01 * e.y), 0, f.height - 1);
   return f.data[y * f.width + x];
+}
+
+/** Pieces can hide the outside ranks from the period detector. Fit all eight ranks,
+ * using the corners of each square so piece centres do not pull the outline inward. */
+function fitCheckerGrid(f: GrayFrame, initial: Pt[], period: number): Pt[] {
+  const score = (q: Pt[]) => {
+    if (!clockwise(q) || q.some((p) => p.x < 0 || p.y < 0 || p.x >= f.width || p.y >= f.height)) return -Infinity;
+    let contrast = 0, noise = 0;
+    for (let row = 0; row < 8; row++) for (let col = 0; col < 8; col++) {
+      const v = [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]].map(([x, y]) => at(f, q, (col + x) / 8, (row + y) / 8));
+      const mean = v.reduce((s, n) => s + n, 0) / 4;
+      contrast += ((row + col) % 2 ? -1 : 1) * mean;
+      noise += v.reduce((s, n) => s + Math.abs(n - mean), 0) / 4;
+    }
+    return Math.abs(contrast) - noise * 0.5;
+  };
+  let best = initial, bestScore = score(best);
+  const seeds: { q: Pt[]; score: number }[] = [];
+  const search = (q: Pt[], edge: number) => {
+    if (edge === 4) {
+      const s = score(q);
+      seeds.push({ q, score: s });
+      return;
+    }
+    for (let d = -0.5; d <= 2; d += 0.5) search(nudgeEdge(q, edge, d * period), edge + 1);
+  };
+  search(initial, 0);
+  const left = Math.min(...initial.map((p) => p.x)), right = Math.max(...initial.map((p) => p.x));
+  const top = Math.min(...initial.map((p) => p.y)), bottom = Math.max(...initial.map((p) => p.y));
+  search([{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }], 0);
+  seeds.sort((a, b) => b.score - a.score);
+  let result = best, resultScore = bestScore;
+  for (const seed of seeds.slice(0, 24)) {
+    best = seed.q; bestScore = seed.score;
+    for (const step of [period / 4, period / 8, 2, 1]) {
+      for (let pass = 0; pass < 3; pass++) for (let i = 0; i < 4; i++) {
+        const origin = best;
+        for (const dx of [-step, 0, step]) for (const dy of [-step, 0, step]) {
+          const q = origin.map((p, j) => j === i ? { x: p.x + dx, y: p.y + dy } : p);
+          const s = score(q); if (s > bestScore) { best = q; bestScore = s; }
+        }
+      }
+    }
+    if (bestScore > resultScore) { result = best; resultScore = bestScore; }
+  }
+  return result;
 }
 
 /** Positive when light squares are the ones a8/h1 naming says are light. Pieces cover some centres, so each square contributes its median. */

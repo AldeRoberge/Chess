@@ -227,6 +227,30 @@ describe("vision.boardReader", () => {
     expect((n.state as any).sampler.cfg.threshold).toBe(0.4); expect((n.state as any).sampler.cfg.corners).toHaveLength(4);
     n.params.corners = fmtCorners(rigCorners(RIGS.B)); n.run({ frame: shoot(table, "B", 5, 6, 5) });
   });
+  it("does not lock in a dark warm-up frame: it learns the start position from the first usable picture", () => {
+    bus.game = null;
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
+    n.run({ frame: flatFrame(0, undefined, undefined, 50) }); // the webcam is still opening: a black frame
+    expect((n.state as any).sampler.calibrated).toBe(false);
+    const o = n.run({ frame: shoot(table, "A", 100) })!.obs;
+    expect(looksLikeStart(o)).toBe(true); expect((n.state as any).autoDone).toBe(true);
+  });
+  it("learns again when the corners are marked after a bad first read, so the start position is found", () => {
+    bus.game = null;
+    const wrong = rigCorners(RIGS.A).map((p) => ({ x: p.x * 0.6 + 20, y: p.y * 0.6 + 30 })); // corners not marked on the board yet
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(wrong) });
+    for (let i = 0; i < 3; i++) n.run({ frame: shoot(table, "A", 100 + i * 1100, 6, i + 1) });
+    n.params.corners = fmtCorners(rigCorners(RIGS.A)); // marked in Setup
+    const o = n.run({ frame: shoot(table, "A", 3500, 6, 9) })!.obs;
+    expect(looksLikeStart(o)).toBe(true);
+  });
+  it("never re-learns the start position once a move is on the board", () => {
+    const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
+    bus.game = { ply: 1 } as any;
+    n.run({ frame: flatFrame(0, undefined, undefined, 50) }); n.run({ frame: shoot(table, "A", 2000) });
+    expect((n.state as any).sampler.calibrated).toBe(false);
+    bus.game = null;
+  });
   it("paints the preview with corner outline and hand markers", () => {
     const n = node("vision.boardReader", { corners: fmtCorners(rigCorners(RIGS.A)) });
     n.run({ frame: shoot(table, "A", 1) }); n.paint();

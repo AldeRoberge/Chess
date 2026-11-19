@@ -17,6 +17,28 @@ const settled = (g: Chess, flip?: number[]): BoardBelief => {
 };
 
 describe("PositionTracker", () => {
+  it("detects a faint single-camera knight move through fusion and hysteresis", () => {
+    const tracker = new PositionTracker(), fusion = new Fusion(), filter = new Stabilizer();
+    const game = new Chess();
+    let result = tracker.snapshot();
+    const feed = (t: number, faint: boolean) => {
+      const board = settled(game);
+      if (faint) {
+        // Consistent but below the integrator's amplitude threshold in both directions.
+        board.occ[62] = 0.4;
+        board.occ[45] = 0.6;
+      }
+      result = tracker.observe(filter.step(fusion.fuse([{
+        cam: "A", t, quality: 0.77, weight: 1, motion: 0,
+        occ: board.occ, white: board.white, handSquares: new Uint8Array(64),
+      }], t)));
+    };
+    for (let t = 0; t <= 2000; t += 100) feed(t, false);
+    game.move("Nf3");
+    for (let t = 2100; t <= 4500; t += 100) feed(t, true);
+    expect(result.history).toEqual(["Nf3"]);
+  });
+
   it("accepts a legal move after the confirm count and emits events", () => {
     const t = new PositionTracker();
     const g = new Chess(); g.move("e4");
@@ -47,6 +69,16 @@ describe("PositionTracker", () => {
     t.observe(lit);
     expect(t.observe(lit).history).toEqual(["e4"]);
     expect(t.observe(lit).status).toBe("synced"); // the glow stays, but the move already counted, so the reply can start
+  });
+  it("accepts the reply when three soft phantom pieces cling to the knight that just moved", () => {
+    const t = new PositionTracker(), g = new Chess(); g.move("Nf3");
+    t.observe(settled(g)); t.observe(settled(g));
+    expect(t.observe(settled(g)).history).toEqual(["Nf3"]);
+    g.move("d5");
+    const lit = settled(g);
+    for (const i of [44, 46, 62]) { lit.occ[i] = 1; lit.white[i] = 1; lit.conf[i] = 0.25; } // e3, g3, g1 glow around the knight
+    t.observe(lit);
+    expect(t.observe(lit).history).toEqual(["Nf3", "d5"]);
   });
   it("accepts a knight hop when the squares it changes are only softly read", () => {
     const after = new Chess(); after.move("Nf3");
@@ -84,6 +116,97 @@ describe("PositionTracker", () => {
     for (let i = 0; i < 5; i++) { const r = t.observe(half); expect(r.history).toEqual([]); expect(r.status).not.toBe("moved"); }
     t.observe(settled(after)); expect(t.observe(settled(after)).history).toEqual(["O-O"]);
   });
+  it("accepts a first move the cameras read softly even when a tall piece casts a faint ghost on the next square", () => {
+    const g = new Chess(); g.move("Nf3");
+    const t = new PositionTracker();
+    const seen = settled(g); // g1 empty, f3 knight, both read softly; e3 half-sees the knight leaning over it
+    seen.conf[45] = 0.4; seen.conf[62] = 0.4;
+    seen.occ[44] = 0.6; seen.white[44] = 0.3; seen.conf[44] = 0.2;
+    expect(t.observe(seen).status).toBe("pending");
+    const r = t.observe(seen);
+    expect(r.status).toBe("moved"); expect(r.history).toEqual(["Nf3"]);
+  });
+  it("never tells the player to put a piece back over a reading the cameras are unsure of", () => {
+    const t = new PositionTracker();
+    const blurry = settled(new Chess()); // the white pieces fade out of a poor picture
+    for (let i = 48; i < 64; i++) { blurry.occ[i] = 0.4; blurry.conf[i] = 0.2; }
+    for (let i = 0; i < 5; i++) { const r = t.observe(blurry); expect(r.status).toBe("synced"); expect(r.events).toEqual([]); }
+  });
+  it("calls a board misread on many squares unclear, not an illegal move", () => {
+    const t = new PositionTracker();
+    const misread = settled(new Chess());
+    for (let i = 48; i < 64; i++) misread.occ[i] = 0; // every white piece read as gone, confidently
+    for (let i = 0; i < 5; i++) { const r = t.observe(misread); expect(r.status).toBe("unclear"); expect(r.events.map((e) => e.type)).not.toContain("illegal"); }
+    expect(t.observe(settled(new Chess())).status).toBe("synced");
+  });
+  it("forgets a wrong reading once the board reads right again", () => {
+    const t = new PositionTracker(), bad = settled(new Chess());
+    bad.occ[52] = 0; bad.occ[20] = 1; bad.white[20] = 1; bad.conf.fill(0.99);
+    t.observe(bad); t.observe(bad); t.observe(settled(new Chess()));
+    expect(t.observe(bad).status).toBe("pending");
+  });
+  it("finds the knight move from the squares that changed, even when its neighbour is misread with confidence", () => {
+    const g = new Chess(); g.move("Nf3");
+    const t = new PositionTracker();
+    const seen = settled(g); // g1 emptied and f3 filled, as the camera saw it; e3 confidently reads a dark blob
+    seen.occ[44] = 1; seen.white[44] = 0; seen.conf[44] = 0.8;
+    t.observe(seen);
+    expect(t.observe(seen).history).toEqual(["Nf3"]);
+    for (let i = 0; i < 10; i++) expect(t.observe(seen).status).toBe("synced");
+    seen.settled = false;
+    expect(t.observe(seen).status).toBe("synced");
+    seen.handOver = true;
+    expect(t.observe(seen).status).toBe("pending");
+    seen.handOver = false; seen.settled = true;
+    // The reply still counts with the same blob present.
+    g.move("e5");
+    const reply = settled(g); reply.occ[44] = 1; reply.white[44] = 0; reply.conf[44] = 0.8;
+    t.observe(reply);
+    expect(t.observe(reply).history).toEqual(["Nf3", "e5"]);
+    expect(t.observe(reply).status).toBe("synced");
+    // Once the blob clears, a new object in that square must be checked again.
+    expect(t.observe(settled(g)).status).toBe("synced");
+    expect(t.observe(reply)).toMatchObject({ status: "synced", uncertain: [44], history: ["Nf3", "e5"] });
+    t.reset();
+    expect(t.observe(seen).history).toEqual([]);
+  });
+  it("reads a capture and a pawn push from the changed squares alone", () => {
+    const g = new Chess(); for (const m of ["e4", "d5"]) g.move(m);
+    const t = new PositionTracker(); t.reset(g.fen());
+    g.move("exd5");
+    const seen = settled(g); seen.occ[0] = 0; seen.conf[0] = 0.9; // a8 rook misread as gone: a square the move does not touch, not the mover's
+    t.observe(seen);
+    expect(t.observe(seen).history.at(-1)).toBe("exd5");
+  });
+  it("retains a counted position through small uncertain readings and reconciles the next legal move", () => {
+    const g = new Chess(), tracker = new PositionTracker();
+    for (const move of ["e4", "c5"]) { g.move(move); tracker.observe(settled(g)); tracker.observe(settled(g)); }
+    const noisy = settled(g); noisy.occ[8] = 0; noisy.conf[8] = 0.65;
+    for (const isSettled of [true, false]) {
+      noisy.settled = isSettled;
+      expect(tracker.observe(noisy)).toMatchObject({ status: "synced", uncertain: [8], history: ["e4", "c5"] });
+    }
+    expect(tracker.observe(settled(g))).toMatchObject({ status: "synced", uncertain: [] });
+    g.move("Nf3"); tracker.observe(settled(g));
+    expect(tracker.observe(settled(g))).toMatchObject({ status: "moved", history: ["e4", "c5", "Nf3"] });
+  });
+  it("does not turn tolerated extra blobs into guessed moves after a long wait", () => {
+    const g = new Chess(), tracker = new PositionTracker(); g.move("e4");
+    tracker.observe(settled(g)); tracker.observe(settled(g));
+    const noisy = settled(g); noisy.occ[18] = 1; noisy.white[18] = 0;
+    for (const t of [100, 6000, 12000]) {
+      noisy.t = t;
+      expect(tracker.observe(noisy)).toMatchObject({ status: "synced", uncertain: [18], history: ["e4"], events: [] });
+    }
+    noisy.handOver = true;
+    expect(tracker.observe(noisy).status).toBe("pending");
+  });
+  it("does not guess when another piece of the mover's also vanished", () => {
+    const g = new Chess(); g.move("Nf3");
+    const t = new PositionTracker();
+    const seen = settled(g); seen.occ[44] = 1; seen.conf[44] = 0.8; seen.occ[48] = 0; seen.conf[48] = 0.9; // a2 pawn gone too
+    for (let i = 0; i < 4; i++) expect(t.observe(seen).history).toEqual([]);
+  });
   it("recovers two plies when frames were dropped", () => {
     const t = new PositionTracker();
     const g = new Chess(); g.move("e4"); g.move("e5");
@@ -101,6 +224,7 @@ describe("PositionTracker", () => {
     const bad = settled(new Chess());
     bad.occ[52] = 0; bad.occ[20] = 1; bad.white[20] = 1; // e2 -> e6: not a legal pawn move
     bad.conf.fill(0.99);
+    expect(t.observe(bad).status).toBe("pending"); expect(t.observe(bad).status).toBe("pending"); // one noisy reading is not a mistake
     expect(t.observe(bad).status).toBe("illegal");
   });
   it("detects captures, castling and checkmate", () => {
@@ -137,3 +261,27 @@ describe("full vision pipeline on 3D camera feeds", () => {
     expect(last.fidelity).toBeGreaterThan(0.5);
   });
 });
+
+ describe("five-second detection deadline", () => {
+  it("guesses from partial evidence after five seconds and logs a later correction", () => {
+    const tracker = new PositionTracker();
+    const g = new Chess(); g.move("e4");
+    const partial = settled(g);
+    partial.occ[52] = 1; // e2 is still misread as occupied
+    partial.conf[52] = 0.2;
+    partial.t = 100;
+    expect(tracker.observe(partial).status).not.toBe("moved");
+    partial.t = 5099;
+    expect(tracker.observe(partial).status).not.toBe("moved");
+    partial.t = 5100;
+    const guess = tracker.observe(partial);
+    expect(guess.history).toEqual(["e4"]);
+    expect(guess.events.some((e) => e.type === "detection-guess")).toBe(true);
+    const actual = new Chess(); actual.move("d4");
+    const clear = settled(actual); clear.t = 5200;
+    tracker.observe(clear); clear.t = 5300;
+    const corrected = tracker.observe(clear);
+    expect(corrected.history).toEqual(["d4"]);
+    expect(corrected.events.find((e) => e.type === "detection-correction")?.data?.previous).toBe("e4");
+  });
+ });
