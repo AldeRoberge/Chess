@@ -3,6 +3,7 @@ import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import type { NodeSpec, Plugin } from "../core/types";
 import { PositionTracker, type TrackResult } from "../chess/tracker";
+import { clearSavedGame, loadGame, newGameGeneration, replay, saveGame } from "../chess/savedGame";
 import { createEngine, type Engine } from "../chess/engine";
 import type { DirectorOut } from "../experience/director";
 import { virtualTable } from "../sim/virtualTable";
@@ -12,7 +13,26 @@ import { drawBoard, withDetail } from "./shared";
 import { boardHover, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
 
-interface TrackState { tracker: PositionTracker; res: TrackResult | null; board: BoardBelief | null; prevPhase: string }
+interface TrackState { tracker: PositionTracker; res: TrackResult | null; board: BoardBelief | null; prevPhase: string; gen: number; resumed: ExperienceEvent | null }
+
+/**
+ * Starts a game node on the stored game, if there is one, so a reload or a restart carries on where it stopped.
+ * The on-screen table follows, so the virtual cameras see the same position the tracker expects.
+ * Returns the "resume" event to send on the first tick (it puts the director straight back into the game).
+ */
+export function resumeSaved(tracker: PositionTracker): ExperienceEvent | null {
+  const saved = loadGame();
+  if (!saved || !tracker.resume(saved.moves)) return null;
+  if (!virtualTable.game.history().length) virtualTable.game = replay(saved.moves)!;
+  return { type: "resume", t: 0, data: { ply: saved.moves.length, mode: saved.mode, elo: saved.elo, last: saved.moves.at(-1) } };
+}
+
+/** Keeps the stored game up to date after a move, and forgets it once the game is over. */
+export function persistGame(res: TrackResult, director: DirectorOut | undefined) {
+  if (res.status !== "moved") return;
+  if (res.over) { clearSavedGame(); return; }
+  saveGame(res.history, { mode: director?.mode, elo: director?.mode === "engine" ? director.elo : undefined });
+}
 const track: NodeSpec<TrackState> = {
   type: "game.tracker", title: "Move Tracker", category: "Game",
   inputs: [{ id: "board", type: "board" }, { id: "director", type: "any" }, { id: "control", type: "event" }],
@@ -25,19 +45,27 @@ const track: NodeSpec<TrackState> = {
     { id: "resync", kind: "bool", label: "Reset to start position", value: false, action: true },
   ],
   previewSize: [140, 140],
-  init: () => ({ tracker: new PositionTracker(), res: null, board: null, prevPhase: "idle" }),
-  process({ board, director, control }, { params, state, setFidelity, span }) {
+  init: () => { const tracker = new PositionTracker(); return { tracker, res: null, board: null, prevPhase: "idle", gen: newGameGeneration(), resumed: resumeSaved(tracker) }; },
+  process({ board, director, control }, { params, state, setFidelity, span, now }) {
     const t = state.tracker;
     t.cfg.confirm = Number(params.confirm); t.cfg.maxCost = Number(params.maxCost); t.cfg.minConf = Number(params.minConf); t.cfg.promotion = params.promotion as "q";
     const phase = (director as DirectorOut | undefined)?.phase ?? "idle";
     const restart = ((control as ExperienceEvent[] | undefined) ?? []).some((e) => e.type === "scenario-start");
-    if (restart || params.resync || (phase === "idle" && state.prevPhase !== "idle")) { t.reset(); virtualTable.reset(); params.resync = false; }
+    const asked = state.gen !== newGameGeneration();
+    if (restart || asked || params.resync || (phase === "idle" && state.prevPhase !== "idle")) { t.reset(); virtualTable.reset(); clearSavedGame(); params.resync = false; state.resumed = null; state.gen = newGameGeneration(); }
     state.prevPhase = phase;
+    // a stored game was picked up: say so once, so the director goes straight back into the game
+    const resumed = state.resumed ? [{ ...state.resumed, t: now }] : [];
+    if (resumed.length) pushLog(bus.events, resumed);
+    state.resumed = null;
     state.board = board ?? null;
-    if (!board) return { game: state.res, events: [] };
+    if (!board) { if (resumed.length) { state.res = t.snapshot(); bus.game = state.res; } return { game: state.res, events: resumed }; }
     state.res = span("track moves (observe)", () => t.observe(board));
+    if (resumed.length) state.res = { ...state.res, events: [...resumed, ...state.res.events] };
     bus.game = state.res;
-    if (state.res.status === "moved" && state.res.events.length) pushLog(bus.events, state.res.events); // the log reads the bus; a held piece must not reprint "lifted" every tick
+    persistGame(state.res, director as DirectorOut | undefined);
+    if (state.res.events.some((e) => e.type === "new-game")) { virtualTable.reset(); clearSavedGame(); }
+    if ((state.res.status === "moved" || state.res.events.some((e) => e.type === "new-game")) && state.res.events.length) pushLog(bus.events, state.res.events.filter((e) => e.type !== "resume")); // the log reads the bus; a held piece must not reprint "lifted" every tick
     setFidelity(Math.min(state.res.fidelity, state.res.status === "illegal" ? 0.2 : 1));
     return { game: state.res, events: state.res.events };
   },

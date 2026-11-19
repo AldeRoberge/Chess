@@ -24,7 +24,8 @@ describe("playStatus", () => {
     expect(playStatus(view({ game: { status: "lifted", ply: 0, turn: "w", over: false, history: [], lifted: "e2" } })).title).toBe("Piece in hand");
     expect(playStatus(view({ game: { status: "pending", ply: 0, turn: "w", over: false, history: [] } })).title).toBe("Ready");
     expect(playStatus(view({ game: { status: "pending", ply: 1, turn: "b", over: false, history: ["e4"] } })).title).toBe("Watching your move");
-    expect(playStatus(view({ game: { status: "illegal", ply: 0, turn: "w", over: false, history: [] } })).tone).toBe("bad");
+    expect(playStatus(view({ game: { status: "illegal", ply: 0, turn: "w", over: false, history: [] } })).title).toBe("Set up a new game");
+    expect(playStatus(view({ game: { status: "illegal", ply: 2, turn: "w", over: false, history: ["e4", "e5"] } })).tone).toBe("bad");
   });
   it("once the game is open, names whose turn it is and the move Stockfish wants played", () => {
     const playing = view({ phase: "game", botColor: "b" });

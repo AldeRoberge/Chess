@@ -46,6 +46,7 @@ export const defaultTrackerConfig = (): TrackerConfig => ({ maxCost: 0.8, margin
 
 const gridOf = (game: Chess): string[] =>
   game.board().flat().map((p) => (p ? p.color : ""));
+const START_GRID = gridOf(new Chess()).join(",");
 
 /**
  * Turns noisy settled occupancy into a *legal* game. Piece identity is never read from pixels:
@@ -70,6 +71,13 @@ export class PositionTracker {
     this.candN = 0;
     this.lastMove = null;
     this.moveFid = 1;
+  }
+
+  /** Picks up a stored game: replays its moves from the start so the history is kept. False (and a fresh game) if one is illegal. */
+  resume(moves: readonly string[]): boolean {
+    this.reset();
+    for (const m of moves) { try { this.game.move(m); } catch { this.reset(); return false; } }
+    return true;
   }
 
   private cost(grid: string[], obsGrid: string[], conf: Float32Array) {
@@ -184,7 +192,10 @@ export class PositionTracker {
     // A castle that is only half-seen (the king has stepped, the rook's square is still unread) must wait.
     // A single move the picture matches exactly — a knight hop, a king step — is the move itself.
     // cost 0 means the squares agree; they are only soft, not contradictory. A half-castle still disagrees and waits.
-    const exactStep = best?.moves.length === 1 && best.cost === 0;
+    // Squares the move does not touch, where the cameras only half-see an extra piece, do not count against it: a tall
+    // knight on f3 leans into e3 in a low camera's picture, and without this the first move was never accepted.
+    const contradicts = (grid: string[]) => { for (let i = 0; i < 64; i++) if (grid[i] !== obsGrid[i] && (grid[i] !== exp[i] || b.conf[i] >= this.cfg.minConf)) return true; return false; };
+    const exactStep = best?.moves.length === 1 && (best.cost === 0 || !contradicts(best.grid));
     if (ok && best.unsure > 0 && !exactStep) {
       this.cand = ""; this.candN = 0;
       return this.base("pending", diff, events, b.fidelity);
@@ -204,6 +215,15 @@ export class PositionTracker {
       return this.base("pending", diff, events, b.fidelity);
     }
 
+    // The pieces are all back on their starting squares in the middle of a game: the players set up a new one.
+    if (this.game.history().length && obsGrid.join(",") === START_GRID && diff.every((i) => b.conf[i] >= this.cfg.minConf)) {
+      this.candN = this.cand === START_GRID ? this.candN + 1 : 1;
+      this.cand = START_GRID;
+      if (this.candN < this.cfg.confirm) return this.base("pending", diff, events, b.fidelity);
+      this.reset();
+      events.push({ type: "new-game", t: b.t });
+      return this.base("synced", [], events, b.fidelity);
+    }
     this.cand = ""; this.candN = 0;
     // No legal move explained the picture. Extra squares the cameras are unsure about are a lamp or a shadow:
     // they are not a move, and they must not keep a move that already counted from standing.
