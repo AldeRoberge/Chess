@@ -76,7 +76,7 @@ const narratorSlots = (c: StepCtx): Item[] => {
     out.push(
       { kind: "choice", label: `Slot ${i + 1} · ${role}`, icon: "voice", options: NAMES, get: names[i], set: setNames[i] },
       { kind: "action", icon: "sound", label: `Test slot ${i + 1}`, run: () => c.speak(SLOT_TEST[i], i === 0 ? "A" : "B") },
-      { kind: "action", icon: "arrow", label: i === 0 ? "Move slot 1 down" : "Move slot 2 up", disabled: n.voices < 2, hint: n.voices < 2 ? "Add a second commentator to reorder." : undefined, run: swap },
+      { kind: "action", icon: i === 0 ? "down" : "up", label: i === 0 ? "Move slot 1 down" : "Move slot 2 up", disabled: n.voices < 2, hint: n.voices < 2 ? "Add a second commentator to reorder." : undefined, run: swap },
       { kind: "action", icon: "trash", danger: true, label: `Remove slot ${i + 1}`, disabled: n.voices < 2, hint: n.voices < 2 ? "At least one commentator is needed." : undefined,
         run: () => { if (i === 0) n.nameA = n.nameB; n.voices = 1; c.refresh(); } },
     );

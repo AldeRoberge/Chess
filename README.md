@@ -66,6 +66,22 @@ by a virtual hand through the full patch. Use the **Scenario Player** node or th
 *Autoplay demo game*. In the **Table** tab you can also click a piece and a square yourself, sit down,
 and hover the mouse over the menu buttons to test dwell selection.
 
+## Phone remote: watch and play from a phone
+
+Run the app on the computer that has the webcam (`npm run dev`, or `start-chess.bat`), open it there as `http://localhost:5173`, and click **Phone** in the ribbon (Home, Start). The window shows an address and a four-digit join code. On a phone on the **same Wi-Fi**, open the address (the code is already in it).
+
+The phone page shows:
+
+- **The game**: the board, live. Step back and forward through the moves with the arrows, or tap any move on the sheet. **Live** returns to the current position.
+- **Moves**: a paper score sheet, one row per move number. Tap a move to see that position.
+- **Camera**: the latest picture from each camera, about once a second (grayscale, as the tracker sees it). Pictures are only sent while a phone is watching.
+- **Game info**: tracker state, confidence, camera health and the narration lines.
+- **Playing**: tap a piece, then a green dot. On the virtual table the virtual hand plays the move and the tracker follows it. With a real board and a webcam the move appears as an arrow on the computer's screen (and the projector, if any) and a person plays it on the board; the tracker then confirms it from the camera. Promotions are always to a queen. It is whichever side's turn it is; against a bot you can only play your own side.
+
+How it works: the dev server (`src/remote/relay.ts`, a Vite plugin with no dependencies) relays between the app on the computer and the phone. The app pushes the game state a few times a second; the phone polls. Host routes only answer requests from the computer itself, and phone routes need the join code. The server listens on the network (`server.host` in `vite.config.ts`), so on Windows the first start asks whether Node may use private networks: allow it. The code changes every time the server starts. This is for a home or venue network you trust; there is no encryption, so do not expose the port to the internet.
+
+A static build (the copy on a web host) has no relay, so the Phone button says so.
+
 ## Tests: behaviour, and 100 % coverage
 
 `npm run coverage` fails if any line, branch, function or statement in `src/` is untested.

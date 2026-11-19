@@ -12,6 +12,7 @@
   --font-ui:"Chakra Petch",system-ui,sans-serif;--font-mono:"IBM Plex Mono",ui-monospace,monospace;
   --u:1;--t-xs:calc(12px*var(--u));--t-sm:calc(13px*var(--u));--t-md:calc(15px*var(--u));--t-lg:calc(20px*var(--u));--t-xl:calc(28px*var(--u));
   --radius:4px;color-scheme:dark;
+  --paper:#e8edf3;--paper-ink:#0a1827;--paper-dim:#4a5d75;--paper-rule:#b4c2d3;
   --shadow:#0009;--scrim:rgb(2 6 12/.6);--halo-bg:linear-gradient(170deg,#0a2038fb,#07182bfb);--track:#081a2f80;--on-signal:#02060d;
 }
 *{box-sizing:border-box}
@@ -157,7 +158,6 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 /* projector window */
 body.output{background:#000;overflow:hidden}body.output canvas{position:fixed;inset:0;width:100%;height:100%}#c{display:none}
 body.output .hint{position:fixed;left:8px;bottom:8px;color:#fff4;font-size:var(--t-xs);pointer-events:none}
-@media (max-width:900px){main{grid-template-columns:1fr}aside{display:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.ne-ms.crit{opacity:1}}
 
 /* navigation: tab icons, key hints, next-step strip */
@@ -366,3 +366,27 @@ aside{container-type:inline-size}
 /* empty states say what will appear and when */
 .lines:empty::before{content:"No commentary yet. Lines appear here once a game starts.";color:var(--text-dim);font-size:var(--t-xs)}
 .events:empty::before{content:"No events yet. Moves, phase changes and seat changes are listed here.";color:var(--text-dim);font-size:var(--t-xs)}
+
+/* portrait and narrow windows: the dock becomes a bottom sheet under the graph; ribbon, top bar and next-steps swipe sideways */
+@media (max-width:900px){
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,48%)}
+  aside{border-left:0;border-top:1px solid var(--line)}
+  .resize{display:none}
+  .ribbon{overflow-x:auto;scrollbar-width:none}.ribbon::-webkit-scrollbar{display:none}
+  .rtabs{overflow-x:auto;scrollbar-width:none}.rtabs::-webkit-scrollbar{display:none}.rtabs>button{flex:none}
+  #next{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.next-card{flex:0 0 190px}.next-lead{flex:none}
+  #tabs button{padding:11px 6px}
+  #app{height:100vh;height:100dvh}
+}
+
+/* buttons and tabs with an icon: 16px beside 13px text (14px in the dense performance panel), 22px above the ribbon's labels */
+.has-ic{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.has-ic .ic{flex:none}
+.rtabs>button{display:inline-flex;align-items:center;gap:7px}
+.rtabs>button .ic{flex:none;opacity:.85}.rtabs>button.on .ic{opacity:1;color:var(--signal)}
+.ne-tools button{display:inline-flex;align-items:center;gap:6px}
+.scen-pause{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.notice-actions button,.bk-bar button,.bk-head button,.bk-row button{display:inline-flex;align-items:center;gap:7px}
+
+/* touch sizing must not stretch the round section dot */
+.coarse .ne-gdot{min-height:0}

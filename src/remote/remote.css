@@ -1,0 +1,71 @@
+/*
+ * The phone page. One column, built for a thumb: the board first, the paper score sheet under it (the one bold element here),
+ * everything else quiet. Tokens come from style.css; the sheet uses the --paper set.
+ */
+body.remote{overflow:auto;height:auto;min-height:100%}
+body.remote #app{display:block;height:auto}
+.rm{max-width:560px;margin:0 auto;padding:0 12px 24px;display:flex;flex-direction:column;gap:10px;min-height:100dvh}
+.rm-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 2px 0}
+.rm-title{font:700 var(--t-lg)/1 var(--font-ui);color:var(--signal-hi)}
+.rm-conn{font:500 var(--t-sm)/1 var(--font-ui);color:var(--ok);padding:6px 10px;border:1px solid color-mix(in srgb,var(--ok) 45%,var(--line));border-radius:var(--radius)}
+.rm-conn.off{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,var(--line))}
+.rm-turn{margin:0;font:600 var(--t-md)/1.3 var(--font-ui)}
+.rm-turn.back{color:var(--amber)}
+.rm button{font:inherit}
+.rm-btn{min-height:44px;min-width:44px;padding:0 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--ink-2);color:var(--text);font:500 var(--t-md)/1 var(--font-ui);cursor:pointer}
+.rm-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.rm-btn:disabled{opacity:.4;cursor:default}
+.rm-btn.primary{background:var(--signal);color:var(--on-signal);border-color:transparent;font-weight:600}
+.rm-btn.live.on{border-color:var(--signal);color:var(--signal-hi)}
+
+/* board: 8x8 buttons, the square never shrinks below a finger */
+.rm-board{--light:#f0d9b5;--dark:#b58863;--hi:#ffe27a;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));width:min(100%,52dvh);margin-inline:auto;aspect-ratio:1;border:1px solid var(--line-hi);border-radius:var(--radius);overflow:hidden;touch-action:manipulation}
+.rm-sq{position:relative;display:grid;place-items:center;padding:0;border:0;border-radius:0;min-width:0;min-height:0;cursor:pointer}
+.rm-sq.light{background:var(--light)}.rm-sq.dark{background:var(--dark)}
+.rm-sq img{width:92%;height:92%;object-fit:contain;pointer-events:none;user-select:none}
+.rm-sq.last{box-shadow:inset 0 0 0 100vmax color-mix(in srgb,var(--hi) 45%,transparent)}
+.rm-sq.hint{box-shadow:inset 0 0 0 3px var(--ok)}
+.rm-sq.sel{box-shadow:inset 0 0 0 3px var(--signal)}
+.rm-sq.target::after{content:"";position:absolute;width:30%;height:30%;border-radius:50%;background:color-mix(in srgb,var(--signal) 70%,transparent);border:2px solid var(--ink-0)}
+.rm-sq:focus-visible{outline:3px solid var(--signal);outline-offset:-3px;z-index:1}
+.rm-coord{position:absolute;font:600 10px/1 var(--font-ui);font-style:normal;color:var(--ink-1);opacity:.75;pointer-events:none}
+.rm-coord.rank{left:2px;top:2px}.rm-coord.file{right:2px;bottom:2px}
+
+.rm-nav{display:grid;grid-template-columns:repeat(4,1fr) 1.5fr 1.2fr;gap:6px}
+.rm-notice{margin:0;min-height:1.4em;font:400 var(--t-sm)/1.4 var(--font-ui);color:var(--text-dim)}
+.rm-notice.bad{color:var(--bad)}
+
+.rm-tabs{display:flex;border-bottom:1px solid var(--line)}
+.rm-tabs button{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1;min-height:44px;border:0;border-radius:0;background:transparent;color:var(--text-dim);font:500 var(--t-md)/1 var(--font-ui);cursor:pointer}
+.rm-tabs button.on{color:var(--signal-hi);box-shadow:inset 0 -2px var(--signal)}
+.rm-panel{flex:1}
+.rm-empty{margin:12px 2px;color:var(--text-dim);line-height:1.5}
+
+/* the score sheet: pale paper, dark ink, ruled rows. The rest of the page stays dark. */
+.rm-paper{background:var(--paper);color:var(--paper-ink);border-radius:var(--radius);padding:4px 0;max-height:46dvh;overflow:auto}
+.rm-paper .rm-empty{color:var(--paper-dim);padding:8px 12px}
+.rm-sheet{width:100%;border-collapse:collapse;font:500 var(--t-md)/1 var(--font-mono);font-variant-numeric:tabular-nums}
+.rm-sheet thead th{position:sticky;top:0;background:var(--paper);font:600 var(--t-xs)/1 var(--font-ui);color:var(--paper-dim);text-align:left;padding:10px 12px 8px;border-bottom:2px solid var(--paper-ink)}
+.rm-sheet tbody th{width:3.2em;text-align:right;color:var(--paper-dim);font-weight:500;padding:0 12px 0 8px;border-right:1px solid var(--paper-rule)}
+.rm-sheet td{padding:0;width:calc((100% - 3.2em) / 2)}
+.rm-sheet tr{border-bottom:1px solid var(--paper-rule)}
+.rm-sheet td button{width:100%;min-height:44px;padding:0 12px;border:0;border-radius:0;background:transparent;color:var(--paper-ink);font:inherit;text-align:left;cursor:pointer}
+.rm-sheet td button.on{background:var(--paper-ink);color:var(--paper)}
+.rm-sheet td button:focus-visible{outline:3px solid var(--signal);outline-offset:-3px}
+
+.rm-cams{display:flex;gap:6px;margin:10px 0;flex-wrap:wrap}
+.rm-cams button{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--ink-2);color:var(--text-dim);cursor:pointer}
+.rm-cams button.on{border-color:var(--signal);color:var(--signal-hi)}
+.rm-shot{display:block;width:100%;height:auto;margin-top:10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--ink-0)}
+.rm-cap{margin:6px 2px;font-size:var(--t-xs);color:var(--text-dim)}
+.rm-info{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;margin:12px 2px}
+.rm-info dt{color:var(--text-dim)}.rm-info dd{margin:0}
+.rm-panel h2{margin:16px 2px 6px;font:600 var(--t-md)/1.2 var(--font-ui)}
+.rm-lines{margin:0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;line-height:1.4}
+
+/* join screen */
+.rm-join{display:flex;flex-direction:column;gap:12px;padding-top:12vh}
+.rm-join h1{margin:0;font:700 var(--t-xl)/1.1 var(--font-ui)}
+.rm-lead{margin:0;color:var(--text-dim);line-height:1.5}
+.rm-join input{min-height:52px;padding:0 14px;border:1px solid var(--line-hi);border-radius:var(--radius);background:var(--ink-0);color:var(--text);font:600 24px/1 var(--font-mono);letter-spacing:.2em}
+.rm-err{margin:0;min-height:1.4em;color:var(--bad)}
