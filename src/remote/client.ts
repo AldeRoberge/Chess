@@ -37,25 +37,33 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   root.replaceChildren();
   const page = el("div", "rm"); root.append(page);
 
-  // ---- join screen
+  // ---- join popup
   function askCode(problem = "") {
-    page.replaceChildren();
+    if (!head.isConnected) build();
+    page.querySelector(".rm-join-pop")?.remove();
+    const pop = el("div", "rm-join-pop"); pop.setAttribute("role", "dialog"); pop.setAttribute("aria-modal", "true"); pop.setAttribute("aria-label", "Join the game");
     const f = el("form", "rm-join"); f.noValidate = true;
     const h = el("h1", "", "Join the game"), p = el("p", "rm-lead", "Enter the code shown on the computer, in the Phone window.");
     const i = el("input"); i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "one-time-code"; i.maxLength = 8; i.value = code; i.setAttribute("aria-label", "Join code"); i.placeholder = "Code";
     const err = el("p", "rm-err", problem); err.setAttribute("role", "alert");
     const b = withIcon(el("button", "rm-btn primary", "Join"), "arrow", 18); b.type = "submit";
     f.append(h, p, i, err, b);
-    f.onsubmit = (e) => { e.preventDefault(); code = i.value.trim(); if (!code) { err.textContent = "Type the code from the computer."; return; } write("chess.remote.code", code); rev = -1; build(); void poll(); };
-    page.append(f); i.focus();
+    f.onsubmit = (e) => {
+      e.preventDefault(); code = i.value.trim();
+      if (!code) { err.textContent = "Type the code from the computer."; return; }
+      write("chess.remote.code", code); clearTimeout(timer); rev = -1; st = null; pop.remove(); draw(); void poll();
+    };
+    pop.append(f); page.append(pop); i.focus();
   }
 
   // ---- main layout
   const head = el("div", "rm-head"), title = el("span", "rm-title", "Chess XP"), conn = el("span", "rm-conn", "Connecting"); conn.setAttribute("role", "status");
+  const joinBtn = withIcon(el("button", "rm-btn primary", "Join"), "arrow", 18); joinBtn.type = "button"; joinBtn.setAttribute("aria-label", "Join with a code");
+  joinBtn.onclick = () => askCode();
   const watchBtn = withIcon(el("button", "rm-btn", "Watch only"), "eye", 18); watchBtn.type = "button";
   watchBtn.setAttribute("aria-label", "Watch only");
   watchBtn.onclick = () => { watch = !watch; write("chess.remote.watch", watch ? "1" : "0"); draw(); };
-  head.append(title, watchBtn, conn);
+  head.append(title, joinBtn, watchBtn, conn);
   const turn = el("p", "rm-turn"); turn.setAttribute("aria-live", "polite");
   const clocksEl = el("p", "rm-clocks"); clocksEl.hidden = true;
   const boardEl = el("div", "rm-board"); boardEl.setAttribute("role", "group"); boardEl.setAttribute("aria-label", "Chess board");
@@ -247,6 +255,6 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     if (!stopped) timer = window.setTimeout(() => void poll(), deps.poll ?? 700);
   }
 
-  if (code) { build(); void poll(); } else askCode();
+  if (!code) askCode(); else { build(); void poll(); }
   return { stop() { stopped = true; clearTimeout(timer); document.body.classList.remove("remote"); } };
 }

@@ -291,7 +291,7 @@ describe("workflows", () => {
   it("the Workflows button loads a demo into the live patch, and Ctrl+Z brings the old one back", () => {
     finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
     (document.getElementById("workflows") as HTMLButtonElement).click();
-    expect(document.querySelectorAll(".wf-row")).toHaveLength(6);
+    expect(document.querySelectorAll(".wf-row")).toHaveLength(7);
     (document.querySelector(".wf-row button") as HTMLButtonElement).click();
     expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);
@@ -303,6 +303,26 @@ describe("workflows", () => {
     Object.defineProperty(input, "files", { value: [new File([JSON.stringify({ graph: { nodes: [], edges: [] } })], "w.json")] });
     input.dispatchEvent(new Event("change")); await new Promise((r) => setTimeout(r, 30));
     expect(app.graph.nodes.size).toBe(0);
+  });
+});
+
+describe("collapsible ribbon", () => {
+  const hdr = () => document.querySelector("#app>header, header") as HTMLElement;
+  const tab = (n: string) => document.querySelector<HTMLElement>(`[data-rtab="${n}"]`)!;
+  it("clicking the open tab folds the ribbon, clicking again or another tab reopens it, and it is remembered", () => {
+    finishSetup(); boot(root);
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
+    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
+    expect(tab("view").getAttribute("aria-expanded")).toBe("false");
+    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBe(true);
+    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
+    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBeUndefined();
+    tab("home").click(); tab("view").click();
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false); expect(tab("view").classList.contains("on")).toBe(true);
+  });
+  it("restores the folded ribbon on launch", () => {
+    finishSetup(); localStorage.setItem("cx.prefs.v1", JSON.stringify({ ribbonCollapsed: true })); boot(root);
+    expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
   });
 });
 

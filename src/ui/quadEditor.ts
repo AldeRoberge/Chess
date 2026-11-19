@@ -37,6 +37,9 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const hint = document.createElement("div"); hint.className = "qe-hint"; hint.textContent = "Drag the four handles onto the corners. Arrow keys nudge the selected one (Shift = 10 px).";
   const cv = document.createElement("canvas"); cv.className = "qe-cv"; cv.tabIndex = 0;
   const W = 720, H = Math.round((W * fh) / fw); cv.width = W; cv.height = H; cv.style.aspectRatio = `${fw} / ${fh}`;
+  // The picture sits in a stage that shrinks to whatever height is left, so the dialog fits short and odd-shaped screens without scrolling.
+  const stage = document.createElement("div"); stage.className = "qe-stage"; stage.append(cv);
+  box.style.setProperty("--qe-ar", String(fw / fh));
   const bar = document.createElement("div"); bar.className = "qe-bar";
   const btn = (t: string, cls = "") => { const b = document.createElement("button"); b.className = "qe-btn " + cls; b.textContent = t; return b; };
   const auto = btn("Auto detect"), reset = btn("Reset"), cancel = btn("Cancel"), ok = btn("Done", "primary");
@@ -70,7 +73,8 @@ export function openQuadEditor(o: QuadEditorOpts) {
   opts.append(followBtn, matrixBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1;
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
-  box.append(head, hint, cv, meterBox, autoBox, bar, opts); back.append(box); document.body.append(back);
+  const side = document.createElement("div"); side.className = "qe-side"; side.append(meterBox, autoBox, bar, opts);
+  box.append(head, hint, stage, side); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
   const sx = W / fw, sy = H / fh;

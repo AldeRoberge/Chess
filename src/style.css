@@ -196,6 +196,8 @@ header button{display:inline-flex;align-items:center;gap:7px}
 .rtabs .chips{margin:0 0 4px 12px}
 .ribbon{grid-row:2;grid-column:1/-1;background:var(--ink-2);border-top:1px solid var(--line);padding:6px 12px;min-height:78px}
 #app>header{position:relative;z-index:40}
+#app>header.ribbon-collapsed .ribbon{display:none}
+#app>header.ribbon-collapsed .rtabs>button.on{margin-bottom:0;padding-bottom:6px;background:transparent;border-color:transparent}
 .rpane{display:none;gap:0;align-items:stretch}.rpane.on{display:flex}
 .rgroup{display:flex;flex-direction:column;justify-content:space-between;padding:0 12px;border-right:1px solid var(--line)}.rgroup:first-child{padding-left:0}
 .rbtns{display:flex;gap:2px;align-items:flex-start}
@@ -312,12 +314,29 @@ body.resizing{cursor:col-resize;user-select:none}
 .ne-node:not(.wide) .ne-opt-card .ne-param{background:transparent;border-bottom:0;border-radius:0}
 .ne-qbtn{margin-left:6px;padding:0 6px;font:600 var(--t-sm) var(--font-ui);color:var(--signal-hi);background:transparent;border:1px solid var(--signal);border-radius:3px;cursor:pointer}.ne-qbtn:hover{background:color-mix(in srgb,var(--signal) 22%,transparent)}
 .ne-param .ne-action{grid-column:2/4;justify-self:stretch;padding:3px 8px;font:600 var(--t-sm) var(--font-ui);color:var(--signal-hi);background:color-mix(in srgb,var(--signal) 12%,transparent);border:1px solid var(--signal);border-radius:3px;cursor:pointer}.ne-param .ne-action:hover{background:color-mix(in srgb,var(--signal) 26%,transparent)}.ne-param .ne-action:active{transform:translateY(1px)}
-.qe-back{position:fixed;inset:0;z-index:9999;background:rgba(5,8,14,.72);display:grid;place-items:center;padding:16px}
-.qe{background:var(--ink-1,#0f1520);color:var(--text,#dbe6f5);border:1px solid var(--line,#2a3a52);border-radius:8px;padding:14px;width:min(760px,100%);display:flex;flex-direction:column;gap:8px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+/* Corner editor dialog. The picture's stage takes whatever height is left, so the whole dialog fits the window at any size or shape. */
+.qe-back{--qe-pad:clamp(4px,2vmin,16px);--qe-in:clamp(8px,1.8vmin,14px);--qe-gap:clamp(4px,1.2vmin,8px);position:fixed;inset:0;z-index:9999;background:rgba(5,8,14,.72);display:grid;place-items:center;padding:var(--qe-pad)}
+.qe{--qe-ar:1.3333;box-sizing:border-box;background:var(--ink-1,#0f1520);color:var(--text,#dbe6f5);border:1px solid var(--line,#2a3a52);border-radius:8px;padding:var(--qe-in);width:min(760px,100%);max-height:calc(100dvh - 2 * var(--qe-pad));display:flex;flex-direction:column;gap:var(--qe-gap);box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
+.qe>*{flex-shrink:0;min-width:0}
 .qe-head{font-weight:600}.qe-hint{font-size:12px;opacity:.7}
-.qe-cv{width:100%;height:auto;border-radius:4px;cursor:crosshair;touch-action:none;outline:none;background:var(--ink-0)}
-.qe-bar{display:flex;gap:8px;justify-content:flex-end}
+.qe-stage{flex:0 1 calc((min(760px,100vw - 2 * var(--qe-pad)) - 2 * var(--qe-in) - 2px) / var(--qe-ar));min-height:min(120px,30dvh);container-type:size;display:grid;place-items:center;overflow:hidden}
+.qe-cv{display:block;width:min(100cqw,100cqh * var(--qe-ar));height:auto;border-radius:4px;cursor:crosshair;touch-action:none;outline:none;background:var(--ink-0)}
+.qe-side{display:flex;flex-direction:column;gap:var(--qe-gap);min-height:0}
+.qe-bar{display:flex;flex-wrap:wrap;gap:var(--qe-gap);justify-content:flex-end}
+/* Short or wide windows (laptops, 4:3, landscape phones): picture on the left at full height, controls in a column on the right. */
+@media (min-aspect-ratio:5/4) and (max-height:820px){
+  .qe{display:grid;grid-template-columns:minmax(0,1fr) clamp(190px,24vw,270px);grid-template-rows:auto auto minmax(0,1fr);height:calc(100dvh - 2 * var(--qe-pad));width:min(100%,calc((100dvh - 2 * var(--qe-pad) - 2 * var(--qe-in) - 2rem) * var(--qe-ar) + clamp(190px,24vw,270px) + 2 * var(--qe-in) + var(--qe-gap) + 2px))}
+  .qe-head{grid-column:1/-1}
+  .qe-stage{grid-column:1;grid-row:2/4;min-height:0}
+  .qe-hint{grid-column:2;grid-row:2}
+  .qe-side{grid-column:2;grid-row:3;overflow:auto}
+  .qe .qe-bar{justify-content:stretch}.qe .qe-bar .qe-btn{flex:1 1 auto}
+  .qe .qe-auto-row{grid-template-columns:auto minmax(40px,1fr) auto;gap:8px}.qe .qe-auto-val{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .qe .qe-meter{flex-wrap:wrap;margin:0}.qe .qe-meter-bar{flex:1 1 100%}
+}
 .qe-btn{padding:5px 14px;border-radius:4px;border:1px solid var(--line,#2a3a52);background:transparent;color:inherit;cursor:pointer}.qe-btn.primary{background:var(--signal,#35e0b4);color:#06110e;border-color:transparent;font-weight:600}
+/* Very short windows (landscape phones): drop the hint line and tighten the buttons so every control stays on screen. */
+@media (max-height:480px){.qe .qe-hint{display:none}.qe .qe-btn{padding:3px 8px;font-size:12px}.qe .qe-auto,.qe .qe-meter{gap:2px 8px}}
 
 /* portrait / phone: stack the graph over the inspector, ribbon scrolls sideways, view tabs become a bottom bar */
 @media (max-aspect-ratio:1/1) and (max-width:900px){
