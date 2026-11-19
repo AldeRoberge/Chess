@@ -8,6 +8,7 @@ import type { GrayFrame } from "../vision/types";
 export class Calibrate {
   view: CalibrationView | null = null;
   private samples: CalibrationSample[] = [];
+  private baseline: DetectionSettings = { ...calibrationDefaults };
   private timer: ReturnType<typeof setInterval> | undefined;
   constructor(private graph: Graph, private persist: () => void) {}
   private cameras() {
@@ -19,6 +20,13 @@ export class Calibrate {
   command(c: CalibrationCommand): { ok: boolean; text: string } {
     if (c.action === "start") {
       if (this.view && ["capturing", "searching"].includes(this.view.phase)) return { ok: false, text: "Calibration is busy." };
+      const reader = [...this.graph.nodes.values()].find(n => n.type === "vision.boardReader");
+      const tracker = [...this.graph.nodes.values()].find(n => n.type === "game.tracker");
+      this.baseline = { ...calibrationDefaults };
+      for (const key of Object.keys(this.baseline) as (keyof DetectionSettings)[]) {
+        const value = key === "legalMargin" ? tracker?.params.margin : reader?.params[key];
+        if (typeof value === "number" && Number.isFinite(value)) this.baseline[key] = value;
+      }
       calibrationRuntime.active = true;
       this.samples = [];
       this.view = { session: Math.random().toString(36).slice(2), step: 0, phase: "ready", ...calibrationPosition(0), message: "Remove your hands, then confirm here or on your phone. Move the physical pieces yourself.", samples: 0, results: [], validation: null };
@@ -78,7 +86,8 @@ export class Calibrate {
   }
   private async search(v: CalibrationView) {
     let best: DetectionSettings = { ...calibrationDefaults };
-    v.results = [evaluateCalibration(this.samples, best, "Default")];
+    v.results = [evaluateCalibration(this.samples, best, "Default"), evaluateCalibration(this.samples, this.baseline, "Current settings")];
+    v.results.sort((a, b) => b.score - a.score); best = { ...v.results[0].settings };
     for (const key of Object.keys(settingRanges) as (keyof DetectionSettings)[]) {
       for (const value of settingRanges[key]) {
         await new Promise(resolve => setTimeout(resolve, 0)); if (this.view !== v) return;
@@ -96,7 +105,7 @@ export function renderCalibration(root: HTMLElement, view: CalibrationView | nul
   const add = (tag: string, text: string) => { const e = document.createElement(tag); e.textContent = text; root.append(e); return e; };
   add("h2", "Calibrate");
   const button = (label: string, action: CalibrationCommand["action"], disabled = false) => { const b = add("button", label) as HTMLButtonElement; b.className = "rm-btn"; b.disabled = disabled; b.onclick = () => run({ type: "calibrate", action, session: view?.session, step: view?.step }); };
-  if (!view) { add("p", "Learn detection settings from confirmed physical positions. Align camera corners and disable camera following first. Pause autoplay and finish or pause your game before starting."); button("Start calibration", "start"); return; }
+  if (!view) { add("p", "Learn detection settings from confirmed physical positions. Align camera corners first. Calibration pauses move tracking, autoplay and camera following. Restore your game position before closing."); button("Start calibration", "start"); return; }
   add("p", `Configuration ${view.step + 1} / ${calibrationMoves.length + 1} | ${view.samples} recorded | ${view.phase}`);
   add("p", view.instruction); add("p", view.message);
   const board = add("div", ""); board.className = "calibrate-board"; board.setAttribute("aria-label", "Expected board configuration");
@@ -115,6 +124,6 @@ export function renderCalibration(root: HTMLElement, view: CalibrationView | nul
     }
     add("pre", JSON.stringify(view.results[0].settings, null, 2));
   }
-  if (view.validation) { add("p", `Validation: ${(view.validation.accuracy * 100).toFixed(1)}% accuracy, ${(view.validation.consistency * 100).toFixed(1)}% stable. Disagreements: ${view.validation.errors.join(", ") || "none"}.`); button("Apply recommended settings", "apply", view.phase !== "complete"); }
+  if (view.validation) { add("p", `Validation: ${(view.validation.accuracy * 100).toFixed(1)}% accuracy, ${(view.validation.consistency * 100).toFixed(1)}% stable. Disagreements: ${view.validation.errors.join(", ") || "none"}.`); button("Apply recommended settings", "apply", view.phase !== "complete" || view.validation.accuracy < 0.9 || view.validation.consistency < 0.95); }
   button("Close calibration", "stop");
 }

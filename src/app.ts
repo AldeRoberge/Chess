@@ -501,7 +501,7 @@ export function boot(root: HTMLElement): Boot {
     return on("source.synthetic") && !camFrames().some((c) => [...graph.nodes.values()].some((n) => n.type === "source.webcam" && n.params.online !== false && graph.states.get(n.id)?.frame));
   };
   const calibrate = new Calibrate(graph, persist);
-  const calibrationDialog = document.createElement("dialog"); calibrationDialog.className = "calibrate-dialog";
+  const calibrationDialog = document.createElement("dialog"); calibrationDialog.className = "calibrate-dialog"; calibrationDialog.setAttribute("aria-label", "Calibrate piece detection");
   const calibrationPanel = document.createElement("div"); calibrationDialog.append(calibrationPanel); document.body.append(calibrationDialog);
   let calibrationSignature = "";
   const drawCalibration = () => {
@@ -516,7 +516,7 @@ export function boot(root: HTMLElement): Boot {
     base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
     build: (framed, notice, now) => {
       const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
-      s.calibration = calibrate.view;
+      s.calibration = calibrate.view ? { ...calibrate.view, results: calibrate.view.results.map(r => ({ ...r, errors: r.errors.slice(0, 12) })) } : null;
       if (calibrate.view) s.play = "off";
       if (virtualTable.over) {
         s.over = true; s.play = "off";
@@ -553,6 +553,7 @@ export function boot(root: HTMLElement): Boot {
     if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
     profiler.span("editor", () => editor.frame(now));
     if (calibrationDialog.open) drawCalibration();
+    document.getElementById("calibrate")!.classList.toggle("on", !!calibrate.view);
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
     profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {

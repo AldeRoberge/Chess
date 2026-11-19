@@ -84,6 +84,16 @@ How it works: the dev server (`src/remote/relay.ts`, a Vite plugin with no depen
 
 On the production site, open **alderoberge.com/chess/** on the host PC. Its **This PC’s join code** badge displays a six-digit code. Open the same site on a phone, type that code and tap **Join**. The Cloudflare worker relays the game and camera pictures over HTTPS, so the devices can be on different networks. Keep the host page open. Each desktop session gets a separate room; reloading the host creates a new code. Plain static hosting without the worker has no phone relay.
 
+## Calibrate piece detection
+
+Open **Calibrate** in the desktop ribbon, or join with **Phone** and open the phone's **Calibrate** tab. Align the camera's board corners first. Set the physical board to the displayed starting position, remove your hands, and tap **I moved the board into this configuration**. Follow the prompted moves, including castling and a capture. Each confirmation records three distinct still frames per camera; stale frames or hands cause the capture to wait or time out. The last capture can be repeated.
+
+Calibration pauses move tracking, scenario playback and new engine requests, and suspends camera following and automatic reference learning. Keep the camera and lighting fixed. The desktop and phone share the same session and step; delayed confirmations cannot label a later position. Close calibration and restore your game's physical position before resuming.
+
+The search compares sensitivity, shape/texture strength, grayscale color/brightness strength, piece sampling size, perspective correction and the legal-move evidence margin. Its graph shows visual probability accuracy, repeat-frame map consistency and legal-position replay. The score combines these at 70%, 15% and 15%. The search varies one setting at a time: it recommends the best settings tested on your samples, rather than claiming a universal optimum. Shape is texture/edge evidence, not learned recognition of each piece type; piece identities come from legal moves.
+
+The final position is held out of the search. Applying requires at least 90% visual probability accuracy and 95% consistency on that position, and saves settings to the workflow. Camera samples remain in memory for the current session; closing/restarting discards them. Recheck the calibration when changing pieces, lighting or camera placement.
+
 ## Tests: behaviour, and 100 % coverage
 
 `npm run coverage` fails if any line, branch, function or statement in `src/` is untested.

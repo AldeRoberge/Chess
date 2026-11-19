@@ -5,6 +5,11 @@ import { renderCalibration } from "../ui/calibrate";
  */
 import "../style.css";
 import "./remote.css";
+import "@fontsource/chakra-petch/500.css";
+import "@fontsource/chakra-petch/600.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import { KNIGHT_SVG } from "../ui/brandIcon";
+import { createMoveGuide, guideMoves } from "./moveGuide";
 import { boardTheme } from "../ui/boardThemes";
 import { withIcon } from "../ui/icons";
 import { pieceSet } from "../ui/pieceSets";
@@ -31,6 +36,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   let view: number | null = null; // null follows the live game; a number is a half-move being looked at
   let sel: string | null = null, tab: Tab = "moves", cam = "", flipped = false, online = false, stopped = false, timer = 0;
   let sent = "";
+  let latency = 0;
   let promo: { from: string; to: string; fen: string } | null = null;
   let watch = read("chess.remote.watch") === "1";
 
@@ -58,13 +64,15 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   }
 
   // ---- main layout
-  const head = el("div", "rm-head"), title = el("span", "rm-title", "Chess XP"), conn = el("span", "rm-conn", "Connecting"); conn.setAttribute("role", "status");
-  const joinBtn = withIcon(el("button", "rm-btn primary", "Join"), "arrow", 18); joinBtn.type = "button"; joinBtn.setAttribute("aria-label", "Join with a code");
+  const head = el("div", "rm-head"), title = el("span", "rm-title"), conn = el("span", "rm-conn", "Connecting"); conn.setAttribute("role", "status");
+  title.innerHTML = KNIGHT_SVG; title.setAttribute("role", "img"); title.setAttribute("aria-label", "Chess XP");
+  const joinBtn = withIcon(el("button", "rm-btn", "Join another"), "arrow", 18); joinBtn.type = "button"; joinBtn.setAttribute("aria-label", "Join another game");
   joinBtn.onclick = () => askCode();
   const watchBtn = withIcon(el("button", "rm-btn", "Watch only"), "eye", 18); watchBtn.type = "button";
   watchBtn.setAttribute("aria-label", "Watch only");
   watchBtn.onclick = () => { watch = !watch; write("chess.remote.watch", watch ? "1" : "0"); draw(); };
-  head.append(title, joinBtn, watchBtn, conn);
+  head.append(title, conn, joinBtn);
+  const bottom = el("footer", "rm-bottom"); bottom.append(watchBtn);
   const turn = el("p", "rm-turn"); turn.setAttribute("aria-live", "polite");
   const confidence = el("p", "rm-confidence");
   const confidenceMeter = el("meter"); confidenceMeter.min = 0; confidenceMeter.max = 1;
@@ -72,6 +80,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const confidenceText = el("span"); confidence.append(confidenceText, confidenceMeter);
   const clocksEl = el("p", "rm-clocks"); clocksEl.hidden = true;
   const boardEl = el("div", "rm-board"); boardEl.setAttribute("role", "group"); boardEl.setAttribute("aria-label", "Chess board");
+  const moveGuide = createMoveGuide(deps.base ?? baseUrl());
   const nav = el("div", "rm-nav");
   const navBtn = (ic: string, label: string, aria: string, run: () => void, cls = "") => { const b = withIcon(el("button", `rm-btn ${cls}`.trim(), label), ic, 20); b.type = "button"; b.setAttribute("aria-label", aria); b.onclick = run; return b; };
   const first = navBtn("first", "", "First move", () => go(0)), prev = navBtn("prev", "", "Previous move", () => go((view ?? total()) - 1));
@@ -92,7 +101,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   const tabBtns = (["moves", "camera", "info", "calibrate"] as Tab[]).map((t) => { const b = withIcon(el("button", "", { moves: "Moves", camera: "Camera", info: "Game info", calibrate: "Calibrate" }[t]), { moves: "list", camera: "camera", info: "info", calibrate: "settings" }[t], 18); b.type = "button"; b.setAttribute("role", "tab"); b.onclick = () => { tab = t; drawPanel(); markTabs(); }; tabs.append(b); return b; });
   const panel = el("div", "rm-panel"); panel.setAttribute("role", "tabpanel");
 
-  function build() { page.replaceChildren(head, turn, clocksEl, boardEl, confidence, promoEl, nav, acts, notice, tabs, panel); draw(); }
+  function build() { page.replaceChildren(head, turn, clocksEl, boardEl, confidence, promoEl, nav, acts, notice, tabs, panel, bottom); draw(); }
   const markTabs = () => tabBtns.forEach((b, i) => { const on = (["moves", "camera", "info", "calibrate"] as Tab[])[i] === tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
 
   const total = () => st?.moves.length ?? 0;
@@ -108,11 +117,12 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     if (view === null) return { fen: st.fen, last: st.last ? { from: st.last.from, to: st.last.to } : null };
     const p = positionAt(st.moves, view); return { fen: p.fen, last: p.last };
   }
-  const canPlay = () => !!st && view === null && st.play !== "off" && !st.over && !watch && !st.calibration;
+  const canPlay = () => !!st && view === null && st.play !== "off" && !st.over && !watch && !st.calibration && !st.setupMoves?.length;
 
   function drawBoard() {
     const { fen, last: lm } = currentPosition(), g = new Chess(fen), theme = boardTheme(), set = pieceSet().id;
     const targets = sel ? targetsFrom(fen, sel) : [];
+    const guides = view === null ? guideMoves(st) : [];
     boardEl.style.setProperty("--light", theme.light); boardEl.style.setProperty("--dark", theme.dark); boardEl.style.setProperty("--hi", theme.hi);
     const cells: HTMLElement[] = [];
     const images = new Map(Array.from(boardEl.querySelectorAll<HTMLButtonElement>("button[data-sq]")).map((cell) => [cell.dataset.sq, cell.querySelector("img")]));
@@ -120,6 +130,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       const file = flipped ? 7 - c : c, rank = flipped ? r : 7 - r, name = "abcdefgh"[file] + (rank + 1);
       const pc = g.get(name as never);
       const b = el("button", `rm-sq ${(file + rank) % 2 ? "light" : "dark"}`); b.type = "button"; b.dataset.sq = name;
+      if (guides.some((m) => m.to === name && m.code === (pc ? pc.color + pc.type : ""))) b.classList.add("guide-destination");
       if (name === sel) b.classList.add("sel");
       if (lm && (lm.from === name || lm.to === name)) b.classList.add("last");
       if (view === null && st?.hint && (st.hint.from === name || st.hint.to === name)) b.classList.add("hint");
@@ -137,7 +148,10 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       b.onclick = () => tapSquare(name, fen);
       cells.push(b);
     }
-    boardEl.replaceChildren(...cells);
+    for (const cell of boardEl.querySelectorAll(":scope > .rm-sq")) cell.remove();
+    boardEl.prepend(...cells);
+    moveGuide.update(guides, flipped, set);
+    if (moveGuide.el.parentElement !== boardEl) boardEl.append(moveGuide.el);
   }
 
   function tapSquare(name: string, fen: string) {
@@ -181,7 +195,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     if (!st) { turn.textContent = "Waiting for the computer to share a game…"; clocksEl.hidden = true; clocksEl.textContent = ""; return; }
     turn.classList.toggle("back", view !== null);
     if (view !== null) turn.textContent = view === 0 ? "Looking back: start position" : `Looking back: after ${Math.ceil(view / 2)}${view % 2 ? "." : "..."} ${st.moves[view - 1]}`;
-    else turn.textContent = st.over ? (st.result ? `Game over. ${st.result}` : "Game over") : `${sideName(st.turn)} to move, move ${Math.floor(st.moves.length / 2) + 1}`;
+    else turn.textContent = st.setupMoves?.length ? "Set up a new game · follow the pieces home" : st.over ? (st.result ? `Game over. ${st.result}` : "Game over") : watch ? `${sideName(st.turn)} to move` : canPlay() ? "Your turn" : "Opponent’s turn";
     const c = st.clocks;
     if (!c) { clocksEl.hidden = true; clocksEl.textContent = ""; return; }
     clocksEl.hidden = false;
@@ -197,7 +211,14 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   }
 
   function drawPanel() {
-    if (tab === "calibrate") { renderCalibration(panel, st?.calibration ?? null, c => void sendCmd(c)); return; }
+    if (tab === "calibrate") {
+      const signature = JSON.stringify(st?.calibration ?? null);
+      if (panel.dataset.calibrationSignature !== signature || panel.firstElementChild?.textContent !== "Calibrate") {
+        panel.dataset.calibrationSignature = signature;
+        renderCalibration(panel, st?.calibration ?? null, c => { if (!online || !st) showNotice("Wait for the host connection.", false); else void sendCmd(c); });
+      }
+      return;
+    }
     panel.replaceChildren();
     if (tab === "moves") {
       const rows = scoreSheet(st?.moves ?? []);
@@ -253,7 +274,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     confidenceMeter.value = fid ?? 0;
     drawTurn(); drawNav(); drawBoard(); drawPromo(); drawPanel(); markTabs();
     acts.hidden = watch || !!st?.calibration; watchBtn.classList.toggle("on", watch); watchBtn.setAttribute("aria-pressed", String(watch));
-    conn.textContent = online ? (st ? "Live" : "Waiting") : "Offline, retrying…"; conn.classList.toggle("off", !online);
+    conn.textContent = online ? (st ? `Live · ${latency} ms` : "Waiting") : "Offline, retrying…"; conn.classList.toggle("off", !online);
     if (st?.notice && `${st.notice.at}` !== lastNotice) { lastNotice = `${st.notice.at}`; if (sent) showNotice(st.notice.text, st.notice.ok); }
   }
   let lastNotice = "";
@@ -261,13 +282,14 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   async function poll() {
     if (stopped || !code) return;
     try {
+      const started = performance.now();
       const r = await fetchFn(`${api}state?code=${encodeURIComponent(code)}&cid=${cid}&rev=${rev}`);
       if (r.status === 401) { online = false; write("chess.remote.code", ""); askCode("That code is not right. Check the computer and try again."); return; }
       if (!r.ok) throw new Error(String(r.status));
-      const j = await r.json() as Poll; online = true; clients = j.clients;
+      const j = await r.json() as Poll; latency = Math.max(0, Math.round(performance.now() - started)); online = true; clients = j.clients;
       if (j.state && j.rev !== rev) { rev = j.rev; st = j.state; frames = j.frames ?? {}; if (view !== null && view > total()) view = null; draw(); }
       else if (j.rev !== rev) rev = j.rev;
-      conn.textContent = st ? "Live" : "Waiting for the computer"; conn.classList.remove("off");
+      conn.textContent = st ? `Live · ${latency} ms` : "Waiting for the computer"; conn.classList.remove("off");
     } catch { online = false; conn.textContent = "Offline, retrying…"; conn.classList.add("off"); }
     if (!stopped) timer = window.setTimeout(() => void poll(), deps.poll ?? 700);
   }

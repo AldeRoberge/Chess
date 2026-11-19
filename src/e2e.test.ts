@@ -41,7 +41,6 @@ describe("robustness: fine-tuning conditions", () => {
     ["hurried players (short pauses)", { pauseMs: 900 }],
   ])("%s", (_name, opts) => {
     const r = runScenario(id, { ...(opts as any), cams: opts && "cams" in opts ? [...(opts as any).cams] : undefined });
-    if (r.violations) console.log("tracking diagnostic", r.history, r.truth, r.events.filter((e) => e.type === "detection-guess" || e.type === "detection-correction").map((e) => ({ type: e.type, t: e.t, selected: e.data?.selected, cost: e.data?.cost, alternatives: e.data?.alternatives })));
     expect(r.violations).toBe(0); expect(r.history).toEqual(r.truth);
   });
   it("castling seen by one camera under an arm is committed as O-O, never as a king step that leaves the game stuck", () => {

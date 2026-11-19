@@ -7,6 +7,17 @@ const game = (over = false) => ({ fen: new Chess().fen(), turn: "w" as const, pl
 const bus = (o: Partial<BusView> = {}): BusView => ({ game: game(), director: { phase: "game" }, engineHint: null, botColor: null, cameras: [{ id: "A", online: true, quality: 0.8 }], lines: Array.from({ length: 7 }, (_, i) => ({ name: "Jean", text: `line ${i}` })), ...o });
 
 describe("remote host", () => {
+  it("shares reset guidance from the observed board only while setting up a new game", () => {
+    const g = new Chess(); g.move("e4");
+    const occ = new Float32Array(64), white = new Float32Array(64);
+    g.board().flat().forEach((p, i) => { occ[i] = p ? 1 : 0; white[i] = p?.color === "w" ? 1 : 0; });
+    const source = bus({ game: { ...game(), ply: 0, history: [] }, director: { phase: "idle" }, board: { occ, white, cams: 1, handOver: false } });
+    const opts = { now: 5, virtualBoard: false, framed: new Set<string>(), notice: null };
+    expect(snapshot(source, opts).setupMoves).toEqual([{ from: "e4", to: "e2", code: "wp" }]);
+    source.director = { phase: "game" }; expect(snapshot(source, opts).setupMoves).toEqual([]);
+    source.director = { phase: "idle" }; source.board!.handOver = true;
+    expect(snapshot(source, opts).setupMoves).toEqual([]);
+  });
   it("words the result of a finished game", () => {
     const mate = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
     expect(snapshot(bus({ game: { ...game(true), fen: mate } }), { now: 5, virtualBoard: true, framed: new Set(), notice: null }).result).toBe("Checkmate. Black wins.");
