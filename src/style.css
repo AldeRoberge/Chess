@@ -12,6 +12,7 @@
   --font-ui:"Chakra Petch",system-ui,sans-serif;--font-mono:"IBM Plex Mono",ui-monospace,monospace;
   --t-xs:12px;--t-sm:13px;--t-md:15px;--t-lg:20px;--t-xl:28px;
   --radius:4px;color-scheme:dark;
+  --paper:#e8edf3;--paper-ink:#0a1827;--paper-dim:#4a5d75;--paper-rule:#b4c2d3;
   --shadow:#0009;--scrim:rgb(2 6 12/.6);--halo-bg:linear-gradient(170deg,#0a2038fb,#07182bfb);--track:#081a2f80;--on-signal:#02060d;
 }
 *{box-sizing:border-box}

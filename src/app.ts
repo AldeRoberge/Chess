@@ -33,6 +33,8 @@ import { addBackup, ago, beatSession, closeSession, deleteBackup, listBackups, o
 import { CE_EXTENSION, ceFileName, parseCe, serializeCe } from "./setup/ceFile";
 import { notify, openBackupPanel } from "./ui/recovery";
 import { virtualTable } from "./sim/virtualTable";
+import { RemoteHost, applyRemoteMove, playMode, snapshot } from "./remote/host";
+import type { GrayFrame } from "./vision/types";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
 import { buildBotPlay } from "./setup/botPlay";
@@ -147,6 +149,7 @@ export function boot(root: HTMLElement): Boot {
             <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
             <button id="setup" class="rb" data-tip="Setup wizard" data-tip-body="Step-by-step setup for cameras, projector and players.">${icon("setup", 22)}<span>Setup</span></button>
+            <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
           </div><div class="rlabel">Start</div></div>
           <div class="rgroup"><div class="rbtns">
             <button id="undo" class="rb" disabled aria-label="Undo" data-tip="Undo" data-tip-keys="Ctrl,Z" data-tip-body="Step back through your edits to the workflow.">${icon("undo", 22)}<span>Undo</span></button>
@@ -433,7 +436,32 @@ export function boot(root: HTMLElement): Boot {
   let lastTick = 0, lastHud = 0, lastPost = 0, lastLine = "", lastFrame = 0, frameMs = 16.7, worstMs = 0;
   let lastBackup = 0, lastBeat = 0;
   let hudBarHtml = "", hudMenuHtml = "";
+  // ---- phone remote: publishes the game to the relay in the dev server and plays the moves a phone sends
+  const camFrames = () => [...graph.nodes.values()].flatMap((n) => {
+    if (n.type !== "vision.boardReader") return [];
+    const f = registry.get(n.type)?.frameOf?.(graph.states.get(n.id)) as GrayFrame | null | undefined;
+    const cam = (graph.states.get(n.id) as { sampler?: { cam?: string } } | undefined)?.sampler?.cam;
+    return f && cam ? [{ id: cam, frame: f }] : [];
+  });
+  const virtualBoard = () => {
+    const on = (t: string) => [...graph.nodes.values()].some((n) => n.type === t && n.params.online !== false);
+    return on("source.synthetic") && !camFrames().some((c) => [...graph.nodes.values()].some((n) => n.type === "source.webcam" && n.params.online !== false && graph.states.get(n.id)?.frame));
+  };
+  const remote = new RemoteHost({
+    base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
+    build: (framed, notice, now) => snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice }),
+    frames: camFrames,
+    command: (c, now) => applyRemoteMove(c, { mode: playMode(bus, virtualBoard()), fen: bus.game?.fen ?? virtualTable.game.fen(), bus, table: virtualTable, now: now, botTurn: !!bus.botColor && bus.botColor === bus.game?.turn }),
+  });
+  document.getElementById("phone")!.onclick = () => {
+    if (remote.available === false) notify("Phone access is built into the dev server. Start the app with npm run dev (or start-chess), then open it on this computer as localhost.", [], "warn", { title: "Phone remote is not running" });
+    else if (remote.available === null) notify("Still checking for the phone connection. Try again in a second.", [], "info", { title: "Phone remote" });
+    else notify(`On a phone using the same Wi-Fi, open the address below and enter the join code ${remote.code} if asked. ${remote.clients ? `${remote.clients} phone${remote.clients === 1 ? " is" : "s are"} connected now.` : "No phone is connected yet."}`,
+      [{ label: "Copy address", run: () => { void navigator.clipboard?.writeText(remote.urls[0] ?? "").catch(() => {}); } }], "info",
+      { title: "Watch and play from a phone", details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
+  };
   const step = (now: number) => {
+    remote.tick(now);
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }
     lastFrame = now;
     profiler.beginFrame(now);
