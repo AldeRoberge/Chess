@@ -6,7 +6,7 @@
   // Keyed proxy to OpenAI / ElevenLabs under /chess/api/* (keys stay in KV, never in the browser).
   "main": "worker/index.ts",
   // One-time: `npx wrangler kv namespace create KEYS`, paste the id below, then `npx wrangler secret put ADMIN_PASSPHRASE`.
-  "kv_namespaces": [{ "binding": "KEYS", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }],
+  "kv_namespaces": [{ "binding": "KEYS", "id": "65c8ca1e4de34806aa50fe352d3e6672" }],
   "vars": { "ALLOWED_ORIGINS": "alderoberge.com", "RATE_PER_MIN": "30", "DAILY_LIMIT": "3000" },
   // Only /chess on alderoberge.com. The rest of the domain stays on Firebase Hosting.
   "routes": [

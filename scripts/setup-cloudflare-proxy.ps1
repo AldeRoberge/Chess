@@ -75,8 +75,24 @@ $pass | npx --yes wrangler secret put ADMIN_PASSPHRASE
 if ($LASTEXITCODE -ne 0) { throw "secret put failed" }
 
 Step "API keys"
-$openai = Plain (Read-Host "OpenAI key (sk-..., blank = keep)" -AsSecureString)
-$eleven = Plain (Read-Host "ElevenLabs key (blank = keep)" -AsSecureString)
+# Neither OpenAI nor ElevenLabs offers OAuth for API keys, so: open their key page in the browser
+# (you sign in there), create a key, copy it, and the script reads it from the clipboard.
+function Get-KeyViaBrowser($name, $url, $pattern) {
+  $a = Read-Host "`n$name key: [Enter] open browser and use clipboard, [p] paste manually, [s] skip/keep"
+  if ($a -eq "s") { return "" }
+  if ($a -eq "p") { return Plain (Read-Host "$name key" -AsSecureString) }
+  Start-Process $url
+  Write-Host "Sign in, create a key, copy it (Ctrl+C)." -ForegroundColor Yellow
+  while ($true) {
+    if ((Read-Host "Press Enter once copied (or type s to skip)") -eq "s") { return "" }
+    $clip = (Get-Clipboard -Raw)
+    if ($clip) { $clip = $clip.Trim() }
+    if ($clip -and $clip -match $pattern) { Set-Clipboard -Value " "; Write-Host "Got $name key from clipboard (clipboard cleared)."; return $clip }
+    Write-Host "Clipboard doesn't look like a $name key. Copy it again." -ForegroundColor Red
+  }
+}
+$openai = Get-KeyViaBrowser "OpenAI" "https://platform.openai.com/api-keys" '^sk-[\w-]{20,}$'
+$eleven = Get-KeyViaBrowser "ElevenLabs" "https://elevenlabs.io/app/settings/api-keys" '^[\w-]{20,}$'
 $body = @{}
 if ($openai) { $body.openai = $openai }
 if ($eleven) { $body.elevenlabs = $eleven }

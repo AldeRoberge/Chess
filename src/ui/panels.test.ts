@@ -88,7 +88,9 @@ describe("TablePanel", () => {
     at(cv, "mousemove", 1, 1); expect(virtualTable.pointer!.x).toBeCloseTo(7); expect(virtualTable.pointer!.y).toBeCloseTo(7);
     click(cv, 3, 1); p.frame(0); // selected e2, legal dots remapped
     click(cv, 3, 3); expect(virtualTable.busy).toBe(true); // visual top is White's e-file from Black's side: e2-e4
-    virtualTable.reset(); virtualTable.hand = { x: 4, y: 6 }; virtualTable.carried = 52; bus.botColor = "b"; p.frame(16);
+    virtualTable.reset();
+    at(cv, "mousedown", 3.5, 1.5); at(cv, "mouseup", 3.5, 3.5); expect(virtualTable.busy).toBe(true);
+    virtualTable.reset(); virtualTable.hand = { x: 4, y: 6 }; virtualTable.carried = 52; bus.botColor = "w"; p.frame(16);
     cv.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
     setDisplay({ flip: false }); bus.botColor = null; virtualTable.carried = null; virtualTable.hand = null;
   });
