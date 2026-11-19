@@ -15,7 +15,7 @@ const view = (over: Partial<PlayView> = {}): PlayView => ({
 describe("playStatus", () => {
   it("waits for a camera, then for a still picture, then says the first move will start the game", () => {
     expect(playStatus(view({ cameras: 0, board: null })).title).toBe("Getting ready");
-    expect(playStatus(view({ board: { settled: false, handOver: false, cams: 1 } })).detail).toMatch(/hands off/);
+    expect(playStatus(view({ board: { settled: false, handOver: false, cams: 1 } })).detail).toBe("Waiting for a stable camera reading.");
     expect(playStatus(view()).title).toBe("Ready");
     expect(playStatus(view()).detail).toMatch(/first move/);
     expect(playStatus(view({ game: { status: "moved", ply: 1, turn: "b", over: false, history: ["e4"] } })).title).toBe("Move seen");
@@ -33,7 +33,11 @@ describe("playStatus", () => {
       const status = playStatus(view({ phase, game: { status: "pending", ply: 1, turn: "b", over: false, history: ["Nf3"] } }));
       expect(status.detail).toContain("Nf3 has counted.");
       expect(status.detail).not.toContain("It counts when");
+      expect(status.detail).toContain("does not yet match the tracked position");
+      expect(status.detail).not.toMatch(/hands|Movement detected/);
     }
+    const moving = playStatus(view({ board: { settled: false, handOver: true, cams: 1 }, game: { status: "pending", ply: 2, turn: "w", over: false, history: ["e4", "c5"] } }));
+    expect(moving.detail).toContain("c5 has counted. Movement detected");
     expect(playStatus(view({ game: { status: "pending", ply: 4, turn: "w", over: true, history: ["f3", "e5", "g4", "Qh4#"] } })).title).toBe("Game over");
   });
   it("once the game is open, names whose turn it is and the move Stockfish wants played", () => {
