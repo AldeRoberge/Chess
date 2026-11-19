@@ -52,6 +52,7 @@ import { STEPS } from "./ui/wizardSteps";
 import { icon, withIcon } from "./ui/icons";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
 import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
+import { installJoinBadge } from "./ui/joinBadge";
 import { PAGES, formatRoute, parseRoute, routeTitle, sameRoute, type Route } from "./ui/route";
 
 export interface Boot { graph: Graph; editor: NodeEditor; go(r: Route): void; route(): Route; step(now: number): void; start(): void; openWizard(): void; wizard: () => SetupWizard | null }
@@ -514,6 +515,7 @@ export function boot(root: HTMLElement): Boot {
         { title: "Watch and play from a phone", details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
     }
   };
+  installJoinBadge(remote, () => document.getElementById("phone")!.click());
   const step = (now: number) => {
     remote.tick(now);
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }
