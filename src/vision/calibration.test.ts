@@ -32,7 +32,7 @@ describe("Calibrate", () => {
     for (let i = 1; i < calibrationSteps; i++) {
       const d = positionDiff(calibrationPosition(i - 1).fen, calibrationPosition(i).fen);
       expect(d.moves.length + d.removed.length + d.added.length).toBeGreaterThanOrEqual(6);
-      expect(calibrationPosition(i).instruction).toContain("Rearrange");
+      expect(calibrationPosition(i).instruction).toContain("Change the board");
     }
   });
   it("scores real pixels against confirmed labels, preserves evidence, and isolates validation", () => {

@@ -119,25 +119,23 @@ const CAL_CSS = `
 .cal-progress{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3px;height:6px}
 .cal-progress i{background:var(--cal-line);border-radius:3px;transition:background .25s}
 .cal-progress i.done{background:var(--cal-accent)} .cal-progress i.now{background:#e6d83c}
-.cal-stage{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:18px;align-items:start}
-@media (max-width:560px){.cal-stage{grid-template-columns:minmax(0,1fr)}}
-.cal-boardwrap{position:relative;width:100%;max-width:360px;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 0 0 1px var(--cal-line)}
-.cal-boardwrap .calibrate-board{position:absolute;inset:0;margin:0;width:100%}
-.calibrate-board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr)}
-.calibrate-board span{position:relative;display:block;min-width:0;min-height:0}
-.calibrate-board span img,.cal-ghost img{display:block;width:100%;height:100%;pointer-events:none}
-.calibrate-board span.from{box-shadow:inset 0 0 0 3px #ffb347;background-image:linear-gradient(#ffb34755,#ffb34755)}
-.calibrate-board span.to{box-shadow:inset 0 0 0 3px #57d5a2;background-image:linear-gradient(#57d5a255,#57d5a255)}
-.calibrate-board span.pulse{animation:cal-pulse 1.2s ease-in-out infinite}
-.cal-ghost.off{animation:cal-off 2.6s ease-in-out infinite}
-@keyframes cal-off{0%,40%{opacity:.9;transform:scale(1)}80%,100%{opacity:0;transform:scale(.6) rotate(12deg)}}
-.cal-ghost{position:absolute;width:12.5%;height:12.5%;left:calc(var(--fx) * 12.5%);top:calc(var(--fy) * 12.5%);z-index:2;pointer-events:none;filter:drop-shadow(0 4px 5px #0009);animation:cal-glide 2.6s cubic-bezier(.5,0,.2,1) infinite}
-@keyframes cal-glide{0%,12%{transform:translate(0,0) scale(1.08);opacity:1}62%,84%{transform:translate(calc((var(--tx) - var(--fx)) * 100%),calc((var(--ty) - var(--fy)) * 100%)) scale(1.08);opacity:1}100%{transform:translate(calc((var(--tx) - var(--fx)) * 100%),calc((var(--ty) - var(--fy)) * 100%)) scale(1);opacity:0}}
-@keyframes cal-pulse{50%{filter:brightness(1.25)}}
+.cal-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.cal-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cal-cap{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--cal-dim)}
+.cal-boardwrap{position:relative;width:100%;max-width:330px;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 0 0 1px var(--cal-line)}
+.cal-board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr)}
+.cal-board span{position:relative;display:block;min-width:0;min-height:0}
+.cal-board span img{display:block;width:100%;height:100%;pointer-events:none}
+.cal-board span.from{box-shadow:inset 0 0 0 3px #ffb347;background-image:linear-gradient(#ffb34777,#ffb34777)}
+.cal-board span.to{box-shadow:inset 0 0 0 3px #2fd47f;background-image:linear-gradient(#2fd47f66,#2fd47f66)}
+.cal-board span.off{box-shadow:inset 0 0 0 3px #ff5a50;background-image:linear-gradient(#ff5a5066,#ff5a5066)}
+.cal-board span .x{position:absolute;inset:0;display:grid;place-items:center;font:700 22px/1 system-ui,sans-serif;color:#ff3b30;text-shadow:0 0 3px #fff}
+.cal-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--cal-dim)}
+.cal-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
 .cal-side{display:flex;flex-direction:column;gap:10px;min-width:0}
-.cal-instr{min-height:5.6em;margin:0;font-size:16px;line-height:1.45;color:var(--cal-text)}
-.cal-msg{min-height:4.2em;margin:0;color:var(--cal-dim);font-size:14px;line-height:1.4}
-.cal-last{min-height:2.8em;margin:0;font-size:13px;color:var(--cal-dim)}
+.cal-instr{min-height:3em;margin:0;font-size:16px;line-height:1.45;color:var(--cal-text)}
+.cal-msg{min-height:2.8em;margin:0;color:var(--cal-dim);font-size:14px;line-height:1.4}
+.cal-last{min-height:2.4em;margin:0;font-size:13px;color:var(--cal-dim)}
 .cal-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:10px}
 .cal .cal-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 14px;margin:0;border:1px solid var(--cal-line);border-radius:10px;background:var(--cal-ink);color:var(--cal-text);font:600 14px/1 system-ui,sans-serif;cursor:pointer}
 .cal .cal-btn svg{width:18px;height:18px;flex:none}
@@ -151,7 +149,6 @@ const CAL_CSS = `
 .cal-results{max-height:220px;overflow:auto;margin-top:8px}
 .cal-results div.row{margin-bottom:6px}
 .cal-results pre{margin:8px 0 0;font-size:12px}
-@media (prefers-reduced-motion:reduce){.cal-ghost,.calibrate-board span.pulse{animation:none}.cal-ghost{display:none}}
 `;
 const ICON = {
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
@@ -187,13 +184,19 @@ function buildShell(): Shell {
   const progress = mk("div", "cal-progress", el); progress.setAttribute("aria-hidden", "true");
   const total = calibrationSteps;
   const bars = Array.from({ length: total }, () => mk("i", "", progress));
-  const stage = mk("div", "cal-stage", el), wrap = mk("div", "cal-boardwrap", stage);
-  const board = mk("div", "calibrate-board", wrap); board.setAttribute("aria-label", "Expected board configuration");
-  const cells = Array.from({ length: 64 }, (_, i) => { const c = mk("span", "", board); c.style.background = (i % 8 + Math.floor(i / 8)) % 2 ? "#62777f" : "#d9e3df"; c.title = `${"abcdefgh"[i % 8]}${8 - Math.floor(i / 8)}`; return c; });
-  const ghosts = mk("div", "", wrap); ghosts.style.cssText = "position:absolute;inset:0;pointer-events:none";
-  const side = mk("div", "cal-side", stage);
+  const stage = mk("div", "cal-stage", el);
+  const makeBoard = (title: string, cls: string) => {
+    const col = mk("div", "cal-col", stage); mk("div", "cal-cap", col, title);
+    const wrap = mk("div", "cal-boardwrap", col), board = mk("div", cls, wrap);
+    return Array.from({ length: 64 }, (_, i) => { const c = mk("span", "", board); c.style.background = (i % 8 + Math.floor(i / 8)) % 2 ? "#62777f" : "#d9e3df"; c.title = `${"abcdefgh"[i % 8]}${8 - Math.floor(i / 8)}`; return c; });
+  };
+  const beforeCells = makeBoard("Your board now", "cal-board cal-before"), cells = makeBoard("Set it up like this", "calibrate-board cal-board");
+  const side = mk("div", "cal-side", el);
   const step = mk("div", "", side); step.style.cssText = "font-size:12px;font-weight:600;color:var(--cal-dim);text-transform:uppercase;letter-spacing:.06em";
-  const instr = mk("p", "cal-instr", side), msg = mk("p", "cal-msg", side), last = mk("p", "cal-last", side);
+  const instr = mk("p", "cal-instr", side);
+  const legend = mk("div", "cal-legend", side);
+  for (const [color, text] of [["#ffb347", "pick up here"], ["#2fd47f", "put it here"], ["#ff5a50", "take off the board"]]) { const l = mk("span", "", legend); mk("i", "", l).style.background = color; l.append(text); }
+  const msg = mk("p", "cal-msg", side), last = mk("p", "cal-last", side);
   const actions = mk("div", "cal-actions", el);
   const back = mk("button", "cal-btn", actions), main = mk("button", "cal-btn primary", actions);
   back.type = main.type = "button";
@@ -207,26 +210,18 @@ function buildShell(): Shell {
   const drawBoard = (view: CalibrationView | null) => {
     const key = view ? `${view.step}|${view.fen}` : "idle";
     if (key === boardKey) return; boardKey = key;
-    const fen = view?.fen ?? new Chess().fen(), diff = view ? changes(view.step, view.fen) : null;
-    new Chess(fen).board().flat().forEach((p, i) => {
-      const c = cells[i]; c.replaceChildren(); c.className = "";
-      if (p) { const img = document.createElement("img"); img.src = pieceSrc(p.color + p.type); img.alt = ""; img.draggable = false; c.append(img); }
-    });
-    ghosts.replaceChildren();
-    if (!diff) return;
-    const at = (sq: string) => cells[sqXY(sq).y * 8 + sqXY(sq).x];
-    const mark = (sq: string, cls: string) => at(sq).classList.add(cls, "pulse");
-    const ghost = (sq: string, code: string, cls: string, delay: number) => {
-      const a = sqXY(sq), g = mk("div", `cal-ghost ${cls}`, ghosts);
-      g.style.cssText = `--fx:${a.x};--fy:${a.y};--tx:${a.x};--ty:${a.y};animation-delay:${delay}s`;
-      const img = mk("img", "", g); img.src = pieceSrc(code); img.alt = ""; return { g, a };
+    const fill = (target: HTMLElement[], fen: string | null) => {
+      const board = fen ? new Chess(fen).board().flat() : Array(64).fill(null);
+      board.forEach((p, i) => { const c = target[i]; c.replaceChildren(); c.className = ""; if (p) { const img = document.createElement("img"); img.src = pieceSrc(p.color + p.type); img.alt = ""; img.draggable = false; c.append(img); } });
     };
-    diff.moves.forEach((m, i) => {
-      const { g } = ghost(m.from, m.code, "", (i % 6) * 0.12), b = sqXY(m.to); g.style.setProperty("--tx", String(b.x)); g.style.setProperty("--ty", String(b.y));
-      mark(m.from, "from"); mark(m.to, "to");
-    });
-    diff.removed.forEach(r => { ghost(r.sq, r.code, "off", 0); mark(r.sq, "from"); });
-    diff.added.forEach(r => mark(r.sq, "to"));
+    const step = view?.step ?? 0, diff = changes(step, view?.fen ?? new Chess().fen());
+    fill(cells, view?.fen ?? new Chess().fen()); fill(beforeCells, step > 0 ? calibrationPosition(step - 1).fen : null);
+    const at = (t: HTMLElement[], sq: string) => t[sqXY(sq).y * 8 + sqXY(sq).x];
+    if (!diff) { for (const c of cells) c.classList.add("to"); return; } // first board: every piece goes on
+    const cross = (c: HTMLElement) => { const x = document.createElement("b"); x.textContent = "✕"; x.className = "x"; c.append(x); };
+    for (const m of diff.moves) { at(beforeCells, m.from).classList.add("from"); at(cells, m.to).classList.add("to"); }
+    for (const r of diff.removed) { const c = at(beforeCells, r.sq); c.classList.add("off"); cross(c); }
+    for (const r of diff.added) at(cells, r.sq).classList.add("to");
   };
 
   const drawResults = (view: CalibrationView) => {

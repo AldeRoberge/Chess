@@ -41,7 +41,7 @@ export function calibrationPosition(step: number) {
   if (d.removed.length) parts.push(`take ${d.removed.length} off the board`);
   if (d.added.length) parts.push(`put ${d.added.length} back on`);
   const text = parts.join(", ");
-  return { fen: game.fen(), title, instruction: `${title}. Rearrange the board to match: ${text}. The animation shows every piece; green squares are where they end up.` };
+  return { fen: game.fen(), title, instruction: `${title}. Change the board to match: ${text}. Copy the right-hand board.` };
 }
 export interface DetectionSettings { threshold: number; shapeWeight: number; colorWeight: number; patch: number; positionWeight: number; softness: number; grid: number; legalMargin: number }
 export const calibrationDefaults: DetectionSettings = { threshold: 0.22, shapeWeight: 1, colorWeight: 1, patch: 0.6, positionWeight: 1, softness: 0.06, grid: 6, legalMargin: 0.5 };
