@@ -124,10 +124,10 @@ describe("AlignBatch", () => {
   it("aligns several boards, never more than the limit at once", async () => {
     const { AlignBatch } = await import("./autoAlign");
     const fr = render(TRUE), off = TRUE.map((p, i) => ({ x: p.x + [10, -8, 7, -9][i], y: p.y + [-7, 8, 9, -6][i] }));
-    const b = new AlignBatch([1, 2, 3, 4, 5].map((n) => ({ id: `c${n}`, frame: fr, start: off })), 2);
-    let peak = 0;
-    for (let i = 0; i < 5000 && b.step(50); i++) peak = Math.max(peak, b.active);
-    expect(peak).toBeLessThanOrEqual(2); expect(peak).toBe(2);
+    const b = new AlignBatch([1, 2, 3, 4, 5].map((n) => ({ id: `c${n}`, frame: fr, start: off })), 3, 0, undefined, 2);
+    let peak = 0; const seen = new Set<number>();
+    for (let i = 0; i < 5000 && b.step(50); i++) { peak = Math.max(peak, b.active); seen.add(b.active); }
+    expect(peak).toBe(3); expect(seen.has(2)).toBe(true); // starts with 2, then scales up to the limit
     expect(b.results.size).toBe(5);
     for (const r of b.results.values()) { expect(r.phase).toBe("done"); expect(worst(r.corners, TRUE)).toBeLessThan(4.5); }
   }, 60000);

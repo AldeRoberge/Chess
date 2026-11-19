@@ -331,11 +331,14 @@ export interface AlignResult { id: string; corners: Pt[]; confidence: number; ph
 export class AlignBatch {
   readonly results = new Map<string, AlignResult>();
   private waiting: AlignJob[]; private live: { job: AlignJob; a: AutoAligner }[] = [];
-  constructor(jobs: AlignJob[], readonly limit = alignConcurrency(), private paceMs = 0, private now: () => number = () => performance.now()) { this.waiting = [...jobs]; }
+  /** How many may run right now. It starts at 2 and climbs 3, 4, 5, 6… (one more every `rampSteps` steps) up to `limit`, and backs off a step when a frame runs well over its budget. */
+  allowed: number; private steps = 0;
+  constructor(jobs: AlignJob[], readonly limit = alignConcurrency(), private paceMs = 0, private now: () => number = () => performance.now(), private rampSteps = 6) { this.waiting = [...jobs]; this.allowed = Math.min(2, limit); }
   get active() { return this.live.length; }
   get pending() { return this.waiting.length + this.live.length; }
   step(budgetMs = 12) {
-    while (this.live.length < this.limit && this.waiting.length) {
+    const t0 = this.now();
+    while (this.live.length < this.allowed && this.waiting.length) {
       const job = this.waiting.shift()!;
       this.live.push({ job, a: new AutoAligner(job.frame, job.start, this.paceMs, this.now, job.prior ?? []) });
     }
@@ -346,6 +349,9 @@ export class AlignBatch {
       this.results.set(job.id, r);
       return !a.done;
     });
+    const took = this.now() - t0;
+    if (took > budgetMs * 2.5) this.allowed = Math.max(1, this.allowed - 1);
+    else if (++this.steps % this.rampSteps === 0 && this.allowed < this.limit) this.allowed++;
     return this.pending > 0;
   }
 }

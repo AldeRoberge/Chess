@@ -15,6 +15,7 @@ import torch.nn.functional as F
 CROP = 32
 EPOCHS = int(sys.argv[1]) if len(sys.argv) > 1 else 24
 OUT = "src/vision/squareCnn.weights.json"
+DEV = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(0)
 np.random.seed(0)
 
@@ -22,7 +23,7 @@ np.random.seed(0)
 def load(name):
     x = np.fromfile(f"ml/data/{name}.x", dtype=np.uint8).reshape(-1, 1, CROP, CROP)
     y = np.fromfile(f"ml/data/{name}.y", dtype=np.uint8).astype(np.int64)
-    return torch.from_numpy(x.astype(np.float32) / 127.5), torch.from_numpy(y)
+    return torch.from_numpy(x.astype(np.float32) / 127.5).to(DEV), torch.from_numpy(y).to(DEV)
 
 
 class Net(nn.Module):
@@ -49,7 +50,7 @@ def augment(x):
     if np.random.rand() < 0.5: x = x.flip(3)
     if np.random.rand() < 0.5: x = x.flip(2)
     # contrast / brightness drift the exposure normalisation does not remove, plus a little noise
-    x = x * (0.85 + 0.3 * torch.rand(n, 1, 1, 1)) + 0.06 * torch.randn(n, 1, 1, 1)
+    x = x * (0.85 + 0.3 * torch.rand(n, 1, 1, 1, device=x.device)) + 0.06 * torch.randn(n, 1, 1, 1, device=x.device)
     x = x + 0.03 * torch.randn_like(x)
     # +-1 px shift (corner placement is never exact)
     dx, dy = np.random.randint(-1, 2, 2)
@@ -60,8 +61,7 @@ def evaluate(net, x, y):
     net.eval()
     with torch.no_grad():
         pred = torch.cat([net(x[i:i + 4096]).argmax(1) for i in range(0, len(x), 4096)])
-    conf = torch.zeros(3, 3, dtype=torch.long)
-    for t, p in zip(y, pred): conf[t, p] += 1
+    conf = torch.bincount(y * 3 + pred, minlength=9).view(3, 3).cpu()
     return (pred == y).float().mean().item(), conf
 
 
@@ -78,14 +78,15 @@ xt, yt = load("train")
 xv, yv = load("val")
 xr, yr = load("real")
 print(f"train {len(xt)} val {len(xv)} real {len(xr)}; classes {torch.bincount(yt).tolist()}")
-net = Net()
+net = Net().to(DEV)
+print("device", DEV)
 opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-4)
 steps = EPOCHS * (len(xt) // 256)
 sched = torch.optim.lr_scheduler.OneCycleLR(opt, 4e-3, total_steps=steps)
 t0 = time.time()
 for ep in range(EPOCHS):
     net.train()
-    perm = torch.randperm(len(xt))
+    perm = torch.randperm(len(xt), device=DEV)
     for i in range(0, len(xt) - 255, 256):
         idx = perm[i:i + 256]
         loss = F.cross_entropy(net(augment(xt[idx])), yt[idx], label_smoothing=0.05)
