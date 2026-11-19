@@ -79,29 +79,38 @@ function scoreOf(img: ImageData, corners: Pt[], ch: Channel): number {
   try { return boardSeparation(img, corners, ch); } catch { return 0; }
 }
 
-/** Pixels whose neighbourhood repeats like a checkerboard, on the colour plane where that is strongest. */
-function checkerHits(img: ImageData): { pts: Pt[]; channel: Channel } | null {
+/**
+ * Pixels whose neighbourhood repeats like a checkerboard. Width and height are searched separately: a camera
+ * flattens a square into a rectangle, and one shared period misses the board. Colour planes are tried when luma
+ * shows nothing (an infrared camera often lives in red).
+ */
+function checkerHits(img: ImageData): { pts: Pt[]; channel: Channel; sx: number; sy: number } | null {
   const { width: W, height: H } = img;
-  let best: { pts: Pt[]; channel: Channel } | null = null;
-  for (const ch of ["luma", "red", "green", "blue"] as const) {
+  const run = (ch: Channel) => {
     const lum = planeOf(img, ch), pts: Pt[] = [], seen = new Set<string>();
-    for (let s = 10; s <= 52; s += 4) {
-      const step = Math.max(3, s >> 2);
-      for (let y = s; y < H - s; y += step) for (let x = s; x < W - s; x += step) {
+    let bestN = 0, sx = 28, sy = 28;
+    for (let vy = 12; vy <= 56; vy += 4) for (let vx = 12; vx <= 56; vx += 4) {
+      if (Math.abs(vx - vy) > 16) continue;
+      const step = Math.max(4, Math.min(vx, vy) >> 2);
+      let n = 0;
+      for (let y = vy; y < H - vy; y += step) for (let x = vx; x < W - vx; x += step) {
         const a = lum[y * W + x];
-        const l = lum[y * W + (x - s)], r = lum[y * W + (x + s)], u = lum[(y - s) * W + x], d = lum[(y + s) * W + x];
-        const diag = lum[(y + s) * W + (x + s)];
-        const diff = Math.min(Math.abs(a - l), Math.abs(a - r), Math.abs(a - u), Math.abs(a - d));
-        const same = Math.max(Math.abs(a - diag), Math.abs(l - r), Math.abs(u - d));
-        if (diff < 12 || diff - same < 8) continue;
+        const l = lum[y * W + (x - vx)], r = lum[y * W + (x + vx)], u = lum[(y - vy) * W + x], dn = lum[(y + vy) * W + x];
+        const diag = lum[(y + vy) * W + (x + vx)];
+        const diff = Math.min(Math.abs(a - l), Math.abs(a - r), Math.abs(a - u), Math.abs(a - dn));
+        const same = Math.max(Math.abs(a - diag), Math.abs(l - r), Math.abs(u - dn));
+        if (diff < 10 || diff - same < 6) continue;
+        n++;
         const k = `${Math.round(x / 4)},${Math.round(y / 4)}`;
-        if (seen.has(k)) continue;
-        seen.add(k); pts.push({ x, y });
+        if (!seen.has(k)) { seen.add(k); pts.push({ x, y }); }
       }
+      if (n > bestN) { bestN = n; sx = vx; sy = vy; }
     }
-    if (!best || pts.length > best.pts.length) best = { pts, channel: ch };
-  }
-  return best && best.pts.length >= 24 ? best : null;
+    return { pts, channel: ch, sx, sy };
+  };
+  let best = run("luma");
+  if (best.pts.length < 60) for (const ch of ["red", "green", "blue"] as const) { const r = run(ch); if (r.pts.length > best.pts.length) best = r; }
+  return best.pts.length >= 24 ? best : null;
 }
 
 /** Largest blob of hits. Links a few cells apart so a piece sitting on a square does not split the board in two. */
@@ -146,27 +155,32 @@ function scaled(c: Pt[], k: number): Pt[] {
   return c.map((p) => ({ x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k }));
 }
 
-/**
- * The checker response lives inside the squares, so the hit region is inset from the real corners.
- * Grow it about its centre, then nudge each corner until the squares read as clearly as they can.
- */
-function fitQuad(img: ImageData, seed: Pt[], ch: Channel): Pt[] {
-  const { width: W, height: H } = img, minArea = W * H * 0.02;
-  let cur = seed, best = 0;
-  for (let k = 10; k <= 20; k++) {
-    const q = scaled(seed, k / 10);
+/** The hit region sits about one square inside the board. A grown box and a grown hull are both tried; the clearer board wins. */
+function fitQuad(img: ImageData, blob: Pt[], sx: number, sy: number, ch: Channel): Pt[] {
+  const { width: W, height: H } = img;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of blob) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  const box = (dx: number, dy: number): Pt[] => [
+    { x: x0 - dx, y: y0 - dy }, { x: x1 + dx, y: y0 - dy }, { x: x1 + dx, y: y1 + dy }, { x: x0 - dx, y: y1 + dy },
+  ];
+  const hull = extremes(blob);
+  let cur = box(sx, sy), best = -1;
+  const tried = [box(sx, sy), box(sx * 0.5, sy * 0.5), hull, scaled(hull, 1.25), scaled(hull, 1.45)];
+  for (const q of tried) {
     const s = scoreOf(img, q, ch);
-    if (s > best && convexQuad(q, minArea)) { best = s; cur = q; }
+    console.log("cand", s.toFixed(2), q.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" "));
+    if (s > best) { best = s; cur = q; }
   }
-  let step = 14;
-  for (let round = 0; round < 6 && step >= 1; round++, step = Math.max(1, Math.round(step / 2))) {
+  console.log("sx sy", sx, sy, "bbox", Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1));
+  let step = Math.max(10, Math.round(Math.max(sx, sy) / 2));
+  for (let round = 0; round < 7 && step >= 1; round++, step = Math.max(1, Math.round(step / 2))) {
     for (let i = 0; i < 4; i++) {
       let top = cur, topS = scoreOf(img, cur, ch);
       for (const dy of [-step, 0, step]) for (const dx of [-step, 0, step]) {
         if (!dx && !dy) continue;
-        const next = cur.map((p, k) => (k === i ? { x: clamp(p.x + dx, -W * 0.08, W * 1.08), y: clamp(p.y + dy, -H * 0.08, H * 1.08) } : p));
+        const next = cur.map((p, k) => (k === i ? { x: clamp(p.x + dx, -W * 0.05, W * 1.05), y: clamp(p.y + dy, -H * 0.05, H * 1.05) } : p));
         const s = scoreOf(img, next, ch);
-        if (s > topS + 0.008) { topS = s; top = next; }
+        if (s > topS + 0.004) { topS = s; top = next; }
       }
       cur = top;
     }
@@ -201,10 +215,7 @@ export function detectCornersByShape(img: ImageData): ShapeCorners | null {
   if (!hits) return null;
   const blob = largestBlob(hits.pts);
   if (blob.length < 24) return null;
-  const seed = extremes(blob);
-  if (blob.length < 5000) console.log("blob", blob.length, "of", hits.pts.length, "seed", seed, "ch", hits.channel);
-  if (!convexQuad(seed, 80)) return null;
-  const fitted = fitQuad(img, seed, hits.channel);
+  const fitted = fitQuad(img, blob, hits.sx, hits.sy, hits.channel);
   const corners = orientByShade(img, fitted, hits.channel);
   const separation = scoreOf(img, corners, hits.channel);
   if (separation < 0.45) return null;
@@ -252,7 +263,7 @@ function classifyGrid(grid: number[]): { ch: string; dist: number; gap: number }
 
 /** One border edge, warped so column 0 touches the edge's start corner. Eight cells, one per square. */
 function readEdge(img: ImageData, H: number[], edge: number): (string | null)[] | null {
-  const W = 176, Ht = 28, M0 = 0.08, M1 = 1.1, px = new Float32Array(W * Ht);
+  const W = 176, Ht = 32, M0 = 0.18, M1 = 0.92, px = new Float32Array(W * Ht);
   try {
     for (let j = 0; j < Ht; j++) for (let i = 0; i < W; i++) {
       const t = (i + 0.5) / W, s = (j + 0.5) / Ht, out = M0 + (M1 - M0) * s;

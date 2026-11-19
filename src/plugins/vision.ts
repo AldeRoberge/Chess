@@ -60,12 +60,12 @@ const reader: NodeSpec<ReaderState> = {
       rows.push({ label: "Board", value: "outside the corners", tone: "warn" });
       return { title: `pixel ${Math.floor(x)}, ${Math.floor(y)}`, tag: "off the board", color: "#9fb8ff", body: "This part of the picture is outside the four corners, so it is ignored.", rows, preview: { frame: cropFrame(f, x, y) }, mark: (ctx) => markPixel(ctx, r, x, y) };
     }
-    const m = s.sampler.measure(f)[sq], ref = s.sampler.ref[sq], thr = ref * cfg.threshold, d = m - ref;
+    const dgn = s.sampler.diagnose(f, sq), m = dgn.crown, ref = dgn.ref, thr = dgn.gate, d = dgn.drive;
     rows.unshift({ label: "Square", value: `${sqName(sq)} (${isLightSquare(sq) ? "light" : "dark"})` });
     const tracked = bus.game?.fen ? fenPieces(bus.game.fen)[sq] ?? null : undefined;
     if (tracked !== undefined) rows.splice(1, 0, { label: "Tracked piece", value: pieceLabel(tracked) });
     if (s.sampler.calibrated && !Number.isNaN(m)) {
-      rows.push({ label: "Square brightness", value: `${Math.round(m)} vs ${Math.round(ref)} when empty` });
+      rows.push({ label: "Square brightness", value: `${Math.round(m)} vs ${Math.round(ref)} empty · corners ${Number.isFinite(dgn.rim) ? Math.round(dgn.rim) : "—"}` });
       rows.push({ label: "Change", value: `${d >= 0 ? "+" : ""}${Math.round(d)} (needs ±${Math.round(thr)})`, bar: Math.min(1, Math.abs(d) / (thr * 2 || 1)), tone: Math.abs(d) > thr ? "ok" : "warn" });
     } else rows.push({ label: "Reference", value: "not learned yet", tone: "warn" });
     if (o) {
@@ -81,7 +81,7 @@ const reader: NodeSpec<ReaderState> = {
     }
     return {
       title: sqName(sq), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4",
-      body: `This node averages the ${cfg.grid * cfg.grid} dots in the middle of the square (${pct(cfg.patch)} of its width), compares them with how bright the empty square was, and turns the change into a probability.`,
+      body: `The ${cfg.grid * cfg.grid} dots in the middle of the square (${pct(cfg.patch)} of its width) are compared with the empty square and with the square's own corners. A piece only a little lighter or darker than its square still counts, and a blown-out glare spot is left undecided.`,
       rows, preview: { frame: cropFrame(f, x, y) },
       mark: (ctx) => {
         const c = sq % 8, rr = Math.floor(sq / 8), q = [at(c, rr), at(c + 1, rr), at(c + 1, rr + 1), at(c, rr + 1)];
@@ -89,7 +89,8 @@ const reader: NodeSpec<ReaderState> = {
         ctx.fillStyle = "rgba(255,228,92,.22)"; ctx.strokeStyle = "#ffe45c"; ctx.lineWidth = 1.5;
         ctx.beginPath(); q.forEach((t, i) => (i ? ctx.lineTo(t.x, t.y) : ctx.moveTo(t.x, t.y))); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = "#fff";
-        for (let j = 0; j < cfg.grid; j++) for (let i = 0; i < cfg.grid; i++) { const t = at(c + 0.5 + ((i + 0.5) / cfg.grid - 0.5) * cfg.patch, rr + 0.5 + ((j + 0.5) / cfg.grid - 0.5) * cfg.patch); ctx.fillRect(t.x - 0.8, t.y - 0.8, 1.6, 1.6); }
+        const lean = s.sampler.lean();
+        for (let j = 0; j < cfg.grid; j++) for (let i = 0; i < cfg.grid; i++) { const t = at(c + 0.5 + ((i + 0.5) / cfg.grid - 0.5) * cfg.patch + lean.u, rr + 0.5 + ((j + 0.5) / cfg.grid - 0.5) * cfg.patch + lean.v); ctx.fillRect(t.x - 0.8, t.y - 0.8, 1.6, 1.6); }
         ctx.restore();
       },
     };

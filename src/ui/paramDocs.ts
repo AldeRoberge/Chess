@@ -3,7 +3,7 @@ export const PARAM_DOCS: Record<string, string> = {
   // Vision
   "vision.boardReader.cam": "Name of the camera this reader belongs to (A, B, C…). Fusion uses it to tell cameras apart.",
   "vision.boardReader.corners": "The four board corners as seen by this camera, in pixels, ordered a8; h8; h1; a1. Used to warp the image into a flat 8×8 grid.",
-  "vision.boardReader.threshold": "How different a square must look from its empty reference before it counts as holding a piece. Lower = more sensitive but more false pieces; higher = misses faint pieces.",
+  "vision.boardReader.threshold": "How different a square must look from its empty colour, or from its own corners, before it counts as holding a piece. Lower = more sensitive but more false pieces; higher = misses faint pieces.",
   "vision.boardReader.weight": "How much this camera's vote counts when several cameras are fused. 0 ignores it, 1 is normal, 2 doubles its say.",
   "vision.boardReader.autoCal": "Learns what the empty squares look like automatically while the start position is on the board.",
   "vision.boardReader.learn": "Tick once with the pieces in the start position to re-learn the reference now. It un-ticks itself.",

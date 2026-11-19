@@ -8,7 +8,7 @@ import { BoardSampler, defaultSamplerConfig } from "./sampler";
 import { Stabilizer } from "./stabilizer";
 import { rng, startGrid } from "./synthetic";
 import { BONES, JOINT_NAMES, cameraMatrix, project, rayToPlane, triangulate } from "./triangulate";
-import { clamp, logit, sigmoid, sqIndex, sqName, type BoardBelief, type SquareObs } from "./types";
+import { clamp, logit, sigmoid, sqIndex, sqName, type BoardBelief, type GrayFrame, type SquareObs } from "./types";
 
 const sq = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
@@ -131,7 +131,62 @@ describe("BoardSampler", () => {
     const b = s.measure(shoot(t, "B"));
     expect(a[0]).not.toBeNaN(); expect(b[63]).not.toBeNaN();
   });
+  it("leans the centre sample toward the far side of an oblique board", () => {
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners: [{ x: 100, y: 40 }, { x: 200, y: 40 }, { x: 230, y: 300 }, { x: 70, y: 300 }] });
+    expect(s.lean().v).toBeLessThan(0); // rank 1 edge is longer, so the piece body leans toward rank 8
+    expect(Math.abs(s.lean().u)).toBeLessThan(0.02);
+  });
+  it("reads a piece that barely differs from its own square, and does not call a glare spot a piece", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const light = (sq: number) => ((sq % 8) + Math.floor(sq / 8)) % 2 === 0;
+    const empty = (sq: number) => (light(sq) ? 190 : 48);
+    const whiteSq = sqIndex("e4"), blackSq = sqIndex("d5"), glareSq = sqIndex("c4"), calm = sqIndex("f5");
+    const paint = (over: (sq: number, u: number, v: number, bg: number) => number) => boardPaint(corners, (sq, u, v) => over(sq, u, v, empty(sq)));
+    const disk = (sq: number, u: number, v: number, bg: number, delta: number, radius: number, cap = 249) => {
+      if (sq !== (Math.floor(v) * 8 + Math.floor(u))) return bg;
+      const cx = (sq % 8) + 0.5, cy = Math.floor(sq / 8) + 0.5;
+      return Math.hypot(u - cx, v - cy) < radius ? Math.max(0, Math.min(cap, bg + delta)) : bg;
+    };
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateEmpty(paint(() => 0));
+    const frame = paint((sq, u, v, bg) => {
+      if (sq === whiteSq) return disk(sq, u, v, bg, 22, 0.3); // white on a light square, well under the old 22% test
+      if (sq === blackSq) return disk(sq, u, v, bg, -16, 0.3); // black on a dark square
+      if (sq === glareSq) return disk(sq, u, v, bg, 80, 0.62, 255); // the whole square blown out
+      return bg;
+    });
+    const o = s.read(frame);
+    expect(o.occ[whiteSq]).toBeGreaterThan(0.7); expect(o.white[whiteSq]).toBeGreaterThan(0.6);
+    expect(o.occ[blackSq]).toBeGreaterThan(0.7); expect(o.white[blackSq]).toBeLessThan(0.4);
+    expect(o.occ[glareSq]).toBeLessThan(0.6); // undecided, not a confident white piece
+    expect(o.occ[calm]).toBeLessThan(0.15);
+  });
+  it("does not invent pieces on the near and far ranks just because the lamp falls off", () => {
+    const corners = [{ x: 40, y: 20 }, { x: 440, y: 20 }, { x: 440, y: 340 }, { x: 40, y: 340 }];
+    const tone = (sq: number, row: number) => (((sq % 8) + row) % 2 === 0 ? 80 + row * 16 : 30 + row * 8);
+    const frame = boardPaint(corners, (sq, _u, v) => tone(sq, Math.floor(v)));
+    const s = new BoardSampler("A", { ...defaultSamplerConfig(), corners });
+    s.calibrateFromStart(frame);
+    const o = s.read(frame);
+    const seen = Array.from(o.occ).filter((v) => v > 0.5);
+    expect(seen).toHaveLength(0);
+    expect(o.occ[sqIndex("a1")]).toBeLessThan(0.2);
+    expect(o.occ[sqIndex("h8")]).toBeLessThan(0.2);
+  });
 });
+
+/** Grey frame whose board squares are painted in board coordinates (u right, v down from rank 8). */
+function boardPaint(corners: { x: number; y: number }[], colour: (sq: number, u: number, v: number) => number): GrayFrame {
+  const w = 480, h = 360, data = new Uint8ClampedArray(w * h);
+  const H = invertH(boardToImage(corners));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const p = applyH(H, x + 0.5, y + 0.5);
+    const on = p.x >= 0 && p.y >= 0 && p.x < 8 && p.y < 8;
+    const sq = on ? Math.floor(p.y) * 8 + Math.floor(p.x) : 0;
+    data[y * w + x] = on ? colour(sq, p.x, p.y) : 28;
+  }
+  return { width: w, height: h, data, t: 1 };
+}
 
 const obs = (cam: string, occ: number, white: number, extra: Partial<SquareObs> = {}): SquareObs => ({ cam, t: 1000, quality: 1, weight: 1, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), motion: 0, handSquares: new Uint8Array(64), ...extra });
 

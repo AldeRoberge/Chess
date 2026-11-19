@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { renderLuminance } from "../sim/render3d";
 import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
 import type { Pt } from "../vision/types";
-import { boardSeparation } from "./autodetect";
 import { LABEL_GLYPH, applyBorderLabels, detectBoardCorners, detectCornersByShape, pngBase64 } from "./corners";
 
 function image(paint: (data: Uint8ClampedArray) => void, w = FRAME_W, h = FRAME_H): ImageData {
@@ -52,13 +51,13 @@ function paintLabels(img: ImageData, corners: Pt[]) {
   }
   for (let f = 0; f < 8; f++) {
     const x = x0 + (f + 0.5) * sx;
-    paintGlyph(d, "abcdefgh"[f], x, y0 - sy * 0.5, 2);
-    paintGlyph(d, "hgfedcba"[f], x0 + (7.5 - f) * sx, y1 + sy * 0.5, 2);
+    paintGlyph(d, "abcdefgh"[f], x, y0 - sy * 0.55, 3);
+    paintGlyph(d, "hgfedcba"[f], x0 + (7.5 - f) * sx, y1 + sy * 0.55, 3);
   }
   for (let r = 0; r < 8; r++) {
     const y = y0 + (r + 0.5) * sy;
-    paintGlyph(d, "87654321"[r], x1 + sx * 0.5, y, 2);
-    paintGlyph(d, "12345678"[r], x0 - sx * 0.5, y1 - (r + 0.5) * sy, 2);
+    paintGlyph(d, "87654321"[r], x1 + sx * 0.55, y, 3);
+    paintGlyph(d, "12345678"[r], x0 - sx * 0.55, y1 - (r + 0.5) * sy, 3);
   }
 }
 
@@ -77,7 +76,6 @@ describe("checkerboard shape", () => {
   it("finds an upright board's corners, including a coloured one", () => {
     const img = boardImage(rect, (dark) => (dark ? [50, 50, 50] : [210, 210, 210]));
     const found = detectCornersByShape(img)!;
-    console.log("found", found.corners, "sep", found.separation, "true", boardSeparation(img, rect, "luma"));
     expect(found.separation).toBeGreaterThan(1);
     near(found.corners, rect, 8);
     const teal = boardImage(rect, (dark) => (dark ? [20, 110, 110] : [240, 230, 200]));
