@@ -121,7 +121,7 @@ describe("detection pipeline nodes", () => {
     const eff = (mix.state as { eff: number[] }).eff;
     expect(eff[2]).toBeLessThan(eff[0] * 0.5); expect(eff[0]).toBeGreaterThan(0.9);
     mix.params.adapt = false; mix.run({ r1: good, r2: good2, r3: bad });
-    expect((mix.state as { eff: number[] }).eff).toEqual([1, 1, 1]);
+    expect((mix.state as { eff: number[] }).eff.slice(0, 3)).toEqual([1, 1, 1]);
   });
   it("flatten can suggest auto-calibration when the camera reading stays poor", () => {
     const table = new VirtualTable(), frame = shoot(table, "A"), flat = node("vision.flatten", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
@@ -140,5 +140,18 @@ describe("piece letters on the neural board reader", () => {
     expect(pieceLetter(t, 5, true)).toBe("N");
     expect(pieceLetter(t, 5, false)).toBe("Q");
     expect(pieceLetter(new Float32Array(64 * 13), 0, true)).toBe("P");
+  });
+});
+
+describe("masked view nodes", () => {
+  it("Mask Board turns a flat board into a view, and the Neural View Reader reads it once the model loads", async () => {
+    const table = new VirtualTable(), frame = shoot(table, "A"), corners = fmtCorners(rigCorners(RIGS.A));
+    const flat = node("vision.flatten", { cam: "A", corners }), mask = node("vision.mask"), reader = node("vision.neuralView", { maxRate: 30 });
+    const view = mask.run({ flat: flat.run({ frame })!.flat })!.view;
+    expect(view.img.length).toBe(160 * 160);
+    reader.run({ view }, 0); for (let i = 0; i < 20 && !reader.run({ view }, i * 100)?.reading; i++) await tick();
+    const r = reader.run({ view }, 5000)!.reading;
+    expect(r).toBeTruthy(); expect(r.source).toBe("neural view");
+    expect(mask.run({ flat: null })!.view).toBeNull();
   });
 });

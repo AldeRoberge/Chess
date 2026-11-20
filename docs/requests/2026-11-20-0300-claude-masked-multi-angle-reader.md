@@ -9,3 +9,8 @@
 - [ ] Multi-angle training data + trainer + weights
 - [ ] Neural reader node for it, wired into Blend
 - [ ] Tests
+
+## Result
+- [x] boardView.ts (masked, un-straightened view), Mask Board + Neural View Reader nodes, 4th Blend input, ml/train_view.py, viewCnn.ts + weights
+- [x] Trained on 6000 random-angle renders (5 min to render, ~1.5 min to train): val 86.8% squares (colour+occupancy), vs 98.1% for the straightened board reader
+- [ ] NOT wired into the Split chain or default: it is weaker than the straightened reader

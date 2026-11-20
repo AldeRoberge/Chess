@@ -13,6 +13,9 @@ import { cleanPool } from "../vision/cleanPool";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
 import { agreement, blendReadings, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
 import { AutoAligner } from "../ui/autoAlign";
+import { extractView, VIEW_SIDE, type BoardView } from "../vision/boardView";
+import { loadViewCnn } from "../vision/viewModel";
+import type { ViewCnn } from "../vision/viewCnn";
 import { SquareCache, type SquareCnn } from "../vision/squareCnn";
 import { extractCrops } from "../vision/squareCrops";
 import { loadSquareCnn } from "../vision/squareModel";
@@ -384,23 +387,93 @@ const neuralSquares: NodeSpec<NetState<SquareCnn, SquareCache>> = {
   hover(p, w, h, s) { return squareHover(p, w, h, s.reading, "Neural Square Reader", "Each square is cut out (two squares wide, so a leaning piece is included) and classified on its own: empty, white or black. Squares whose picture has not changed are not read again."); },
 };
 
+// ---------------------------------------------------------------- Mask Board + Neural View Reader
+const viewCanvas = new WeakMap<BoardView, HTMLCanvasElement>();
+function viewImage(v: BoardView): HTMLCanvasElement {
+  let c = viewCanvas.get(v);
+  if (c) return c;
+  c = document.createElement("canvas"); c.width = c.height = VIEW_SIDE;
+  const ctx = c.getContext("2d");
+  if (ctx && typeof ctx.createImageData === "function") {
+    const im = ctx.createImageData(VIEW_SIDE, VIEW_SIDE);
+    for (let i = 0; i < v.img.length; i++) { const g = Math.max(0, Math.min(255, v.img[i] * 255)); im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = g; im.data[i * 4 + 3] = 255; }
+    ctx.putImageData(im, 0, 0);
+  }
+  viewCanvas.set(v, c);
+  return c;
+}
+interface MaskState { view: BoardView | null; of: FlatBoard | null; ms: number; why: string }
+const mask: NodeSpec<MaskState> = {
+  type: "vision.mask", title: "Mask Board", category: "Vision",
+  desc: "Keeps the board exactly as the camera sees it, with its perspective, and blacks out everything outside the board (with some padding). The picture is only turned so the board's a8-h8 edge runs left to right. Uses the corners and picture from Flatten Board, so place the corners there.",
+  inputs: [{ id: "flat", type: "flat" }], outputs: [{ id: "view", type: "view" }],
+  params: [],
+  previewSize: BASE,
+  init: () => ({ view: null, of: null, ms: 0, why: "no board yet" }),
+  process({ flat }, { state, setFidelity }) {
+    const f = flat as FlatBoard | null | undefined;
+    if (!f) { state.view = state.of = null; state.why = "no board yet"; setFidelity(null); return { view: null }; }
+    if (f !== state.of) {
+      const t0 = performance.now();
+      state.view = { cam: f.cam, t: f.t, img: extractView(f.frame, f.corners) };
+      state.of = f; state.ms = performance.now() - t0;
+    }
+    setFidelity(1);
+    return { view: state.view };
+  },
+  preview(ctx, w, h, s) {
+    withDetail(ctx, w, h, BASE, (pw, ph) => {
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, pw, ph);
+      if (!s.view) { ctx.fillStyle = "#8fa0a8"; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(s.why, 8, ph / 2); return; }
+      const side = Math.min(pw, ph); ctx.imageSmoothingEnabled = true; ctx.drawImage(viewImage(s.view), (pw - side) / 2, (ph - side) / 2, side, side);
+    }, () => [["camera", s.view?.cam ?? "—"], ["view", `${VIEW_SIDE}×${VIEW_SIDE}, perspective kept`], ["time", `${s.ms.toFixed(1)} ms`]]);
+  },
+};
+
+interface ViewNetState { net: ViewCnn | null; loading: boolean; reading: Reading | null; ran: boolean; ms: number; lastRun: number; of: BoardView | null; loaded: boolean }
+const neuralView: NodeSpec<ViewNetState> = {
+  type: "vision.neuralView", title: "Neural View Reader", category: "Vision",
+  desc: "A trained network that reads the masked board as the camera sees it, without straightening it first. It was trained on boards seen from every angle round the table, so it has to know what a whole board looks like from where the camera is. Useful when the corners are a little off, because nothing is warped by them.",
+  inputs: [{ id: "view", type: "view" }], outputs: [{ id: "reading", type: "reading" }],
+  params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }, RATE],
+  previewSize: BASE,
+  init: () => ({ net: null, loading: false, reading: null, ran: false, ms: 0, lastRun: -Infinity, of: null, loaded: false }),
+  process({ view }, { params, state, setFidelity, now }) {
+    const v = view as BoardView | null | undefined;
+    if (!state.net && !state.loading) { state.loading = true; void loadViewCnn().then((n) => { state.net = n; state.loaded = true; }).catch(() => { state.loading = false; }); }
+    if (!v || !state.net) { state.reading = null; state.of = null; setFidelity(null); return { reading: null }; }
+    if (state.reading && (v === state.of || now - state.lastRun < 1000 / Math.max(1, Number(params.maxRate)))) { state.ran = false; return { reading: state.reading }; }
+    const t0 = performance.now(), probs = state.net.classify(v.img);
+    state.ms = performance.now() - t0; state.ran = true; state.lastRun = now; state.of = v;
+    state.reading = readingFromProbs(v.cam, v.t, "neural view", probs, Number(params.temperature));
+    setFidelity(meanConf(state.reading));
+    return { reading: state.reading };
+  },
+  preview(ctx, w, h, s) {
+    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { note: s.loaded ? "no board yet" : "loading the model…" }), () => [
+      ...counts(s.reading), ["model", s.loaded ? "loaded" : "loading"], ["ran last read", s.ran ? "yes" : "no, picture unchanged"], ["last run", `${s.ms.toFixed(1)} ms`]]);
+  },
+  hover(p, w, h, s) { return squareHover(p, w, h, s.reading, "Neural View Reader", "Reads the board straight from the masked camera view, so a bad corner cannot bend the picture it sees. Its probabilities are tempered so a camera angle it has never seen cannot shout."); },
+};
+
 // ---------------------------------------------------------------- Blend Readings
 interface BlendState { res: BlendResult | null; inputs: (Reading | null)[]; ms: number; trust: number[]; eff: number[] }
-const IN = ["r1", "r2", "r3"] as const;
+const IN = ["r1", "r2", "r3", "r4"] as const;
 const trustScale = (agree: number) => Math.max(0, Math.min(1, (agree - 0.8) / 0.2)); // 80% agreement or less = no trust, 100% = full
 const blend: NodeSpec<BlendState> = {
   type: "vision.blend", title: "Blend Readings", category: "Vision",
-  desc: "Mixes up to three detectors, square by square, each counted by its weight. The first connected reading is the anchor: a reading whose piece count is implausible next to it is thrown out. Amber squares are where the detectors disagree.",
+  desc: "Mixes up to four detectors, square by square, each counted by its weight. The first connected reading is the anchor: a reading whose piece count is implausible next to it is thrown out. Amber squares are where the detectors disagree.",
   inputs: IN.map((id, i) => ({ id, type: "reading" as const, label: `reading ${i + 1}` })), outputs: [{ id: "reading", type: "reading" }],
   params: [
     { id: "w1", kind: "number", label: "Weight of reading 1 (anchor)", min: 0, max: 2, step: 0.1, value: 0.4 },
     { id: "w2", kind: "number", label: "Weight of reading 2", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "w3", kind: "number", label: "Weight of reading 3", min: 0, max: 2, step: 0.1, value: 0.6 },
+    { id: "w4", kind: "number", label: "Weight of reading 4", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "guard", kind: "bool", label: "Ignore implausible readings", value: true },
     { id: "adapt", kind: "bool", label: "Learn which detector to trust", value: true },
   ],
   previewSize: BASE,
-  init: () => ({ res: null, inputs: [null, null, null], ms: 0, trust: [1, 1, 1], eff: [0, 0, 0] }),
+  init: () => ({ res: null, inputs: [null, null, null, null], ms: 0, trust: [1, 1, 1, 1], eff: [0, 0, 0, 0] }),
   process(inputs, { params, state, setFidelity }) {
     state.inputs = IN.map((k) => (inputs[k] as Reading | null | undefined) ?? null);
     const t0 = performance.now();
@@ -460,4 +533,4 @@ const observe: NodeSpec<ObserveState> = {
   hover(p, w, h, s) { return squareHover(p, w, h, s.reading, "Camera Reading", "This camera's final answer, as it goes into Multi-Camera Fusion: where it sees a piece, and which colour."); },
 };
 
-export const pipelinePlugin: Plugin = { id: "pipeline", name: "Detection pipeline", register: (r) => { [clean, flatten, brightness, neuralBoard, neuralSquares, blend, observe].forEach((n) => r.register(n as NodeSpec)); } };
+export const pipelinePlugin: Plugin = { id: "pipeline", name: "Detection pipeline", register: (r) => { [clean, flatten, mask, brightness, neuralBoard, neuralSquares, neuralView, blend, observe].forEach((n) => r.register(n as NodeSpec)); } };
