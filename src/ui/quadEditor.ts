@@ -3,6 +3,7 @@ import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
 import { labelHints, ocrReportOf } from "../vision/boardLabels";
+import { alignPrefs, setAlignPref } from "./alignPrefs";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { quadToSquare, squareToQuad } from "./quadMap";
 import { pickTurnBase, turnQuad, turnQuadPlane } from "./quadTurn";
@@ -86,7 +87,14 @@ export function openQuadEditor(o: QuadEditorOpts) {
   matrixBtn.title = "Show the detected perspective lines as a transparent ground";
   setPressed(matrixBtn, matrix);
   matrixBtn.onclick = () => { matrix = !matrix; setPressed(matrixBtn, matrix); setLabel(matrixBtn, `Matrix: ${matrix ? "on" : "off"}`); };
-  opts.append(followBtn, matrixBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1;
+  // Two extra guesses auto-detect may use, off until switched on: either can be wrong.
+  const prefs = alignPrefs();
+  const centreBtn = btn(`Centre guess: ${prefs.centre ? "on" : "off"}`), ocrBtn = btn(`Read letters (OCR): ${prefs.ocr ? "on" : "off"}`);
+  centreBtn.title = "Start the search from the crossings in the empty middle of the board. Quick, but wrong when the middle is not clear."; ocrBtn.title = "Read the letters a-h and digits 1-8 printed round the board and use them as a guide. Slow, and can misread; needs the board's labels to be visible.";
+  setPressed(centreBtn, prefs.centre); setPressed(ocrBtn, prefs.ocr);
+  centreBtn.onclick = () => { const on = !alignPrefs().centre; setAlignPref("centre", on); setPressed(centreBtn, on); setLabel(centreBtn, `Centre guess: ${on ? "on" : "off"}`); if (!on) scan.centre = null; };
+  ocrBtn.onclick = () => { const on = !alignPrefs().ocr; setAlignPref("ocr", on); setPressed(ocrBtn, on); setLabel(ocrBtn, `Read letters (OCR): ${on ? "on" : "off"}`); if (!on) { scan.ocrState = ""; } };
+  opts.append(followBtn, matrixBtn, centreBtn, ocrBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1; centreBtn.hidden = o.grid <= 1; ocrBtn.hidden = o.grid <= 1;
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
   /** What auto-detect has found so far, shown blinking so it can be seen working: the crossing of the empty middle, and the letters and digits the OCR read. */
@@ -117,14 +125,14 @@ export function openQuadEditor(o: QuadEditorOpts) {
     const pulse = (t0: number) => 0.3 + 0.7 * Math.abs(Math.sin(((now - t0) / 1000) * Math.PI * 3)), live4 = (t0: number) => now - t0 < 4000;
     ctx.save(); ctx.lineJoin = "round"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     const tag = (t: string, x: number, y: number, col: string) => { ctx.font = '700 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.lineWidth = 3; ctx.strokeStyle = "#07090d"; ctx.strokeText(t, x, y); ctx.fillStyle = col; ctx.fillText(t, x, y); };
-    if (scan.centre && live4(scan.centreAt)) {
+    if (scan.centre && alignPrefs().centre && live4(scan.centreAt)) {
       const a = pulse(scan.centreAt), c = scan.centre, x = c.x * sx, y = c.y * sy;
       ctx.globalAlpha = a; ctx.strokeStyle = "#2de2e6"; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
       ctx.beginPath(); c.quad.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy))); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
       ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.moveTo(x - 26, y); ctx.lineTo(x + 26, y); ctx.moveTo(x, y - 26); ctx.lineTo(x, y + 26); ctx.stroke();
       ctx.globalAlpha = 1; tag("CENTRE FOUND", x + 22, y - 22, "#2de2e6");
     }
-    const rep = scan.frame ? ocrReportOf(scan.frame) : null;
+    const rep = scan.frame && alignPrefs().ocr ? ocrReportOf(scan.frame) : null;
     if (rep) {
       if (rep.state !== scan.ocrState) { scan.ocrState = rep.state; scan.ocrAt = now; }
       if (rep.hits.length && live4(Math.max(scan.ocrAt, rep.t))) {
@@ -134,8 +142,8 @@ export function openQuadEditor(o: QuadEditorOpts) {
       }
       if (aligner || live4(scan.ocrAt) || rep.state === "unavailable") {
         const msg = rep.state === "reading" ? `OCR: reading the letters and digits${rep.hits.length ? ` (${rep.hits.length} so far)` : ""}…`
-          : rep.state === "found" ? `OCR: read ${rep.hits.length} letters/digits, ${rep.guesses} board guess${rep.guesses === 1 ? "" : "es"}`
-          : rep.state === "none" ? "OCR: no letters or digits could be read"
+          : rep.state === "found" ? `OCR: ${rep.hits.length} board letters/digits lined up, ${rep.guesses} board guess${rep.guesses === 1 ? "" : "es"}`
+          : rep.state === "none" ? (rep.seen ? `OCR: saw ${rep.seen} marks, but none lined up as the board's letters` : "OCR: no letters or digits could be read")
           : `OCR unavailable${rep.reason ? `: ${rep.reason.slice(0, 60)}` : ""}`;
         tag(msg, 10, 16, rep.state === "found" ? "#ff4fd8" : rep.state === "reading" ? "#fff" : "#ffb347");
       }
@@ -322,7 +330,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
       try { const q = findCheckerCorners(fr); seed = q ? orientBoardCorners(fr, q) : null; } catch { seed = null; }
       follower.unlock(); progress = 0; doneConf = 0;
       rememberLayout(pts, fr.width, fr.height);
-      aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); aligner.expectLabels(labelHints(fr)); setLabel(auto, "Stop");
+      aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); if (alignPrefs().ocr) aligner.expectLabels(labelHints(fr)); setLabel(auto, "Stop");
       scan.frame = fr; scan.centre = null; scan.ocrState = ""; scan.ocrAt = 0;
       return;
     }

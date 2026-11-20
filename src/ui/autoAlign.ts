@@ -1,4 +1,5 @@
 import { type CenterSeed, findCenterSeed } from "../vision/centerSeed";
+import { alignPrefs } from "./alignPrefs";
 import { findBoardCorners, findCheckerCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
 import { BoardSampler } from "../vision/sampler";
@@ -176,7 +177,7 @@ export function rememberLayout(pts: Pt[], width: number, height: number, store: 
 }
 
 /** Guesses at where the board is. Each one is a reading: the corners the board's printed letters and digits imply (found by OCR), the corners already on screen, the checkerboard period, the perspective those square edges imply, an alignment kept from an earlier run, or, when no squares were found, the outline of the busy patch. Nothing here is a shifted copy of another guess. */
-export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[][] = [], labels: Pt[][] = [], found?: { centre?: CenterSeed | null }): Pt[][] {
+export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[][] = [], labels: Pt[][] = [], found?: { centre?: CenterSeed | null }, useCentre = true): Pt[][] {
   const out: Pt[][] = [];
   const push = (q: Pt[] | null | undefined) => {
     if (!q || q.length !== 4 || q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return;
@@ -193,7 +194,7 @@ export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[]
   push(checker);
   // the crossings of the empty middle, found by plain arithmetic at any turn: a start that needs no earlier alignment
   let centre: Pt[] | null = null;
-  try { const c = findCenterSeed(f); centre = c?.corners ?? null; if (found) found.centre = c; } catch { centre = null; }
+  if (useCentre) try { const c = findCenterSeed(f); centre = c?.corners ?? null; if (found) found.centre = c; } catch { centre = null; }
   push(centre);
   for (const seed of [labels[0], current, checker, centre]) {
     if (!seed) continue;
@@ -273,7 +274,7 @@ export class AutoAligner implements AlignStatus {
       }
     }
     this.phase = "find"; this.label = "Looking for the board…"; yield;
-    const cands = candidateLayouts(f, this.start, this.prior, [], this.found);
+    const cands = candidateLayouts(f, this.start, this.prior, [], this.found, alignPrefs().centre);
     // with nothing else to go on, the letters are all there is: wait for them
     while (!cands.length && this.reading) yield;
     let usedLabels = false;

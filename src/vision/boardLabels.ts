@@ -1,7 +1,7 @@
 import type { GrayFrame, Pt } from "./types";
 
 /** One character the OCR read, with the pixel centre of its box. */
-export interface LabelHit { ch: string; x: number; y: number; conf: number }
+export interface LabelHit { ch: string; x: number; y: number; conf: number; /** Height of the character's box in picture pixels, when the reader knows it: printed labels are all about the same size, stray marks are not. */ h?: number }
 
 /** Anything that can read characters off a picture. `rotate` is how far the picture is turned (0, 90, 180, 270 clockwise) before reading; hits come back in the original picture's pixels. */
 export type OcrEngine = (f: GrayFrame, rotate: number) => Promise<LabelHit[]>;
@@ -13,10 +13,13 @@ const mul = (a: Pt, k: number): Pt => ({ x: a.x * k, y: a.y * k });
 const len = (a: Pt) => Math.hypot(a.x, a.y);
 
 /** Labels that sit on a line: where index 0 is (`p0`) and the step per index (`step`), plus how many distinct indexes agree. */
-export interface LabelLine { p0: Pt; step: Pt; count: number }
+export interface LabelLine { p0: Pt; step: Pt; count: number; /** The reads that make up the line, one per index. */ used: LabelHit[] }
+
+/** A row of printed labels needs at least this many different letters (or digits) lined up before it counts: two or three can be chance. */
+const MIN_LABELS = 4;
 
 /** Finds up to `max` lines of labels that agree on an even step (index -> position). Robust to stray hits (a letter read off a piece, a clock face). */
-export function fitLabelLines(hits: { k: number; p: Pt; conf: number }[], max = 2): LabelLine[] {
+export function fitLabelLines(hits: { k: number; p: Pt; conf: number; ref?: LabelHit }[], max = 2): LabelLine[] {
   let rest = hits.slice();
   const out: LabelLine[] = [];
   for (let n = 0; n < max; n++) {
@@ -29,7 +32,7 @@ export function fitLabelLines(hits: { k: number; p: Pt; conf: number }[], max = 
       const inl = rest.filter((h) => len(sub(h.p, add(p0, mul(step, h.k)))) < s * 0.35);
       const ks = new Set(inl.map((h) => h.k)).size;
       const score = ks + inl.reduce((t, h) => t + h.conf, 0) / 1000;
-      if (ks >= 3 && (!best || score > best.score)) best = { line: { p0, step, count: ks }, inl, score };
+      if (ks >= MIN_LABELS && (!best || score > best.score)) best = { line: { p0, step, count: ks, used: [] }, inl, score };
     }
     if (!best) break;
     // refit on the inliers, one hit per index (the best read)
@@ -39,7 +42,7 @@ export function fitLabelLines(hits: { k: number; p: Pt; conf: number }[], max = 
     const mk = pts.reduce((t, h) => t + h.k, 0) / m, mx = pts.reduce((t, h) => t + h.p.x, 0) / m, my = pts.reduce((t, h) => t + h.p.y, 0) / m;
     const sk = pts.reduce((t, h) => t + (h.k - mk) ** 2, 0);
     const step = sk > 0 ? { x: pts.reduce((t, h) => t + (h.k - mk) * (h.p.x - mx), 0) / sk, y: pts.reduce((t, h) => t + (h.k - mk) * (h.p.y - my), 0) / sk } : best.line.step;
-    out.push({ p0: { x: mx - step.x * mk, y: my - step.y * mk }, step, count: m });
+    out.push({ p0: { x: mx - step.x * mk, y: my - step.y * mk }, step, count: m, used: pts.map((h) => h.ref).filter((r): r is LabelHit => !!r) });
     const used = new Set(best.inl);
     rest = rest.filter((h) => !used.has(h));
   }
@@ -60,10 +63,24 @@ const edgeOk = (x: number) => (x >= -1.6 && x <= 0.3) || (x >= 7.7 && x <= 9.6);
  * row on either side of the board). Corner order is a8, h8, h1, a1, so the labels also say which way up the board is.
  * Returns the best reading first.
  */
-export function quadsFromLabels(hits: LabelHit[]): Pt[][] {
-  const files = hits.filter((h) => FILES.includes(h.ch)).map((h) => ({ k: FILES.indexOf(h.ch), p: { x: h.x, y: h.y }, conf: h.conf }));
+export function quadsFromLabels(hits: LabelHit[]): Pt[][] { return analyse(hits).quads; }
+
+/** The reads that lined up as board labels (the ones a board guess is built from). Everything else the OCR saw is noise. */
+export function usedLabelHits(hits: LabelHit[]): LabelHit[] { const a = analyse(hits); return [...a.fl, ...a.rl].flatMap((l) => l.used); }
+
+/** Printed labels are all one size. Drops reads whose box is far from the typical height (a letter off a piece, a logo), when heights are known. */
+function sameSize(hits: LabelHit[]): LabelHit[] {
+  const hs = hits.map((h) => h.h ?? 0).filter((n) => n > 0).sort((a, b) => a - b);
+  if (hs.length < 4) return hits;
+  const med = hs[Math.floor(hs.length / 2)];
+  return hits.filter((h) => !h.h || (h.h >= med * 0.6 && h.h <= med * 1.6));
+}
+
+function analyse(all: LabelHit[]): { quads: Pt[][]; fl: LabelLine[]; rl: LabelLine[] } {
+  const hits = sameSize(all);
+  const files = hits.filter((h) => FILES.includes(h.ch)).map((h) => ({ k: FILES.indexOf(h.ch), p: { x: h.x, y: h.y }, conf: h.conf, ref: h }));
   // rank 8 is row 0 (the top, as a8 is square 0)
-  const ranks = hits.filter((h) => RANKS.includes(h.ch)).map((h) => ({ k: 8 - Number(h.ch), p: { x: h.x, y: h.y }, conf: h.conf }));
+  const ranks = hits.filter((h) => RANKS.includes(h.ch)).map((h) => ({ k: 8 - Number(h.ch), p: { x: h.x, y: h.y }, conf: h.conf, ref: h }));
   const fl = fitLabelLines(files), rl = fitLabelLines(ranks);
   const out: { q: Pt[]; w: number }[] = [];
   const cross = (a: Pt, b: Pt) => a.x * b.y - a.y * b.x;
@@ -94,7 +111,7 @@ export function quadsFromLabels(hits: LabelHit[]): Pt[][] {
       for (const ul of [-0.5, 8.5]) out.push({ q: quadOf(sub(sub(D.p0, mul(v, 0.5)), mul(u, ul)), u, v), w: D.count });
     }
   }
-  return out.sort((a, b) => b.w - a.w).map((o) => o.q);
+  return { quads: out.sort((a, b) => b.w - a.w).map((o) => o.q), fl, rl };
 }
 
 let engine: OcrEngine | null = null;
@@ -107,7 +124,7 @@ let worker: Promise<TessWorker | null> | null = null;
 let workerError = "";
 
 /** What the label reader is doing for one picture, so the screen can show it: still reading, found letters and digits, found none, or could not run at all. */
-export interface OcrReport { state: "reading" | "found" | "none" | "unavailable"; hits: LabelHit[]; guesses: number; reason: string; t: number }
+export interface OcrReport { state: "reading" | "found" | "none" | "unavailable"; /** Only the reads that lined up as board labels. */ hits: LabelHit[]; /** How many marks the reader saw in all, lined up or not. */ seen: number; guesses: number; reason: string; t: number }
 const reports = new WeakMap<GrayFrame, OcrReport>();
 export const ocrReportOf = (f: GrayFrame): OcrReport | null => reports.get(f) ?? null;
 
@@ -141,20 +158,20 @@ function canvasOf(f: GrayFrame, rotate: number) {
     const dx = p.x - c.width / 2, dy = p.y - c.height / 2, a = (-rotate * Math.PI) / 180;
     return { x: (dx * Math.cos(a) - dy * Math.sin(a)) / scale + f.width / 2, y: (dx * Math.sin(a) + dy * Math.cos(a)) / scale + f.height / 2 };
   };
-  return { c, back };
+  return { c, back, scale };
 }
 
 const builtIn: OcrEngine = async (f, rotate) => {
   const w = await loadWorker();
   if (!w) return [];
-  const { c, back } = canvasOf(f, rotate);
+  const { c, back, scale } = canvasOf(f, rotate);
   const { data } = await w.recognize(c, {}, { blocks: true });
   const hits: LabelHit[] = [];
   for (const b of data.blocks ?? []) for (const p of b.paragraphs) for (const l of p.lines) for (const wd of l.words) for (const s of wd.symbols) {
     const ch = s.text.trim().toLowerCase();
-    if (ch.length !== 1 || !(FILES + RANKS).includes(ch) || s.confidence < 30) continue;
+    if (ch.length !== 1 || !(FILES + RANKS).includes(ch) || s.confidence < 65) continue;
     const p0 = back({ x: (s.bbox.x0 + s.bbox.x1) / 2, y: (s.bbox.y0 + s.bbox.y1) / 2 });
-    hits.push({ ch, x: p0.x, y: p0.y, conf: s.confidence });
+    hits.push({ ch, x: p0.x, y: p0.y, conf: s.confidence, h: Math.abs(s.bbox.y1 - s.bbox.y0) / scale });
   }
   return hits;
 };
@@ -171,7 +188,7 @@ export function labelHints(f: GrayFrame, budgetMs = 20000): Promise<Pt[][]> {
   const run = (async () => {
     const read = engine ?? builtIn, end = Date.now() + budgetMs;
     let all: LabelHit[] = [];
-    const report = (state: OcrReport["state"], guesses = 0) => reports.set(f, { state, hits: all, guesses, reason: state === "unavailable" ? workerError : "", t: Date.now() });
+    const report = (state: OcrReport["state"], guesses = 0) => reports.set(f, { state, hits: usedLabelHits(all), seen: all.length, guesses, reason: state === "unavailable" ? workerError : "", t: Date.now() });
     report("reading");
     for (const rot of [0, 180, 90, 270]) {
       if (Date.now() > end) break;
@@ -182,9 +199,9 @@ export function labelHints(f: GrayFrame, budgetMs = 20000): Promise<Pt[][]> {
       if (q.length && all.length >= 8) { report("found", q.length); return q; }
     }
     const q = quadsFromLabels(all);
-    report(all.length ? "found" : "none", q.length);
+    report(q.length ? "found" : "none", q.length);
     return q;
-  })().catch(() => { reports.set(f, { state: "unavailable", hits: [], guesses: 0, reason: workerError || "the reader crashed", t: Date.now() }); return [] as Pt[][]; });
+  })().catch(() => { reports.set(f, { state: "unavailable", hits: [], seen: 0, guesses: 0, reason: workerError || "the reader crashed", t: Date.now() }); return [] as Pt[][]; });
   cache.set(f, run);
   return run;
 }

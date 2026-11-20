@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { type LabelHit, labelHints, ocrReportOf, quadsFromLabels, setOcrEngine } from "./boardLabels";
+import { type LabelHit, labelHints, ocrReportOf, quadsFromLabels, setOcrEngine, usedLabelHits } from "./boardLabels";
 import type { GrayFrame, Pt } from "./types";
 
 // A board turned by `ang`, a square `sq` pixels wide, its a8 corner at `o`. Labels sit 0.5 square outside the edges.
@@ -76,5 +76,29 @@ describe("labelHints", () => {
     let n = 0; setOcrEngine(async () => { n++; return []; });
     const f = frame(); await labelHints(f); const first = n; await labelHints(f);
     expect(n).toBe(first);
+  });
+});
+
+describe("noise is not shown as labels", () => {
+  it("keeps only the reads that line up as the board's letters, and drops marks of the wrong size", () => {
+    const { hits } = labels({ x: 300, y: 200 }, 40, 0.2);
+    for (const h of hits) h.h = 14;
+    const junk: LabelHit[] = ["e", "6", "b", "2", "a", "e", "d", "c"].map((ch, i) => ({ ch, x: 60 + i * 83, y: 30 + ((i * 37) % 400), conf: 80, h: 14 }));
+    junk.push({ ch: "h", x: 300, y: 205, conf: 90, h: 60 }); // far too big to be a printed label
+    const used = usedLabelHits([...hits, ...junk]);
+    expect(used.length).toBe(16);
+    for (const u of used) expect(hits).toContain(u);
+  });
+  it("needs four in a row before a row of marks counts", () => {
+    const three: LabelHit[] = ["a", "b", "c"].map((ch, i) => ({ ch, x: 100 + i * 40, y: 200, conf: 90 }));
+    expect(quadsFromLabels(three)).toEqual([]); expect(usedLabelHits(three)).toEqual([]);
+  });
+  it("reports how many marks it saw and how many lined up, and says none when nothing lined up", async () => {
+    const f = { width: 640, height: 480, data: new Uint8ClampedArray(640 * 480), t: 0 } as GrayFrame;
+    setOcrEngine(async () => ["a", "5", "c", "e", "2"].map((ch, i) => ({ ch, x: 50 + i * 111, y: 60 + (i * 97) % 300, conf: 90 })));
+    await labelHints(f);
+    const r = ocrReportOf(f)!;
+    expect(r.state).toBe("none"); expect(r.seen).toBeGreaterThan(0); expect(r.hits).toEqual([]);
+    setOcrEngine(null);
   });
 });

@@ -18,6 +18,7 @@ import { FRAME_H, FRAME_W } from "../sim/rigs";
 import { boardHover, boardSquareAt, markSquares, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
 import { labelHints } from "../vision/boardLabels";
+import { alignPrefs } from "../ui/alignPrefs";
 import { AlignFollower, AutoAligner, evaluate, rememberLayout, rememberedLayouts } from "../ui/autoAlign";
 import { findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import { CalibrationWatch, type WatchReading } from "../vision/autoCalibrate";
@@ -74,7 +75,7 @@ export function autoCalibrate(state: CalState, params: Record<string, number | s
     try { const q = findCheckerCorners(f); seed = q ? orientBoardCorners(f, q) : null; } catch { seed = null; }
     const store = storage();
     state.aligner = new AutoAligner(f, seed ?? corners, 60, undefined, store ? rememberedLayouts(f.width, f.height, store) : []);
-    state.aligner.expectLabels(labelHints(f));
+    if (alignPrefs().ocr) state.aligner.expectLabels(labelHints(f));
     state.follower?.unlock();
     bus.calibration = { cam, phase: "running", label: "Looking for the board...", progress: 0 };
   }

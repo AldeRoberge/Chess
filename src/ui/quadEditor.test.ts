@@ -162,6 +162,15 @@ describe("openQuadEditor", () => {
     const r = parseCorners(c2[c2.length - 1])!;
     expect(quadValid(r)).toBe(true); expect(Math.abs(boardTilt(r))).toBeLessThanOrEqual(111) // the corners are rounded when written out;
   });
+  it("the centre guess and the OCR are optional switches, off until turned on, and remembered", () => {
+    localStorage.removeItem("cx.align.opts");
+    open();
+    const find = (t: string) => [...document.querySelectorAll<HTMLElement>(".qe-btn")].find((b) => b.textContent!.startsWith(t))!;
+    expect(find("Centre guess").textContent).toBe("Centre guess: off"); expect(find("Read letters").textContent).toBe("Read letters (OCR): off");
+    find("Read letters").click(); expect(find("Read letters").textContent).toBe("Read letters (OCR): on"); expect(JSON.parse(localStorage.getItem("cx.align.opts")!)).toEqual({ centre: false, ocr: true });
+    find("Centre guess").click(); expect(JSON.parse(localStorage.getItem("cx.align.opts")!)).toEqual({ centre: true, ocr: true });
+    find("Read letters").click(); find("Centre guess").click(); expect(JSON.parse(localStorage.getItem("cx.align.opts")!)).toEqual({ centre: false, ocr: false });
+  });
 });
 
 /** Top edge over bottom edge: how much the far side is foreshortened. */
