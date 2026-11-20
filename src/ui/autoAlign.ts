@@ -198,16 +198,14 @@ export class AutoAligner implements AlignStatus {
     this.gen = this.run();
   }
   /**
-   * Hands over the OCR reading of the board labels (see `labelHints`). The aligner holds off its search until it arrives
-   * (or `timeoutMs` passes) and then tries those corners first. Call before the first `step`.
+   * Hands over the OCR reading of the board labels (see `labelHints`). The search does not wait for it: it starts at once
+   * and, if the reading arrives while it still has layouts to try, tries those corners next. They are only a guess (the
+   * OCR can misread), so they are fitted and scored like any other layout and lose to a better fit.
    */
-  expectLabels(p: Promise<Pt[][]>, timeoutMs = 25000) {
+  expectLabels(p: Promise<Pt[][]>) {
     this.reading = true;
-    const stop = this.now() + timeoutMs;
-    this.labelDeadline = stop;
     p.then((q) => { this.labels = q ?? []; }, () => { /* no labels: carry on without */ }).finally(() => { this.reading = false; });
   }
-  private labelDeadline = 0;
   get done() { return this.phase === "done" || this.phase === "failed"; }
   /** Runs for about `budgetMs`; true while there is more to do. */
   step(budgetMs = 10) {
@@ -230,25 +228,34 @@ export class AutoAligner implements AlignStatus {
       }
     }
     this.phase = "find"; this.label = "Looking for the board…"; yield;
-    if (this.reading) {
-      this.label = "Reading the letters on the board…";
-      while (this.reading && this.now() < this.labelDeadline) yield;
-      this.reading = false;
-      this.label = this.labels.length ? "Found the board letters" : "Looking for the board…"; yield;
-    }
-    const cands = candidateLayouts(f, this.start, this.prior, this.labels);
+    const cands = candidateLayouts(f, this.start, this.prior);
+    // with nothing else to go on, the letters are all there is: wait for them
+    while (!cands.length && this.reading) yield;
+    let usedLabels = false;
+    const pullLabels = (at: number) => {
+      if (usedLabels || !this.labels.length) return;
+      usedLabels = true;
+      for (const q of this.labels.slice().reverse()) {
+        if (q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) || !(sideOf(q) / 8 > 2)) continue;
+        if (cands.some((c) => c.reduce((t, p, i) => t + dist(p, q[i]), 0) / 4 < (sideOf(q) / 8) * 0.3)) continue;
+        cands.splice(at, 0, q);
+      }
+    };
+    pullLabels(0);
     if (!cands.length) { this.phase = "failed"; this.label = "No board found. Drag the corners onto it."; return; }
-    const N = cands.length, done: { pts: Pt[]; ev: Eval; guide: GridGuide | null; pieces: number }[] = [];
+    const done: { pts: Pt[]; ev: Eval; guide: GridGuide | null; pieces: number }[] = [];
     this.phase = "try";
     let sure = false;
-    for (let i = 0; i < N && !sure; i++) {
+    for (let i = 0; i < cands.length && !sure; i++) {
+      pullLabels(i); // the OCR may have finished while the last layout was being fitted
+      const N = cands.length;
       this.label = `Trying layout ${i + 1} of ${N}`; this.progress = 0.05 + 0.6 * (i / N); this.set(cands[i]); yield;
       const sq = sideOf(cands[i]) / 8;
       // a candidate that already fits well only needs fine steps; do not throw it around
       const head = evaluate(f, cands[i]);
       const coarse = yield* climb(f, cands[i], head.q >= SURE && !head.flipped ? [sq * 0.1, sq * 0.05] : [sq * 0.4, sq * 0.2, sq * 0.1, sq * 0.05], 20, (p) => this.set(p));
       this.progress = 0.05 + 0.6 * ((i + 0.7) / N);
-      const turned = pickRotation(f, coarse.pts, this.labels[0] ?? this.start);
+      const turned = pickRotation(f, coarse.pts, this.start ?? this.labels[0] ?? null);
       this.label = "Lining up with the square edges…"; this.set(turned); yield;
       const guided = withGuide(f, turned);
       this.set(guided.corners); yield;
@@ -257,6 +264,7 @@ export class AutoAligner implements AlignStatus {
       done.push({ pts: fine.pts, ev: fine.ev, guide: guided.guide, pieces }); this.confidence = blend(fine.ev, pieces); this.set(fine.pts);
       // high confidence: stop exploring and just polish this one
       if (isSure(fine.ev, pieces)) sure = true;
+      if (i + 1 === cands.length && !sure) pullLabels(i + 1); // last one tried: the letters may have just arrived
     }
     // the start position's pieces break ties between layouts that fit the squares about equally
     const adj = (d: { ev: Eval; pieces: number }) => d.ev.cost - d.pieces * 0.1;

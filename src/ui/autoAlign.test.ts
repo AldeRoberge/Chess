@@ -136,29 +136,39 @@ describe("AlignBatch", () => {
 });
 
 describe("AutoAligner with board labels", () => {
-  it("waits for the OCR reading, then tries its corners first", async () => {
-    const { AutoAligner, candidateLayouts } = await import("./autoAlign");
+  it("lists the labels' corners first", async () => {
+    const { candidateLayouts } = await import("./autoAlign");
     const f = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200).fill(128), t: 0 };
     const guess = [{ x: 20, y: 20 }, { x: 180, y: 20 }, { x: 180, y: 180 }, { x: 20, y: 180 }];
     expect(candidateLayouts(f, null, [], [guess])[0]).toEqual(guess);
-    let release: (q: typeof guess[]) => void = () => {};
-    const a = new AutoAligner(f, null, 0);
-    a.expectLabels(new Promise((r) => { release = r; }));
-    a.step(5);
-    expect(a.label).toMatch(/letters/);
-    expect(a.done).toBe(false);
-    release([guess]);
-    await Promise.resolve(); await Promise.resolve();
+  });
+  it("starts at once without waiting for the OCR, then still finishes", async () => {
+    const { AutoAligner } = await import("./autoAlign");
+    const f = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200).fill(128), t: 0 };
+    const start = [{ x: 30, y: 30 }, { x: 170, y: 30 }, { x: 170, y: 170 }, { x: 30, y: 170 }];
+    const a = new AutoAligner(f, start, 0);
+    a.expectLabels(new Promise(() => {})); // never answers
     for (let i = 0; i < 400 && a.step(50); i++);
     expect(a.done).toBe(true);
+  });
+  it("tries the labels' corners when they arrive mid-search", async () => {
+    const { AutoAligner } = await import("./autoAlign");
+    const f = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200).fill(128), t: 0 };
+    const start = [{ x: 30, y: 30 }, { x: 170, y: 30 }, { x: 170, y: 170 }, { x: 30, y: 170 }];
+    const guess = [{ x: 10, y: 10 }, { x: 190, y: 10 }, { x: 190, y: 190 }, { x: 10, y: 190 }];
+    const a = new AutoAligner(f, start, 0);
+    a.expectLabels(Promise.resolve([guess]));
+    const seen: string[] = [];
+    for (let i = 0; i < 2000 && a.step(5); i++) { seen.push(a.label); await Promise.resolve(); }
+    expect(a.done).toBe(true);
+    expect(seen.some((l) => /Trying layout \d of [2-9]/.test(l))).toBe(true);
   });
   it("carries on without labels when the reading fails", async () => {
     const { AutoAligner } = await import("./autoAlign");
     const f = { width: 100, height: 100, data: new Uint8ClampedArray(100 * 100).fill(128), t: 0 };
     const a = new AutoAligner(f, null, 0);
     a.expectLabels(Promise.reject(new Error("x")));
-    await Promise.resolve(); await Promise.resolve();
-    for (let i = 0; i < 100 && a.step(50); i++);
+    for (let i = 0; i < 100 && a.step(50); i++) await Promise.resolve();
     expect(a.done).toBe(true);
   });
 });
