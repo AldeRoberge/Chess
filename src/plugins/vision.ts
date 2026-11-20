@@ -236,12 +236,12 @@ const reader: NodeSpec<ReaderState> = {
     if (p.y > fh) { // the board under the picture: this square as the reader reads it
       const q = boardSquareAt({ x: p.x, y: p.y - fh }, v.w, bh);
       if (q === null || !s.obs) return null;
-      const t = readerTiles(s.obs, bus.game?.fen)[q];
+      const t = readerTiles(s.obs, undefined, true)[q];
       const rows: TipRow[] = [{ label: "Square", value: `${sqName(q)} (${isLightSquare(q) ? "light" : "dark"})` },
-        { label: "Reads as", value: t.occupied ? (t.piece ? pieceLabel(t.piece) : `${t.white ? "white" : "black"} piece (type unknown)`) : "empty" },
+        { label: "Reads as", value: t.occupied ? `${t.white ? "white" : "black"} piece` : "empty" },
         { label: "Confidence", value: pct(t.conf), bar: t.conf, tone: tone(t.conf) },
         { label: "Says occupied", value: pct(s.obs.occ[q]), bar: s.obs.occ[q] }];
-      return { title: sqName(q), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4", body: "What this camera alone reads on the square, before the cameras are fused. The piece type comes from the tracked game; the reader itself only tells empty, white and black apart.", rows,
+      return { title: sqName(q), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4", body: "What this camera alone reads on the square, before the cameras are fused: empty, a white piece or a black piece. Piece types are not read; the tracker works them out from the moves.", rows,
         mark: (ctx) => { ctx.save(); ctx.translate(0, fh); markSquares(ctx, v.w, bh, q); ctx.restore(); } };
     }
     if (!f) return { title: "No camera picture", tag: "Board Reader", body: "Wire a camera into this node: it reads the 64 squares from the picture.", rows: [{ label: "Calibrated", value: s.sampler.calibrated ? "yes" : "no", tone: s.sampler.calibrated ? "ok" : "warn" }] };
@@ -297,7 +297,7 @@ const reader: NodeSpec<ReaderState> = {
       const { fh, bh } = readerSplit(pw, ph);
       const r = drawFrame(ctx, pw, fh, s.frame);
       // what the reader sees, tile by tile, under the picture it reads
-      ctx.save(); ctx.translate(0, fh); ctx.beginPath(); ctx.rect(0, 0, pw, bh); ctx.clip(); drawReaderBoard(ctx, pw, bh, s.obs, bus.game?.fen); ctx.restore();
+      ctx.save(); ctx.translate(0, fh); ctx.beginPath(); ctx.rect(0, 0, pw, bh); ctx.clip(); drawReaderBoard(ctx, pw, bh, s.obs, undefined, true); ctx.restore();
       if (!s.frame || !r) return;
       const sc = frameScale(s.frame.width, s.frame.height);
       const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * sc.sx * r.s, y: r.y + p.y * sc.sy * r.s }), c = s.sampler.cfg.corners;
@@ -340,7 +340,7 @@ const fuse: NodeSpec<FuseState> = {
   hover(p, w, h, s) {
     const v = visualSize(w, h, [120, 120]);
     return boardHover(p, v.w, v.h, s.board, {
-      title: "Multi-Camera Fusion", fen: bus.game?.fen,
+      title: "Multi-Camera Fusion", fen: bus.game?.fen, presence: true,
       body: (sq) => (s.board ? `${s.obs.length} camera${s.obs.length === 1 ? "" : "s"} vote on ${sqName(sq)}: each camera's reading is weighted by its picture quality, trust and track record, then added together.` : undefined),
       extra: (sq): TipRow[] => {
         const total = s.obs.reduce((a, o) => a + camWeight(s, o), 0) || 1;
@@ -351,7 +351,7 @@ const fuse: NodeSpec<FuseState> = {
       },
     });
   },
-  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [120, 120], (pw, ph) => drawBoard(ctx, pw, ph, s.board, { fen: bus.game?.fen, live: true }), () => [
+  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [120, 120], (pw, ph) => drawBoard(ctx, pw, ph, s.board, { presence: true }), () => [
     ["cameras", String(s.board?.cams ?? 0)], ["fidelity", s.board ? brief(s.board.fidelity) : "—"], ["hand over", brief(s.board?.handOver)], ["settled", brief(s.board?.settled)],
     ["pieces seen", s.board ? String(Array.from(s.board.occ).filter((v) => v > 0.5).length) : "—"],
     ...(bus.cameras ?? []).map((c): DetailRow => [`cam ${c.id}`, `q ${brief(c.quality)} · rel ${brief(c.reliability)}`])]),
@@ -382,7 +382,7 @@ const stabilize: NodeSpec<StabState> = {
   hover(p, w, h, s) {
     const v = visualSize(w, h, [120, 120]), st = s.stab;
     return boardHover(p, v.w, v.h, s.out, {
-      title: "Temporal Stabilizer", fen: bus.game?.fen,
+      title: "Temporal Stabilizer", fen: bus.game?.fen, presence: true,
       body: (sq) => `${sqName(sq)} only flips when the evidence builds past ±${st.cfg.on} (and back past ${st.cfg.off}), so a one-frame glitch never changes the board.`,
       extra: (sq): TipRow[] => {
         const acc = st.accOcc[sq], lim = st.cfg.on;
@@ -399,7 +399,7 @@ const stabilize: NodeSpec<StabState> = {
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, [120, 120], (pw, ph) => {
-      drawBoard(ctx, pw, ph, s.out, { fen: bus.game?.fen, live: true });
+      drawBoard(ctx, pw, ph, s.out, { presence: true });
       if (s.out) { ctx.fillStyle = s.out.handOver ? "#ff5a6e" : s.out.settled ? "#35e0b4" : "#ffb347"; ctx.fillRect(pw - 10, 2, 8, 8); }
     }, () => [["state", s.out ? (s.out.handOver ? "hand over board" : s.out.settled ? "settled" : "settling") : "no input", s.out?.handOver ? "#ff5a6e" : s.out?.settled ? "#35e0b4" : "#ffb347"],
       ["fidelity", s.out ? brief(s.out.fidelity) : "—"], ["pieces", s.out ? String(Array.from(s.out.occ).filter((v) => v > 0.5).length) : "—"],

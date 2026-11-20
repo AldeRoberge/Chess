@@ -16,7 +16,7 @@ import type { GrayFrame } from "../vision/types";
 import { previewPoint, setPreviewPointer, setPreviewSize } from "./previewHover";
 
 export const PORT_COLOR: Record<PortType, string> = {
-  frame: "#5aa9ff", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
+  frame: "#5aa9ff", flat: "#8f9bff", reading: "#5be08a", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
   seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", world: "#4fd1c5", player: "#f472b6", action: "#fde047", fx: "#5cf2ff", any: "#9aa4b8",
 };
 export const CAT_COLOR: Record<string, string> = {
