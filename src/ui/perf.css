@@ -107,7 +107,7 @@ button#heat.on{border-color:var(--signal);color:var(--signal)}
 .perf-table td.d.down{color:var(--ok)}
 
 /* node overlay: hidden until the Timings toggle is on */
-.ne-heat{display:none;grid-template-columns:1fr 60px;gap:4px 8px;align-items:center;padding:0 10px 8px;margin-top:-2px}
+.ne-heat{display:none;grid-template-columns:1fr 60px;gap:4px 8px;align-items:center;padding:0 12px 8px;margin-top:-2px}
 .ne.heat .ne-heat{display:grid}
 .ne-heat-bar{height:5px;border-radius:3px;background:var(--ink-0);overflow:hidden}
 .ne-heat-bar i{display:block;height:100%;width:0;background:var(--heat,var(--signal));transition:width .25s}
@@ -117,8 +117,7 @@ button#heat.on{border-color:var(--signal);color:var(--signal)}
 .ne.heat .ne-ms{color:var(--heat,var(--text-dim))}
 
 /* node timing footer: a darker strip that reads as its own optional section */
-.ne-node .ne-foot{margin-top:0;padding:5px 10px 6px;border-top:1px solid var(--line);border-radius:0 0 5px 5px;background:color-mix(in srgb,var(--ink-1) 78%,#000)}
-[data-mode=light] .ne-node .ne-foot{background:color-mix(in srgb,var(--ink-1) 90%,#000)}
+.ne-node .ne-foot{margin-top:0;padding:6px 12px 8px;border-top:1px solid var(--line)}
 /* light mode: the latency text is dark green and fully opaque so 0.0ms stays legible */
 [data-mode=light] .ne-node .ne-ms{color:#0b5a23;opacity:1}
 [data-mode=light] .ne-node .ne-ms.crit{color:#b00020}
