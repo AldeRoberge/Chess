@@ -8,4 +8,4 @@
 - [x] Webcam Device dropdown
 - [x] Browser voice A/B and ElevenLabs model dropdowns
 - [x] Camera bot as separate grouped nodes (with migration of old saves)
-- [ ] Confirm the narrator test / e2e greeting failure is unrelated
+- [x] Narrator test passes alone (flaky when run with the full suite); e2e greeting assertion is the same narrator wording, not touched by these changes
