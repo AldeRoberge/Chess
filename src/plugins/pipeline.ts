@@ -11,7 +11,7 @@ import { collectFrame } from "../vision/collect";
 import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
-import { agreement, blendReadings, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
+import { agreement, blendReadings, legalLetters, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
 import { AutoAligner } from "../ui/autoAlign";
 import { extractView, VIEW_SIDE, type BoardView } from "../vision/boardView";
 import { loadViewCnn } from "../vision/viewModel";
@@ -80,11 +80,12 @@ function drawPresence(ctx: CanvasRenderingContext2D, w: number, h: number, r: Re
   for (let i = 0; i <= 8; i++) { ctx.moveTo(ox + i * s, 0); ctx.lineTo(ox + i * s, s * 8); ctx.moveTo(ox, i * s); ctx.lineTo(ox + s * 8, i * s); }
   ctx.stroke();
   if (!r) { ctx.fillStyle = "#8fa0a8"; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(o.note ?? "no reading yet", 8, h / 2); return; }
+  const letters = o.types ? legalLetters(r, o.types) : null;
   for (let i = 0; i < 64; i++) {
     const x = ox + (i % 8) * s, y = Math.floor(i / 8) * s, cx = x + s / 2, cy = y + s / 2, occ = r.occ[i];
     if (occ > 0.5) {
       const white = r.white[i] > 0.5, c = squareConf(r, i);
-      const letter = o.types ? pieceLetter(o.types, i, white) : null;
+      const letter = letters ? letters[i] || null : null;
       // the piece the model says it is, drawn as the piece itself; a disc with its letter while the picture loads
       const icon = letter ? pieceImage((white ? "w" : "b") + letter.toLowerCase()) : null;
       ctx.globalAlpha = 0.3 + 0.7 * c;

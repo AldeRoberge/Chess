@@ -6,6 +6,7 @@ import { node, shoot, tick } from "../test/helpers";
 import { agreement, blendReadings, pieceCount, type Reading } from "../vision/readings";
 import { fmtCorners } from "./shared";
 import { pieceLetter } from "./pipeline";
+import { legalLetters } from "../vision/readings";
 import { NetPool } from "../vision/netPool";
 import { handle, type NetReq } from "../vision/netWorker";
 import { extractBoard } from "../vision/boardImage";
@@ -140,6 +141,21 @@ describe("piece letters on the neural board reader", () => {
     expect(pieceLetter(t, 5, true)).toBe("N");
     expect(pieceLetter(t, 5, false)).toBe("Q");
     expect(pieceLetter(new Float32Array(64 * 13), 0, true)).toBe("P");
+  });
+});
+
+describe("legal piece letters", () => {
+  it("never reads more kings, pawns or pieces than a side can have", () => {
+    const occ = new Float32Array(64), white = new Float32Array(64).fill(1), types = new Float32Array(64 * 13);
+    for (let sq = 8; sq < 24; sq++) { occ[sq] = 1; types[sq * 13 + 6] = 0.9; types[sq * 13 + 3] = 0.2; } // 16 squares all "king" for white
+    const l = legalLetters({ occ, white }, types);
+    expect(l.filter((x) => x === "K").length).toBe(1);
+    expect(l.filter((x) => x !== "").length).toBe(16);
+    const pawns = new Float32Array(64 * 13), o2 = new Float32Array(64).fill(1);
+    for (let sq = 0; sq < 12; sq++) pawns[sq * 13 + 1] = 0.9; // 12 "pawns", some on the back row
+    const l2 = legalLetters({ occ: o2, white }, pawns);
+    expect(l2.filter((x) => x === "P").length).toBeLessThanOrEqual(8);
+    expect(l2.slice(0, 8).includes("P")).toBe(false);
   });
 });
 

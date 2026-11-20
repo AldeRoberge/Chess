@@ -30,6 +30,37 @@ export interface Reading {
 
 export const pieceCount = (r: { occ: ArrayLike<number> }) => { let n = 0; for (let i = 0; i < 64; i++) if (r.occ[i] > 0.5) n++; return n; };
 
+/** The most pieces of each kind (P N B R Q K) a side starts with. */
+const START_COUNT = [8, 2, 2, 2, 1, 1];
+/**
+ * Turns per-square piece-class probabilities into one believable position: a letter per occupied square ("" for empty or
+ * when nothing legal fits), never more than one king, eight pawns, no pawn on the first or last row, and an extra
+ * knight, bishop, rook or queen only in place of a missing pawn (a promotion). Squares are filled most-confident first
+ * per side, so a doubtful second king becomes whatever the network thinks it is next.
+ */
+export function legalLetters(r: { occ: ArrayLike<number>; white: ArrayLike<number> }, types: ArrayLike<number>): string[] {
+  const out: string[] = new Array(64).fill("");
+  for (const side of [true, false]) {
+    const base = side ? 1 : 7, cand: { sq: number; k: number; p: number }[] = [];
+    for (let sq = 0; sq < 64; sq++) {
+      if (!(r.occ[sq] > 0.5) || (r.white[sq] > 0.5) !== side) continue;
+      for (let k = 0; k < 6; k++) cand.push({ sq, k, p: types[sq * 13 + base + k] });
+    }
+    cand.sort((a, b) => b.p - a.p);
+    const count = [0, 0, 0, 0, 0, 0], done = new Set<number>();
+    const extras = () => { let e = 0; for (let k = 1; k < 5; k++) e += Math.max(0, count[k] - START_COUNT[k]); return e; };
+    for (const c of cand) {
+      if (done.has(c.sq)) continue;
+      const row = Math.floor(c.sq / 8);
+      if (c.k === 0 && (row === 0 || row === 7 || count[0] + 1 + extras() > 8)) continue;
+      if (c.k === 5 && count[5] >= 1) continue;
+      if (c.k >= 1 && c.k <= 4 && count[c.k] >= START_COUNT[c.k] && count[0] + extras() + 1 > 8) continue;
+      count[c.k]++; done.add(c.sq); out[c.sq] = "PNBRQK"[c.k];
+    }
+  }
+  return out;
+}
+
 /** How sure a reading is of one square: for a piece, the weaker of "a piece" and its colour; for an empty square, "empty". */
 export function squareConf(r: { occ: ArrayLike<number>; white: ArrayLike<number> }, sq: number): number {
   const o = r.occ[sq], w = r.white[sq];
