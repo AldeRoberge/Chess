@@ -1,3 +1,4 @@
+import { findCenterSeed } from "../vision/centerSeed";
 import { findBoardCorners, findCheckerCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
 import { GOOD, type GridGuide, guideDrift, iconLevels, scoreAlignment, traceSquareGuide } from "./boardGuide";
@@ -189,7 +190,11 @@ export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[]
   for (const q of labels) push(q);
   push(current);
   push(checker);
-  for (const seed of [labels[0], current, checker]) {
+  // the crossings of the empty middle, found by plain arithmetic at any turn: a start that needs no earlier alignment
+  let centre: Pt[] | null = null;
+  try { centre = findCenterSeed(f)?.corners ?? null; } catch { centre = null; }
+  push(centre);
+  for (const seed of [labels[0], current, checker, centre]) {
     if (!seed) continue;
     try { push(traceSquareGuide(f, seed)?.corners); } catch { /* the picture is not readable there */ }
   }
