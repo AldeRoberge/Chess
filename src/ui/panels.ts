@@ -16,6 +16,7 @@ import { PIECE_SETS, pieceImage, pieceSet, setPieceSet } from "./pieceSets";
 import { BOARD_THEMES, boardTheme, setBoardTheme } from "./boardThemes";
 import { openChannel, type CalibCmd, type InMsg } from "./channel";
 import { drawBotAvatar, drawGrabHand } from "./botAvatar";
+import { botKnightSvg } from "./botIcon";
 import { withIcon } from "./icons";
 import type { Tip, TipRow } from "./tooltip";
 import { fenPieces, looksLikeStart } from "../plugins/shared";
@@ -292,7 +293,9 @@ export class TablePanel {
     const bot = bus.botColor === color;
     row.dataset.color = color;
     row.classList.toggle("to-move", toMove);
-    row.querySelector(".cc-avatar")!.textContent = color === "w" ? "W" : "B";
+    const avatar = row.querySelector<HTMLElement>(".cc-avatar")!;
+    if (bot) { if (avatar.dataset.bot !== "1") { avatar.dataset.bot = "1"; avatar.innerHTML = botKnightSvg(true, 42); avatar.setAttribute("role", "img"); avatar.setAttribute("aria-label", "Stockfish"); } }
+    else if (avatar.dataset.bot === "1" || avatar.textContent !== (color === "w" ? "W" : "B")) { delete avatar.dataset.bot; avatar.removeAttribute("role"); avatar.removeAttribute("aria-label"); avatar.textContent = color === "w" ? "W" : "B"; }
     row.querySelector(".cc-name")!.textContent = bot ? (bus.director?.elo ? `Stockfish ${bus.director.elo}` : "Stockfish") : (color === "w" ? "White" : "Black");
     row.querySelector(".cc-cap")!.textContent = captured || (toMove ? "to move" : "");
     const clock = row.querySelector<HTMLElement>(".cc-clock")!, c = bus.clock;
