@@ -559,8 +559,7 @@ const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "�
 
 /**
  * An arrow across the board from black's side (a8–h8) to white's (a1–h1), so which way the corners say white sits is
- * visible at a glance. `verdict` colours it: green when the pieces agree, grey when nothing can be said yet. When the pieces say
- * white stands on the other side, a dashed amber arrow points that way as well, and the button offers the flip.
+ * visible at a glance. It is always red, and the only arrow: when the pieces say white stands on the other side, the flip button offers the fix.
  */
 export function drawDirection(ctx: CanvasRenderingContext2D, P: (u: number, v: number) => Pt, verdict: Orientation["verdict"]) {
   const arrow = (from: Pt, to: Pt, color: string, dash: number[], head: string, tail: string, headIcon = "", tailIcon = "") => {
@@ -583,9 +582,9 @@ export function drawDirection(ctx: CanvasRenderingContext2D, P: (u: number, v: n
     }
     ctx.restore();
   };
-  const base = verdict === "right" ? "#35e07a" : "#cfd8e3";
-  arrow(P(0.5, 0.3), P(0.5, 0.7), base, [], "WHITE", "BLACK", "wp", "bp");
-  if (verdict === "turned") arrow(P(0.62, 0.7), P(0.62, 0.3), "#ff9a3c", [5, 4], "WHITE?", "", "wp", "");
+  // One red arrow, whatever the verdict: the corner order says white sits at the arrow's head. The flip button (shown when the pieces disagree) says the rest.
+  void verdict;
+  arrow(P(0.5, 0.3), P(0.5, 0.7), "#ff3b3b", [], "WHITE", "BLACK", "wp", "bp");
 }
 
 /** Draws the edge icons. `P` maps the unit square to canvas pixels; `ring` is the colour of the badge behind each icon. */

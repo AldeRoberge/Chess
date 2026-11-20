@@ -115,14 +115,14 @@ describe("openQuadEditor", () => {
     document.body.innerHTML = ""; open({ grid: 1 }); raf.splice(0).forEach((f) => f(0)); expect(document.querySelector<HTMLElement>(".qe-meter")!.hidden).toBe(true);
   });
 
-  it("turns the whole grid with the round handle above the top edge, and Shift snaps to 15 degrees", () => {
+  it("turns the whole grid with the round handle at the bottom middle, and Shift snaps to 15 degrees", () => {
     const { changes, cv } = open();
-    // default corners sit at 180,72 / 540,72 / 540,288 / 180,288 on the canvas; the handle is 40 px above the top edge's middle
-    cv.dispatchEvent(ptr("pointerdown", 360, 32));
-    cv.dispatchEvent(ptr("pointermove", 500, 180)); // from straight up to straight right: a quarter turn clockwise
+    // default corners sit at 180,72 / 540,72 / 540,288 / 180,288 on the canvas; the handle sits at the bottom middle of the 720 x 360 canvas
+    cv.dispatchEvent(ptr("pointerdown", 360, 360 - 18 - 12));
+    cv.dispatchEvent(ptr("pointermove", 220, 180)); // from straight down to straight left: a quarter turn clockwise
     const q = parseCorners(changes[changes.length - 1])!;
     expect(q[0].x).toBeCloseTo(65, 0); expect(q[0].y).toBeCloseTo(0, 0);
-    cv.dispatchEvent(ptr("pointerup", 500, 180));
+    cv.dispatchEvent(ptr("pointerup", 220, 180));
     cv.dispatchEvent(ptr("pointermove", 400, 100)); // no drag now: nothing changes
     expect(parseCorners(changes[changes.length - 1])![0].x).toBeCloseTo(q[0].x, 3);
   });
@@ -133,8 +133,7 @@ describe("openQuadEditor", () => {
     const W = 720, H = Math.round((W * pic.height) / pic.width), k = W / pic.width;
     cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: W, height: H, right: W, bottom: H, x: 0, y: 0, toJSON() {} });
     const cx = c.reduce((a, p) => a + p.x, 0) / 4 * k, cy = c.reduce((a, p) => a + p.y, 0) / 4 * k;
-    const mx = ((c[0].x + c[1].x) / 2) * k, my = ((c[0].y + c[1].y) / 2) * k, d = Math.hypot(mx - cx, my - cy);
-    const hx = mx + ((mx - cx) / d) * 72, hy = my + ((my - cy) / d) * 72; // the rotate handle
+    const hx = W / 2, hy = H - 18 - 12; // the rotate handle, bottom middle
     cv.dispatchEvent(ptr("pointerdown", hx, hy));
     const side = quadSideRatio(c);
     // drag the handle a quarter of the way round, in the board's own plane
