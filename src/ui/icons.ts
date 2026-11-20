@@ -133,7 +133,7 @@ export const nodeIcon = (type: string, category: string, size = 16): string => i
 
 /** Icon per port type, shown inside each node input/output pin. */
 const PORT_ICON: Record<string, string> = {
-  frame: "frame", flat: "grid", reading: "eye", obs: "eye", board: "board", game: "knight", pointer: "hand", pose: "people", seat: "opponent", event: "bolt",
+  frame: "frame", flat: "grid", view: "scan", reading: "eye", obs: "eye", board: "board", game: "knight", pointer: "hand", pose: "people", seat: "opponent", event: "bolt",
   text: "text", scene: "scene", clock: "clock", world: "cube", player: "pawn", action: "play", fx: "spark", any: "fuse",
 };
 export const portIcon = (type: string, size = 10): string => icon(PORT_ICON[type] ?? "fuse", size);

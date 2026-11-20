@@ -65,8 +65,8 @@ ml/.venv-render/Scripts/python.exe ml/render_gltf.py --count 3 --samples 24 --ou
 
 # Independent generation runs for training and validation. These are deliberately
 # separate folders/seeds; do not import validation renders into a training dataset.
-ml/.venv-render/Scripts/python.exe ml/render_gltf.py --count 3000 --seed 11 --out ml/renders/train
-ml/.venv-render/Scripts/python.exe ml/render_gltf.py --count 300 --seed 97 --out ml/renders/val
+ml/.venv-render/Scripts/python.exe ml/render_gltf.py --count 300 --seed 97 --out ml/renders/val --resume
+ml/.venv-render/Scripts/python.exe ml/render_gltf.py --count 3000 --seed 11 --out ml/renders/train --exclude ml/renders/val --resume
 
 # Use the same crop/normalization code as the live app.
 $env:CNN_GEN=1; $env:CNN_BOARD=1; $env:CNN_GLTF='ml/renders/train'; $env:CNN_OUT='ml/data/board-gltf-train'
@@ -78,7 +78,8 @@ npx vitest run src/vision/cnnData.gen.test.ts -t 'imports labeled glTF'
 # This writes the shipped model weights and reference logits: evaluate before committing.
 $env:TRAIN='train,train2,gltf-train'
 $env:VAL='gltf-val'
-python -I ml/train_board.py 45 none 72
+$env:INIT='src/vision/boardCnn.weights.json' # warm-start; use the width of this model
+python -I ml/train_board.py 45 none 48
 ```
 
 For square-model crops, remove `CNN_BOARD`, set `CNN_OUT=ml/data/gltf-train`
@@ -120,3 +121,21 @@ Whole-board colour predictions sum the piece-type probabilities, as the browser 
 Use the same evaluation frames for old and new models, and keep the test frames out
 of checkpoint selection. Stored real frames are still regression checks, not evidence
 of real-camera generalization, when those positions were also used in training.
+
+### Fast repeat runs
+
+The renderer prefers RTX/OptiX acceleration, falls back to CUDA, and uses GPU denoising
+when available. Its training defaults are 480x360, 16 samples, and persistent render
+data; high-resolution previews can still request `--width 960 --height 720`.
+On this RTX 3060, measured subsequent frames fell from roughly 2-4 seconds to
+0.3-0.7 seconds after moving ray tracing and denoising to the GPU. First-frame device
+initialization remains slower. These timings are hardware- and scene-dependent.
+
+Use `--resume` with the same folder, seed and frame count to keep completed renders.
+Dataset conversion also caches `.x/.y` files with a fingerprint of metadata, grayscale
+file size/timestamps and the crop/homography code. Unchanged conversions are reused;
+changed inputs or processing code invalidate the cache. For repeated training,
+initialize from the previous exported weights using `INIT`, choose balanced
+`TRAIN_WEIGHTS`, and bound `EPOCH_SAMPLES` rather than iterating over every old
+synthetic example again. Export candidates separately and compare the same held-out
+frames before replacing the shipped weights.

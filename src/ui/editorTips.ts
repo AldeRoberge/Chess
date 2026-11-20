@@ -8,6 +8,7 @@ import { previewPoint } from "./previewHover";
 
 const PORT_INFO: Record<PortType, string> = {
   frame: "A grayscale camera image.",
+  view: "The board as the camera sees it, perspective kept, with everything outside the board blacked out.",
   flat: "The board cut out of the camera picture and straightened into one square image.",
   reading: "One detector's opinion of the 64 squares: a piece or not, and which colour.",
   obs: "One camera's reading of the 64 squares.",

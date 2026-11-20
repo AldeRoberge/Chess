@@ -16,7 +16,7 @@ import type { GrayFrame } from "../vision/types";
 import { previewPoint, setPreviewPointer, setPreviewSize } from "./previewHover";
 
 export const PORT_COLOR: Record<PortType, string> = {
-  frame: "#5aa9ff", flat: "#8f9bff", reading: "#5be08a", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
+  frame: "#5aa9ff", flat: "#8f9bff", view: "#b08fff", reading: "#5be08a", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
   seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", world: "#4fd1c5", player: "#f472b6", action: "#fde047", fx: "#5cf2ff", any: "#9aa4b8",
 };
 export const CAT_COLOR: Record<string, string> = {
@@ -30,10 +30,34 @@ const portDot = (dot: HTMLElement, hex: string) => { dot.style.background = port
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
 interface View { x: number; y: number; k: number }
-interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HTMLElement }; el: HTMLElement; preview?: HTMLCanvasElement; generic?: boolean; fid: HTMLElement; ms: HTMLElement; err: HTMLElement; params: Map<string, (v: any) => void>; statKey?: string; seen?: Map<string, unknown>; pins: Map<string, HTMLElement>; paint?: { outs: unknown[]; extra: string; at: number } }
+interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HTMLElement }; el: HTMLElement; preview?: HTMLCanvasElement; generic?: boolean; fid: HTMLElement; ms: HTMLElement; err: HTMLElement; params: Map<string, (v: any) => void>; statKey?: string; seen?: Map<string, unknown>; pins: Map<string, HTMLElement>; paint?: { outs: unknown[]; extra: string; at: number }; cost?: number; hidden?: boolean; holdUntil?: number; fadeAt?: number }
 
 /** A preview may repaint at least this often even when nothing it shows seems to have changed (status text, theme, animations). */
 const PREVIEW_REFRESH_MS = 500;
+/** All previews together may spend about this long per repaint pass; the costliest ones beyond it are hidden. */
+const PREVIEW_BUDGET_MS = 6;
+/** A preview cheaper than this is never worth hiding. */
+const PREVIEW_CHEAP_MS = 1.5;
+/** A hidden preview is painted for real now and then so its cost is measured again (and it returns once it is cheap). */
+const PREVIEW_PROBE_MS = 2000;
+/** A preview the pointer touched stays visible this long after the pointer leaves. */
+const PREVIEW_HOLD_MS = 30000;
+/** Hiding fades the picture out over about this long. */
+const PREVIEW_FADE_MS = 600;
+export const HIDDEN_NOTE = "Hidden to preserve performance";
+
+/** Which previews to hide: the costliest first, until the rest fit the budget. Hovered previews and cheap ones always stay. */
+export function chooseHidden(costs: Map<string, number>, keep: (id: string) => boolean, budget = PREVIEW_BUDGET_MS): Set<string> {
+  const out = new Set<string>();
+  let total = 0;
+  for (const c of costs.values()) total += c;
+  for (const [id, c] of [...costs].sort((a, b) => b[1] - a[1])) {
+    if (total <= budget || c < PREVIEW_CHEAP_MS) break;
+    if (keep(id)) continue;
+    out.add(id); total -= c;
+  }
+  return out;
+}
 
 /** Blueprint / TouchDesigner style graph editor on plain DOM + SVG (no framework, no canvas layout cost). */
 export class NodeEditor {
@@ -51,6 +75,8 @@ export class NodeEditor {
   private palette: HTMLElement;
   private lastWire = 0;
   private lastPrev = 0;
+  private lastProbe = 0;
+  private probe = 0;
   /** Simplified drawing for slow machines: previews and wires refresh less often and heat bars are not painted. */
   lite = false;
   private lastHeat = 0;
@@ -855,6 +881,14 @@ export class NodeEditor {
     // after another node's stats were rewritten would force a fresh layout once per node, every frame.
     const visible = new Set<string>();
     if (doPrev) for (const [id, v] of this.views) { const n = this.graph.nodes.get(id); if (n && v.preview && this.onScreen(n, v)) visible.add(id); }
+    if (doPrev) { // measured from each preview's own paint time (the "<node> preview" spans of the flame graph)
+      const costs = new Map<string, number>();
+      for (const id of visible) { const c = this.views.get(id)?.cost; if (c) costs.set(id, c); }
+      for (const [id, v] of this.views) if (previewPoint(id)) v.holdUntil = now + PREVIEW_HOLD_MS; // hovering brings a preview back and keeps it for a while after the pointer leaves
+      const hide = chooseHidden(costs, (id) => (this.views.get(id)?.holdUntil ?? 0) > now, this.lite ? PREVIEW_BUDGET_MS / 2 : PREVIEW_BUDGET_MS);
+      if (hide.size && now - this.lastProbe > PREVIEW_PROBE_MS) { this.lastProbe = now; const ids = [...hide]; this.probe = (this.probe + 1) % ids.length; hide.delete(ids[this.probe]); }
+      for (const [id, v] of this.views) { v.hidden = hide.has(id); if (!v.hidden) v.fadeAt = undefined; }
+    }
     for (const [id, v] of this.views) {
       const st = this.graph.stats.get(id);
       const n = this.graph.nodes.get(id)!;
@@ -895,6 +929,23 @@ export class NodeEditor {
         setPreviewSize(id, lw, lh);
         // Nothing changed since the last paint (same picture / reading objects, params, size, pointer): the pixels on the canvas are still right.
         // Skipped for nodes that animate or show only state, i.e. without a live output value.
+        if (!v.generic && v.hidden) {
+          const key = `hidden|${bw}x${bh}`;
+          if (v.paint?.extra !== key) {
+            v.fadeAt ??= now;
+            if (now - v.fadeAt < PREVIEW_FADE_MS) { // smooth fade: wash the last picture out a little more on each pass
+              ctx.globalAlpha = 0.25; ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh); ctx.globalAlpha = 1;
+              continue;
+            }
+            v.paint = { outs: [], extra: key, at: now };
+            ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh);
+            ctx.fillStyle = "#8fa0a8"; ctx.font = "11px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            const words = HIDDEN_NOTE.split(" "), fits = ctx.measureText(HIDDEN_NOTE).width <= lw - 12;
+            const lines = fits ? [HIDDEN_NOTE] : [words.slice(0, 3).join(" "), words.slice(3).join(" ")];
+            lines.forEach((t, i) => ctx.fillText(t, lw / 2, lh / 2 + (i - (lines.length - 1) / 2) * 14));
+          }
+          continue;
+        }
         if (!v.generic) {
           const hover = spec.hover && previewPoint(id), values = Object.values(outs);
           const extra = `${bw}x${bh}|${hover ? `${hover.p.x},${hover.p.y}` : ""}|${JSON.stringify(n.params)}`, last = v.paint;
@@ -903,9 +954,12 @@ export class NodeEditor {
         } else v.paint = undefined;
         if (v.generic) { ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh); drawRows(ctx, 0, 0, lw, lh, objRows(outs).length ? objRows(outs) : [["outputs", "none yet"]]); }
         else {
+          const t0 = performance.now();
           profiler.span(`${spec.title} preview`, () => spec.preview!(ctx, lw, lh, this.graph.states.get(id), outs), id);
           const hp = spec.hover && previewPoint(id); // light up whatever the pointer is over
           if (hp) { try { spec.hover!(hp.p, lw, lh, this.graph.states.get(id), outs)?.mark?.(ctx); } catch { /* a hover glitch must never break painting */ } }
+          const ms = performance.now() - t0;
+          v.cost = v.cost === undefined ? ms : v.cost + (ms - v.cost) * 0.3;
         }
       }
     }

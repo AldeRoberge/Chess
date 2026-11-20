@@ -7,9 +7,9 @@ export interface BoardCnnJson { side: number; classes?: number; layers: BoardLay
 export const PIECE_CLASSES = 13;
 export const PIECE_NAMES = ["empty", "P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"];
 
-interface Layer { k: 1 | 3; cin: number; cout: number; stride: number; relu: boolean; w: Float32Array; b: Float32Array }
+export interface Layer { k: 1 | 3; cin: number; cout: number; stride: number; relu: boolean; w: Float32Array; b: Float32Array }
 
-function floats(b64: string): Float32Array {
+export function floats(b64: string): Float32Array {
   const bin = atob(b64), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new Float32Array(bytes.buffer);
@@ -77,7 +77,7 @@ export class BoardCnn {
   }
 }
 
-function conv1(src: Float32Array, dst: Float32Array, L: Layer, side: number) {
+export function conv1(src: Float32Array, dst: Float32Array, L: Layer, side: number) {
   const { cin, cout, w, b } = L, n = side * side;
   for (let o = 0; o < cout; o++)
     for (let p = 0; p < n; p++) {
@@ -88,7 +88,7 @@ function conv1(src: Float32Array, dst: Float32Array, L: Layer, side: number) {
 }
 
 /** 3x3 convolution with one pixel of zero padding, optional ReLU; the result is ceil(side / stride) pixels a side. */
-function conv3(src: Float32Array, dst: Float32Array, pad: Float32Array, L: Layer, side: number) {
+export function conv3(src: Float32Array, dst: Float32Array, pad: Float32Array, L: Layer, side: number) {
   const { cin, cout, w, b, stride } = L, ps = side + 2, out = Math.ceil(side / stride);
   for (let c = 0; c < cin; c++) {
     const po = c * ps * ps;

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { describe, it } from "vitest";
 import { Chess } from "chess.js";
 import { VirtualTable } from "../sim/virtualTable";
@@ -7,6 +8,7 @@ import { FRAME_H, FRAME_W, rigCorners, type CameraRig } from "../sim/rigs";
 import { TABLE_Y } from "../world/coords";
 import { parseCorners } from "../plugins/shared";
 import { extractBoard, BOARD_SIDE } from "./boardImage";
+import { extractView, VIEW_SIDE } from "./boardView";
 import { CROP, extractCrops } from "./squareCrops";
 import { rng } from "./synthetic";
 import type { GrayFrame } from "./types";
@@ -17,7 +19,8 @@ import type { GrayFrame } from "./types";
  * Writes <out>.x (uint8 crops, value * 127.5) and <out>.y (0 empty, 1 white, 2 black). Skipped in the normal run.
  */
 // CNN_BOARD=1 cuts the whole board into one flattened image per sample (boardImage.ts) instead of 64 square crops
-const BOARD = !!process.env.CNN_BOARD, cut = BOARD ? extractBoard : extractCrops, UNIT = BOARD ? BOARD_SIDE * BOARD_SIDE : 64 * CROP * CROP, PRE = BOARD ? "ml/data/board-" : "ml/data/";
+// CNN_VIEW=1 cuts the masked, un-straightened board view instead (boardView.ts), with plain empty/white/black labels
+const VIEW = !!process.env.CNN_VIEW, BOARD = !!process.env.CNN_BOARD && !VIEW, JIT = Number(process.env.CNN_JIT ?? 1), cut = VIEW ? extractView : BOARD ? extractBoard : extractCrops, UNIT = VIEW ? VIEW_SIDE * VIEW_SIDE : BOARD ? BOARD_SIDE * BOARD_SIDE : 64 * CROP * CROP, PRE = VIEW ? "ml/data/view-" : BOARD ? "ml/data/board-" : "ml/data/";
 const label3 = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : p.color === "w" ? 1 : 2));
 // whole-board samples carry the piece type too: 0 empty, 1-6 white p n b r q k, 7-12 black p n b r q k (colour = 1 + (class > 6))
 const label13 = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : (p.color === "w" ? 1 : 7) + "pnbrqk".indexOf(p.type)));
@@ -43,6 +46,20 @@ describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
     const files = readdirSync(dir).filter(n => n.endsWith(".json")).sort();
     if (!files.length) throw new Error(`No labeled renders in ${dir}`);
     const out = process.env.CNN_OUT ?? `${PRE}gltf-train`;
+    const hash = createHash("sha256").update(`gltf-crops-v1:${BOARD}:${UNIT}`);
+    for (const path of ["src/vision/cnnData.gen.test.ts", "src/vision/boardImage.ts", "src/vision/squareCrops.ts", "src/vision/homography.ts"]) hash.update(readFileSync(path));
+    for (const file of files) {
+      const gray = statSync(`${dir}/${file.replace(/\.json$/, ".gray")}`);
+      hash.update(file).update(readFileSync(`${dir}/${file}`)).update(`${gray.size}:${gray.mtimeMs}`);
+    }
+    const fingerprint = hash.digest("hex"), manifest = `${out}.manifest.json`;
+    const expectedX = files.length * UNIT, expectedY = files.length * 64;
+    if (existsSync(manifest) && existsSync(`${out}.x`) && existsSync(`${out}.y`) &&
+        JSON.parse(readFileSync(manifest, "utf8")).fingerprint === fingerprint &&
+        statSync(`${out}.x`).size === expectedX && statSync(`${out}.y`).size === expectedY) {
+      console.info(`Reusing ${files.length} cached glTF crops from ${out}.x/.y`);
+      return;
+    }
     const xs = new Uint8Array(files.length * UNIT), ys = new Uint8Array(files.length * 64);
     files.forEach((file, at) => {
       const meta = JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
@@ -55,6 +72,7 @@ describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
     });
     mkdirSync("ml/data", { recursive: true });
     writeFileSync(`${out}.x`, xs); writeFileSync(`${out}.y`, ys);
+    writeFileSync(manifest, JSON.stringify({ fingerprint, frames: files.length, board: BOARD, bytesX: xs.length, bytesY: ys.length }));
     console.info(`Imported ${files.length} textured glTF renders into ${out}.x/.y`);
   });
   it("renders positions and cuts them into square crops", () => {
@@ -73,7 +91,7 @@ describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
       for (let k = 0; k < 2; k++) {
         const frame: GrayFrame = applySensor(lum, { ...o, noise: 3 + rand() * 24, gain: 0.5 + rand() * 0.9, gradient: rand() * 0.4, seed: n * 3 + k + 1 });
         // the user drags the corners by hand, so they are never exact
-        const corners = rigCorners(rig).map((p) => ({ x: p.x + gauss() * 1.4, y: p.y + gauss() * 1.4 }));
+        const corners = rigCorners(rig).map((p) => ({ x: p.x + gauss() * 1.4 * JIT, y: p.y + gauss() * 1.4 * JIT }));
         const crops = cut(frame, corners), at = n * 2 + k;
         for (let i = 0; i < crops.length; i++) xs[at * UNIT + i] = Math.min(255, Math.round(crops[i] * 127.5));
         ys.set(truth, at * 64);

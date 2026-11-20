@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import random
+import time
 from pathlib import Path
 
 import bpy
@@ -153,11 +154,16 @@ def setup_scene(rand, width, height, samples):
     # Prefer CUDA when available; CPU is a supported fallback.
     try:
         prefs = bpy.context.preferences.addons['cycles'].preferences
-        prefs.compute_device_type = 'CUDA'; prefs.get_devices()
-        gpu = [d for d in prefs.devices if d.type == 'CUDA']
-        for device in prefs.devices: device.use = device.type == 'CUDA'
+        prefs.compute_device_type = 'OPTIX'; prefs.get_devices()
+        gpu = [d for d in prefs.devices if d.type == 'OPTIX']
+        if not gpu:
+            prefs.compute_device_type = 'CUDA'; prefs.get_devices()
+            gpu = [d for d in prefs.devices if d.type == 'CUDA']
+        backend = prefs.compute_device_type
+        for device in prefs.devices: device.use = device.type == backend
         if gpu:
             scene.cycles.device = 'GPU'
+            scene.cycles.denoising_use_gpu = True
     except (KeyError, TypeError, RuntimeError):
         pass
     print('Render device:',scene.cycles.device,'denoiser:',scene.cycles.denoiser,flush=True)
@@ -197,9 +203,9 @@ def main():
     p.add_argument('--sets',nargs='+',default=['chess_kit','chess_set','wooden_chess_set'])
     p.add_argument('--count',type=int,default=12,help='Total frames, cycling across sets')
     p.add_argument('--seed',type=int,default=1)
-    p.add_argument('--samples',type=int,default=32)
-    p.add_argument('--width',type=int,default=960)
-    p.add_argument('--height',type=int,default=720)
+    p.add_argument('--samples',type=int,default=16)
+    p.add_argument('--width',type=int,default=480)
+    p.add_argument('--height',type=int,default=360)
     p.add_argument('--exclude',type=Path,nargs='+',help='Folders whose labeled positions must not appear in this run')
     p.add_argument('--resume',action='store_true',help='Skip complete existing frames')
     p.add_argument('--only-sets',nargs='+',help='Render only these entries of --sets, keeping the same frame indices and seeds')
@@ -214,6 +220,7 @@ def main():
         scene,camera,light,dark = setup_scene(rand,args.width,args.height,args.samples)
         pieces = []
         for i in range(si,args.count,len(args.sets)):
+            started = time.perf_counter()
             stem = args.out/f'{args.seed:04d}-{i:06d}-{pack}'
             if args.resume and all(stem.with_suffix(ext).exists() for ext in ('.png','.gray','.json')): continue
             rand = random.Random(args.seed*100000+i)
@@ -251,11 +258,13 @@ def main():
                     raise ValueError('Board outside camera frame')
                 corners.append({'x':v.x*args.width,'y':(1-v.y)*args.height})
             scene.render.filepath = str(stem.with_suffix('.png').resolve())
+            render_start = time.perf_counter()
             bpy.ops.render.render(write_still=True)
+            rendered = time.perf_counter()
             image = Image.open(stem.with_suffix('.png')).convert('L')
             stem.with_suffix('.gray').write_bytes(image.tobytes())
             stem.with_suffix('.json').write_text(json.dumps({'fen':board.fen(),'corners':corners,'width':args.width,'height':args.height,'set':pack,'seed':args.seed,'renderer':'Blender Cycles','samples':args.samples,'lighting':lighting}))
-            print(f'SAVED {stem}',flush=True)
+            print(f'SAVED {stem} total={time.perf_counter()-started:.3f}s render={rendered-render_start:.3f}s prepare={render_start-started:.3f}s',flush=True)
     print(f'Done: {args.count} labeled textured renders in {args.out}',flush=True)
 
 if __name__ == '__main__':
