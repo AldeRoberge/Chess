@@ -1,0 +1,88 @@
+/* Setup wizard: controls. */
+.halo-items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.halo-item{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:9px 16px;min-height:44px;cursor:pointer;color:var(--text)}
+.halo-item.info{cursor:default;color:var(--text-dim)}
+.halo-item .halo-value{color:var(--signal);text-align:right;font:400 var(--t-md)/1.4 var(--font-ui);max-width:62%;overflow-wrap:anywhere}
+/* status rows: icon | label, with the detail underneath in the same font */
+.halo-item.info{display:grid;grid-template-columns:24px 1fr;grid-template-areas:"badge label" ". value";column-gap:14px;row-gap:2px;align-items:center;justify-content:stretch;padding:12px 16px;border-bottom:1px solid var(--line)}
+.halo-item.info .halo-badge{grid-area:badge}.halo-item.info .halo-label{grid-area:label;color:var(--text);font-weight:600}
+.halo-item.info .halo-value{grid-area:value;max-width:none;text-align:left;color:var(--text-dim)}
+.halo-badge{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;font:700 13px/1 var(--font-ui);color:var(--ink-0);background:var(--signal)}
+.halo-item.info.ok .halo-badge{background:var(--ok)}.halo-item.info.warn .halo-badge{background:var(--amber)}.halo-item.info.fail .halo-badge{background:var(--bad)}
+.halo-item.disabled{opacity:.55;cursor:not-allowed}
+/* destructive actions: indented under their camera, muted red, quieter than the main rows */
+.halo-item.danger{padding:5px 16px 9px 34px;color:var(--bad);font-size:var(--t-sm,.9em);opacity:.85}
+/* the one bold element */
+.halo-item.sel{color:var(--ink-0);background:linear-gradient(90deg,var(--signal-hi),var(--signal));box-shadow:0 0 28px color-mix(in srgb,var(--signal) 33%,transparent);clip-path:polygon(0 0,100% 0,calc(100% - 12px) 100%,0 100%)}
+.halo-item.sel .halo-value,.halo-item.sel .halo-label{color:var(--ink-0)}
+.halo-item input:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
+.halo-select{appearance:none;-webkit-appearance:none;background-color:var(--ink-0);border:1px solid var(--line-hi);color:var(--signal);padding:5px 34px 5px 9px;font:400 var(--t-md) var(--font-ui);min-width:200px;max-width:62%;border-radius:3px;cursor:pointer;margin-left:auto;
+  /* a clear down-pointing arrow in a separated button-like cap on the right */
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2300a0ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"),linear-gradient(var(--line-hi),var(--line-hi));
+  background-repeat:no-repeat;background-position:right 10px center,right 28px center;background-size:12px 8px,1px 60%}
+.halo-select:hover{background-color:var(--ink-1)}
+.halo-select:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
+.halo-item input{background:var(--ink-0);border:1px solid var(--line-hi);color:var(--text);padding:5px 9px;font:400 var(--t-md) var(--font-ui);min-width:260px;border-radius:3px}
+@media (max-width:760px){
+  .halo-item{flex-wrap:wrap;gap:6px 12px;padding:9px 8px;min-width:0}
+  .halo-item .halo-label{flex:1 1 9ch;min-width:9ch}
+  .halo-item input:not([type=range]):not([type=checkbox]),.halo-select,.halo-range{flex:1 1 100%;min-width:0;max-width:100%;margin-left:0}
+  .halo-range{height:24px;background-clip:content-box;padding-block:10px}
+}
+
+/* action buttons: bordered, with icon */
+.halo-item.action{justify-content:flex-start;align-self:flex-start;gap:12px;min-width:280px;min-height:42px;margin-top:8px;padding:8px 18px 8px 14px;border:1px solid color-mix(in srgb,var(--signal) 70%,var(--line-hi));background:color-mix(in srgb,var(--signal) 50%,var(--ink-2));color:var(--text);font-weight:600}
+/* every row: icon | label | value */
+.halo-item:not(.info):not(.action) .halo-ic{display:inline-grid;color:var(--signal);flex:none;margin-right:-8px}
+.halo-item:not(.info):not(.action) .halo-label{flex:1}
+.halo-item.sel .halo-ic{color:var(--ink-0)}
+/* real sliders */
+.halo-item.slider .halo-num{flex:none;width:4.5em;text-align:right}
+.halo-range{-webkit-appearance:none;appearance:none;flex:0 1 260px;min-width:120px;height:4px;margin:0;border-radius:2px;background:var(--line-hi);cursor:pointer}
+.halo-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--signal);border:2px solid var(--ink-0);box-shadow:0 0 0 1px var(--signal)}
+.halo-range::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--signal);border:2px solid var(--ink-0)}
+.halo-item.sel .halo-range{background:color-mix(in srgb,var(--ink-0) 33%,transparent)}
+.halo-item.sel .halo-range::-webkit-slider-thumb{background:var(--ink-0);border-color:var(--signal-hi);box-shadow:0 0 0 1px var(--ink-0)}
+.halo-item.sel .halo-range::-moz-range-thumb{background:var(--ink-0)}
+.halo-item.action .halo-ic{display:inline-grid;color:var(--signal);flex:none}
+.halo-item.action:hover{border-color:var(--signal);background:color-mix(in srgb,var(--signal) 62%,var(--ink-2))}
+/* selected action: the bright bar, with dark text. Must be spelled out here: the base .action rule outranks .sel */
+.halo-item.action.sel{background:linear-gradient(90deg,var(--signal-hi),var(--signal));border-color:var(--signal-hi);color:var(--ink-0)}
+.halo-item.action.sel .halo-label,.halo-item.action.sel .halo-ic{color:var(--ink-0)}
+.halo-item.action.disabled{border-style:dashed}
+.halo-item.action{box-sizing:border-box;min-width:min(280px,100%);max-width:100%;white-space:normal}
+.halo-item.action .halo-label{min-width:0;overflow-wrap:anywhere}
+/* remove camera: trash can at the right of the toggle value */
+.halo-trash{display:inline-grid;place-items:center;flex:none;width:34px;height:34px;margin-left:4px;border:1px solid var(--line);background:transparent;color:var(--text-dim);cursor:pointer;padding:0}
+.halo-trash:hover,.halo-trash:focus-visible{color:var(--bad);border-color:var(--bad);background:#ff4d5e14;outline:none}
+.halo-item.sel .halo-trash{color:var(--ink-0);border-color:color-mix(in srgb,var(--ink-0) 40%,transparent)}
+.halo-item.sel .halo-trash:hover{color:var(--bad);background:#fff}
+
+/* value steppers: ◂ value ▸ in fixed columns, so the arrows line up down the list */
+.halo-stepper{display:inline-grid;grid-template-columns:18px 7em 18px;align-items:center;justify-items:center;white-space:nowrap}
+.halo-num{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-align:center}
+.halo-arr{color:var(--signal)}
+
+/* collapsible sections (Corners, and each corner in it): a bordered header with its icon, summary and chevron */
+.halo-item.group{justify-content:flex-start;gap:12px;margin-top:6px;padding:10px 16px;border:1px solid var(--line-hi);border-left:3px solid var(--signal);background:#0a223d99;font-weight:600}
+.halo-item.group.open{border-left-color:var(--signal-hi);background:#0e2e5299}
+.halo-item.group .halo-ic{display:inline-grid;color:var(--signal);flex:none}
+.halo-item.group .halo-label{flex:1}
+.halo-item.group .halo-value{color:var(--text-dim);font-weight:400;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.halo-chev{display:inline-grid;color:var(--text-dim);transition:transform .15s;flex:none}
+.halo-item.group.open .halo-chev{transform:rotate(90deg);color:var(--signal)}
+.halo-item.group.sel .halo-ic,.halo-item.group.sel .halo-chev{color:var(--ink-0)}
+/* nested rows sit under their section */
+.halo-item.halo-d1{padding-left:34px}
+.halo-item.halo-d2{padding-left:58px;padding-top:6px;padding-bottom:6px}
+
+/* auto detect: a small button on a value row */
+.halo-auto{display:inline-flex;align-items:center;gap:6px;flex:none;padding:4px 9px;border:1px solid var(--line-hi);border-radius:var(--radius);background:var(--ink-2);color:var(--signal);font:600 var(--t-sm,.85em) var(--font-ui);cursor:pointer;white-space:nowrap}
+.halo-auto:hover:not(:disabled),.halo-auto:focus-visible{border-color:var(--signal);outline:none}
+.halo-auto:disabled{opacity:.5;cursor:not-allowed}
+.halo-item.sel .halo-auto{background:var(--ink-0);border-color:transparent;color:var(--signal-hi)}
+.compact .halo-item{min-height:44px;gap:12px;flex-wrap:wrap}
+.compact .halo-select,.compact .halo-item input{min-width:0;max-width:100%}
+@media (max-width:760px),(max-aspect-ratio:1/1){
+  .halo-item{flex-wrap:wrap}
+}

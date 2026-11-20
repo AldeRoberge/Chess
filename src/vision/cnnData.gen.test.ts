@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { describe, it } from "vitest";
 import { Chess } from "chess.js";
 import { VirtualTable } from "../sim/virtualTable";
@@ -6,6 +7,8 @@ import { applySensor, renderLuminance } from "../sim/render3d";
 import { FRAME_H, FRAME_W, rigCorners, type CameraRig } from "../sim/rigs";
 import { TABLE_Y } from "../world/coords";
 import { parseCorners } from "../plugins/shared";
+import { extractBoard, BOARD_SIDE } from "./boardImage";
+import { extractView, VIEW_SIDE } from "./boardView";
 import { CROP, extractCrops } from "./squareCrops";
 import { rng } from "./synthetic";
 import type { GrayFrame } from "./types";
@@ -15,7 +18,13 @@ import type { GrayFrame } from "./types";
  *   CNN_GEN=1 CNN_N=2400 CNN_SEED=1 CNN_OUT=ml/data/train npx vitest run src/vision/cnnData.gen.test.ts
  * Writes <out>.x (uint8 crops, value * 127.5) and <out>.y (0 empty, 1 white, 2 black). Skipped in the normal run.
  */
-const label = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : p.color === "w" ? 1 : 2));
+// CNN_BOARD=1 cuts the whole board into one flattened image per sample (boardImage.ts) instead of 64 square crops
+// CNN_VIEW=1 cuts the masked, un-straightened board view instead (boardView.ts), with plain empty/white/black labels
+const VIEW = !!process.env.CNN_VIEW, BOARD = !!process.env.CNN_BOARD && !VIEW, JIT = Number(process.env.CNN_JIT ?? 1), cut = VIEW ? extractView : BOARD ? extractBoard : extractCrops, UNIT = VIEW ? VIEW_SIDE * VIEW_SIDE : BOARD ? BOARD_SIDE * BOARD_SIDE : 64 * CROP * CROP, PRE = VIEW ? "ml/data/view-" : BOARD ? "ml/data/board-" : "ml/data/";
+const label3 = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : p.color === "w" ? 1 : 2));
+// whole-board samples carry the piece type too: 0 empty, 1-6 white p n b r q k, 7-12 black p n b r q k (colour = 1 + (class > 6))
+const label13 = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : (p.color === "w" ? 1 : 7) + "pnbrqk".indexOf(p.type)));
+const label = BOARD ? label13 : label3;
 
 function randomGame(rand: () => number): Chess {
   const g = new Chess();
@@ -32,9 +41,43 @@ function randomRig(rand: () => number, i: number): CameraRig {
 }
 
 describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
+  it.skipIf(!process.env.CNN_GLTF)("imports labeled glTF renders", () => {
+    const dir = process.env.CNN_GLTF!;
+    const files = readdirSync(dir).filter(n => n.endsWith(".json")).sort();
+    if (!files.length) throw new Error(`No labeled renders in ${dir}`);
+    const out = process.env.CNN_OUT ?? `${PRE}gltf-train`;
+    const hash = createHash("sha256").update(`gltf-crops-v1:${BOARD}:${UNIT}`);
+    for (const path of ["src/vision/cnnData.gen.test.ts", "src/vision/boardImage.ts", "src/vision/squareCrops.ts", "src/vision/homography.ts"]) hash.update(readFileSync(path));
+    for (const file of files) {
+      const gray = statSync(`${dir}/${file.replace(/\.json$/, ".gray")}`);
+      hash.update(file).update(readFileSync(`${dir}/${file}`)).update(`${gray.size}:${gray.mtimeMs}`);
+    }
+    const fingerprint = hash.digest("hex"), manifest = `${out}.manifest.json`;
+    const expectedX = files.length * UNIT, expectedY = files.length * 64;
+    if (existsSync(manifest) && existsSync(`${out}.x`) && existsSync(`${out}.y`) &&
+        JSON.parse(readFileSync(manifest, "utf8")).fingerprint === fingerprint &&
+        statSync(`${out}.x`).size === expectedX && statSync(`${out}.y`).size === expectedY) {
+      console.info(`Reusing ${files.length} cached glTF crops from ${out}.x/.y`);
+      return;
+    }
+    const xs = new Uint8Array(files.length * UNIT), ys = new Uint8Array(files.length * 64);
+    files.forEach((file, at) => {
+      const meta = JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
+      const data = new Uint8ClampedArray(readFileSync(`${dir}/${file.replace(/\.json$/, ".gray")}`));
+      if (data.length !== meta.width * meta.height || meta.corners?.length !== 4) throw new Error(`Invalid render ${file}`);
+      const game = new Chess(meta.fen);
+      const crops = cut({ width: meta.width, height: meta.height, data, t: at }, meta.corners);
+      for (let i = 0; i < crops.length; i++) xs[at * UNIT + i] = Math.min(255, Math.round(crops[i] * 127.5));
+      ys.set(label(game), at * 64);
+    });
+    mkdirSync("ml/data", { recursive: true });
+    writeFileSync(`${out}.x`, xs); writeFileSync(`${out}.y`, ys);
+    writeFileSync(manifest, JSON.stringify({ fingerprint, frames: files.length, board: BOARD, bytesX: xs.length, bytesY: ys.length }));
+    console.info(`Imported ${files.length} textured glTF renders into ${out}.x/.y`);
+  });
   it("renders positions and cuts them into square crops", () => {
     const N = Number(process.env.CNN_N ?? 600), rand = rng(Number(process.env.CNN_SEED ?? 1) * 7919 + 13), out = process.env.CNN_OUT ?? "ml/data/train";
-    const xs = new Uint8Array(N * 2 * 64 * CROP * CROP), ys = new Uint8Array(N * 2 * 64);
+    const xs = new Uint8Array(N * 2 * UNIT), ys = new Uint8Array(N * 2 * 64);
     const table = new VirtualTable();
     const gauss = () => (rand() + rand() + rand() - 1.5) * 2;
     for (let n = 0; n < N; n++) {
@@ -48,10 +91,10 @@ describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
       for (let k = 0; k < 2; k++) {
         const frame: GrayFrame = applySensor(lum, { ...o, noise: 3 + rand() * 24, gain: 0.5 + rand() * 0.9, gradient: rand() * 0.4, seed: n * 3 + k + 1 });
         // the user drags the corners by hand, so they are never exact
-        const corners = rigCorners(rig).map((p) => ({ x: p.x + gauss() * 1.4, y: p.y + gauss() * 1.4 }));
-        const crops = extractCrops(frame, corners), at = (n * 2 + k) * 64;
-        for (let i = 0; i < crops.length; i++) xs[at * CROP * CROP + i] = Math.min(255, Math.round(crops[i] * 127.5));
-        ys.set(truth, at);
+        const corners = rigCorners(rig).map((p) => ({ x: p.x + gauss() * 1.4 * JIT, y: p.y + gauss() * 1.4 * JIT }));
+        const crops = cut(frame, corners), at = n * 2 + k;
+        for (let i = 0; i < crops.length; i++) xs[at * UNIT + i] = Math.min(255, Math.round(crops[i] * 127.5));
+        ys.set(truth, at * 64);
       }
     }
     mkdirSync("ml/data", { recursive: true });
@@ -59,28 +102,54 @@ describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
     writeFileSync(`${out}.y`, ys);
   }, 3_600_000);
 
-  it("augments the real camera frame into extra training crops", () => {
-    const M = Number(process.env.CNN_REAL ?? 300), rand = rng(99), gauss = () => (rand() + rand() + rand() - 1.5) * 2;
-    const real = readFileSync("src/vision/fixtures/real-start-B.gray"), base = parseCorners("304,55;397,216;147,292;112,93")!;
-    const xs = new Uint8Array(M * 64 * CROP * CROP), ys = new Uint8Array(M * 64), truth = label(new Chess());
-    for (let m = 0; m < M; m++) {
-      const noise = rand() * 18, gain = 0.6 + rand() * 0.8, grad = rand() * 0.3, d = new Uint8ClampedArray(real.length), draw = rng(m + 5);
-      for (let i = 0; i < d.length; i++) d[i] = real[i] * gain * (1 - grad * ((i % 480) / 480)) + (draw() + draw() + draw() - 1.5) * 2 * noise;
-      const crops = extractCrops({ width: 480, height: 360, data: d, t: 0 }, base.map((p) => ({ x: p.x + gauss() * 1.6, y: p.y + gauss() * 1.6 })));
-      for (let i = 0; i < crops.length; i++) xs[m * 64 * CROP * CROP + i] = Math.min(255, Math.round(crops[i] * 127.5));
-      ys.set(truth, m * 64);
+  it("augments the real camera frames into extra training crops", () => {
+    // Every labelled frame the running app saved to ml/real (see collect.ts) plus the committed fixture. CNN_HOLDOUT=1 keeps
+    // every 5th saved frame out of training and writes it to real.x/.y, so the score the trainer prints is on pictures it never saw.
+    const V = Number(process.env.CNN_REAL ?? 100), rand = rng(99), gauss = () => (rand() + rand() + rand() - 1.5) * 2;
+    type Real = { data: Uint8Array; width: number; height: number; corners: { x: number; y: number }[]; truth: number[] };
+    const frames: Real[] = [{ data: readFileSync("src/vision/fixtures/real-start-B.gray"), width: 480, height: 360, corners: parseCorners("304,55;397,216;147,292;112,93")!, truth: label(new Chess()) }];
+    const saved: Real[] = [];
+    if (existsSync("ml/real")) for (const f of readdirSync("ml/real").filter((n) => n.endsWith(".json")).sort()) {
+      const m = JSON.parse(readFileSync(`ml/real/${f}`, "utf8")), g = new Chess();
+      g.load(`${m.fen} w - - 0 1`, { skipValidation: true });
+      saved.push({ data: readFileSync(`ml/real/${f.replace(".json", ".gray")}`), width: m.width, height: m.height, corners: m.corners, truth: label(g) });
     }
-    writeFileSync("ml/data/realaug.x", xs);
-    writeFileSync("ml/data/realaug.y", ys);
+    const hold = process.env.CNN_HOLDOUT ? saved.filter((_, i) => i % 5 === 4) : [];
+    frames.push(...saved.filter((r) => !hold.includes(r)));
+    const per = Math.max(6, Math.round((V * 3) / Math.max(1, frames.length))); // the fixture and a few frames get many variants, a big collection fewer each
+    const xs = new Uint8Array(frames.length * per * UNIT), ys = new Uint8Array(frames.length * per * 64);
+    frames.forEach((r, fi) => {
+      for (let m = 0; m < per; m++) {
+        const noise = rand() * 18, gain = 0.6 + rand() * 0.8, grad = rand() * 0.3, d = new Uint8ClampedArray(r.data.length), draw = rng(fi * 1000 + m + 5);
+        for (let i = 0; i < d.length; i++) d[i] = r.data[i] * gain * (1 - grad * ((i % r.width) / r.width)) + (draw() + draw() + draw() - 1.5) * 2 * noise;
+        const crops = cut({ width: r.width, height: r.height, data: d, t: 0 }, r.corners.map((p) => ({ x: p.x + gauss() * 1.6, y: p.y + gauss() * 1.6 }))), at = fi * per + m;
+        for (let i = 0; i < crops.length; i++) xs[at * UNIT + i] = Math.min(255, Math.round(crops[i] * 127.5));
+        ys.set(r.truth, at * 64);
+      }
+    });
+    mkdirSync("ml/data", { recursive: true });
+    writeFileSync(`${PRE}realaug.x`, xs);
+    writeFileSync(`${PRE}realaug.y`, ys);
+    if (hold.length) {
+      const hx = new Uint8Array(hold.length * UNIT), hy = new Uint8Array(hold.length * 64);
+      hold.forEach((r, i) => {
+        const c = cut({ width: r.width, height: r.height, data: new Uint8ClampedArray(r.data), t: 0 }, r.corners);
+        for (let k = 0; k < c.length; k++) hx[i * UNIT + k] = Math.min(255, Math.round(c[k] * 127.5));
+        hy.set(r.truth, i * 64);
+      });
+      writeFileSync(`${PRE}real.x`, hx);
+      writeFileSync(`${PRE}real.y`, hy);
+    }
+    console.info(`real frames: ${frames.length} for training, ${hold.length} held out`);
   });
 
-  it("cuts the real camera frame of the start position into crops", () => {
+  it.skipIf(!!process.env.CNN_HOLDOUT)("cuts the real camera frame of the start position into crops", () => {
     const frame: GrayFrame = { width: 480, height: 360, data: new Uint8ClampedArray(readFileSync("src/vision/fixtures/real-start-B.gray")), t: 0 };
-    const crops = extractCrops(frame, parseCorners("304,55;397,216;147,292;112,93")!);
+    const crops = cut(frame, parseCorners("304,55;397,216;147,292;112,93")!);
     const xs = new Uint8Array(crops.length);
     for (let i = 0; i < crops.length; i++) xs[i] = Math.min(255, Math.round(crops[i] * 127.5));
     mkdirSync("ml/data", { recursive: true });
-    writeFileSync("ml/data/real.x", xs);
-    writeFileSync("ml/data/real.y", Uint8Array.from(label(new Chess())));
+    writeFileSync(`${PRE}real.x`, xs);
+    writeFileSync(`${PRE}real.y`, Uint8Array.from(label(new Chess())));
   });
 });

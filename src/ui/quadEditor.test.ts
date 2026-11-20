@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openQuadEditor, squareToQuad } from "./quadEditor";
+import { openQuadEditor, squareToQuad, turnQuad } from "./quadEditor";
+import { fmtCorners, parseCorners } from "../plugins/shared";
+import { boardTilt, quadUpright, quadValid } from "./quadRules";
+import { RIGS, rigCorners } from "../sim/rigs";
+import { VirtualTable } from "../sim/virtualTable";
+import { shoot } from "../test/helpers";
 import type { GrayFrame } from "../vision/types";
 
 describe("squareToQuad", () => {
@@ -10,6 +15,17 @@ describe("squareToQuad", () => {
     expect(p(1, 1).x).toBeCloseTo(8); expect(p(0, 1).x).toBeCloseTo(2);
     const d = squareToQuad([{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }]);
     expect(Number.isFinite(d(0.5, 0.5).x)).toBe(true);
+  });
+});
+
+describe("turnQuad", () => {
+  it("turns a quad about a point without changing its shape", () => {
+    const q = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], c = { x: 5, y: 5 };
+    const r = turnQuad(q, c, Math.PI / 2); // a quarter turn clockwise
+    expect(r[0].x).toBeCloseTo(10); expect(r[0].y).toBeCloseTo(0); expect(r[1].x).toBeCloseTo(10); expect(r[1].y).toBeCloseTo(10);
+    const back = turnQuad(r, c, -Math.PI / 2); back.forEach((p, i) => { expect(p.x).toBeCloseTo(q[i].x); expect(p.y).toBeCloseTo(q[i].y); });
+    const wide = turnQuad(q, c, Math.PI / 2, 2, 1); // scaled axes: lengths in canvas pixels are kept
+    expect(Math.hypot((wide[1].x - wide[0].x) * 2, wide[1].y - wide[0].y)).toBeCloseTo(20);
   });
 });
 
@@ -99,4 +115,63 @@ describe("openQuadEditor", () => {
     document.body.innerHTML = ""; open({ frame: () => null }); raf.splice(0).forEach((f) => f(0)); expect(document.querySelector(".qe-meter span")!.textContent).toMatch(/No camera picture/);
     document.body.innerHTML = ""; open({ grid: 1 }); raf.splice(0).forEach((f) => f(0)); expect(document.querySelector<HTMLElement>(".qe-meter")!.hidden).toBe(true);
   });
+
+  it("turns the whole grid with the round handle at the bottom middle, and Shift snaps to 15 degrees", () => {
+    const { changes, cv } = open();
+    // default corners sit at 180,72 / 540,72 / 540,288 / 180,288 on the canvas; the handle sits at the bottom middle of the 720 x 360 canvas
+    cv.dispatchEvent(ptr("pointerdown", 360, 360 - 18 - 12));
+    cv.dispatchEvent(ptr("pointermove", 220, 180)); // from straight down to straight left: a quarter turn clockwise
+    const q = parseCorners(changes[changes.length - 1])!;
+    expect(q[0].x).toBeCloseTo(65, 0); expect(q[0].y).toBeCloseTo(0, 0);
+    cv.dispatchEvent(ptr("pointerup", 220, 180));
+    cv.dispatchEvent(ptr("pointermove", 400, 100)); // no drag now: nothing changes
+    expect(parseCorners(changes[changes.length - 1])![0].x).toBeCloseTo(q[0].x, 3);
+  });
+
+  it("turns the board in 3D when the picture backs up the grid's perspective, so the far edge keeps its foreshortening", () => {
+    const pic = shoot(new VirtualTable(), "A"), c = rigCorners(RIGS.A);
+    const { changes, cv } = open({ frame: () => pic, value: fmtCorners(c) } as never);
+    const W = 720, H = Math.round((W * pic.height) / pic.width), k = W / pic.width;
+    cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: W, height: H, right: W, bottom: H, x: 0, y: 0, toJSON() {} });
+    const cx = c.reduce((a, p) => a + p.x, 0) / 4 * k, cy = c.reduce((a, p) => a + p.y, 0) / 4 * k;
+    const hx = W / 2, hy = H - 18 - 12; // the rotate handle, bottom middle
+    cv.dispatchEvent(ptr("pointerdown", hx, hy));
+    const side = quadSideRatio(c);
+    // drag the handle a quarter of the way round, in the board's own plane
+    const m = squareToQuad(c), to = m(1.4, 0.5); // straight out to the right of the board's middle: a quarter turn clockwise from "up"
+    cv.dispatchEvent(ptr("pointermove", to.x * k, to.y * k));
+    const q = parseCorners(changes[changes.length - 1])!;
+    expect(quadSideRatio(q)).not.toBeCloseTo(side, 2); // a flat turn would keep the shape; a 3D turn re-projects it
+    const centre = squareToQuad(q)(0.5, 0.5), c0 = squareToQuad(c)(0.5, 0.5);
+    expect(Math.abs(centre.x - c0.x)).toBeLessThan(3); expect(Math.abs(centre.y - c0.y)).toBeLessThan(3); // about the board's middle (the grid may have snapped a pixel or two onto the picture's edges first)
+  });
+  it("a corner dragged across the box turns it instead of criss-crossing, and the board never goes upside down", () => {
+    const names = ["a8", "h8", "h1", "a1"], { changes, cv } = open({ names } as never);
+    // h8 is at 540,72 on the canvas; drag it over to the far bottom-left
+    cv.dispatchEvent(ptr("pointerdown", 540, 72));
+    cv.dispatchEvent(ptr("pointermove", 200, 280));
+    cv.dispatchEvent(ptr("pointermove", 190, 300));
+    cv.dispatchEvent(ptr("pointerup", 190, 300));
+    const q = parseCorners(changes[changes.length - 1])!;
+    expect(quadValid(q)).toBe(true); expect(quadUpright(q, true)).toBe(true);
+    // and the round handle, pulled straight down (a half turn), stops short of upside down
+    key("Escape"); // close the first editor so the next one is the only canvas
+    const { changes: c2, cv: cv2 } = open({ names } as never);
+    cv2.dispatchEvent(ptr("pointerdown", 360, 32));
+    cv2.dispatchEvent(ptr("pointermove", 500, 180)); cv2.dispatchEvent(ptr("pointermove", 360, 330)); cv2.dispatchEvent(ptr("pointermove", 220, 200));
+    const r = parseCorners(c2[c2.length - 1])!;
+    expect(quadValid(r)).toBe(true); expect(Math.abs(boardTilt(r))).toBeLessThanOrEqual(111) // the corners are rounded when written out;
+  });
+  it("the centre guess and the OCR are optional switches, off until turned on, and remembered", () => {
+    localStorage.removeItem("cx.align.opts");
+    open();
+    const find = (t: string) => [...document.querySelectorAll<HTMLElement>(".qe-btn")].find((b) => b.textContent!.startsWith(t))!;
+    expect(find("Centre guess").textContent).toBe("Centre guess: off"); expect(find("Read letters").textContent).toBe("Read letters (OCR): off");
+    find("Read letters").click(); expect(find("Read letters").textContent).toBe("Read letters (OCR): on"); expect(JSON.parse(localStorage.getItem("cx.align.opts")!)).toEqual({ centre: false, ocr: true });
+    find("Centre guess").click(); expect(JSON.parse(localStorage.getItem("cx.align.opts")!)).toEqual({ centre: true, ocr: true });
+    find("Read letters").click(); find("Centre guess").click(); expect(JSON.parse(localStorage.getItem("cx.align.opts")!)).toEqual({ centre: false, ocr: false });
+  });
 });
+
+/** Top edge over bottom edge: how much the far side is foreshortened. */
+const quadSideRatio = (q: { x: number; y: number }[]) => Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) / Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y);

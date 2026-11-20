@@ -5,6 +5,7 @@ import { Graph } from "./core/graph";
 import { createRegistry } from "./plugins";
 import { initialSceneState } from "./scene/types";
 import { virtualTable } from "./sim/virtualTable";
+import { WORKFLOWS } from "./workflows";
 
 vi.mock("./world/view", () => ({ WorldView: class { showFrusta = true; showProjection = true; renders = 0; constructor() {} setMapping() {} render() { this.renders++; } } }));
 vi.mock("./setup/devices", () => ({ listCameras: vi.fn(async () => []), openCamera: vi.fn(async () => ({ getTracks: () => [] })) }));
@@ -79,7 +80,7 @@ describe("returning launch", () => {
     history.replaceState(null, "", "#"); document.body.innerHTML = '<div id="app"></div>'; root = document.getElementById("app")!; localStorage.setItem("cx.graph.v1", "{{{");
     expect(boot(root).graph.nodes.size).toBeGreaterThan(10);
   });
-  it("falls back to defaults when storage is unreadable", () => { finishSetup(); vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); }); expect(boot(root).graph.nodes.size).toBeGreaterThan(10); });
+  it("falls back to defaults when storage is unreadable", () => { finishSetup(); vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); }); expect(boot(root).graph.nodes.size).toBeGreaterThanOrEqual(10); }); // the first-run modular demo
   it("survives storage that refuses writes", () => {
     finishSetup(); const app = boot(root); vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("full"); });
     app.editor.onChange(); // autosave fails quietly
@@ -291,8 +292,8 @@ describe("workflows", () => {
   it("the Workflows button loads a demo into the live patch, and Ctrl+Z brings the old one back", () => {
     finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
     (document.getElementById("workflows") as HTMLButtonElement).click();
-    expect(document.querySelectorAll(".wf-row")).toHaveLength(7);
-    (document.querySelector(".wf-row button") as HTMLButtonElement).click();
+    expect(document.querySelectorAll(".wf-row")).toHaveLength(WORKFLOWS.length);
+    [...document.querySelectorAll<HTMLElement>(".wf-row")].find((r) => r.querySelector("b")!.textContent === WORKFLOWS[0].name)!.querySelector("button")!.click(); // the modular demo is listed first, so pick by name
     expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);
   });
@@ -368,7 +369,7 @@ describe("phone remote", () => {
       return { ok: true, json: async () => ({}) };
     }));
     const copy = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: copy }, configurable: true });
-    const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
+    finishSetup(); const app = boot(root); app.step(0); await new Promise((r) => setTimeout(r, 10)); // a saved setup, so the game runs on virtual cameras
     root.querySelector<HTMLElement>("#phone")!.click();
     expect(document.querySelector(".notice-title")!.textContent).toBe("This PC’s join code: 4321"); expect(document.querySelector(".notice-msg")!.textContent).toContain("4321"); expect(document.querySelector(".notice-details")!.textContent).toContain("10.0.0.5");
     [...document.querySelectorAll<HTMLElement>(".notice button")].find((b) => b.textContent === "Copy address")!.click(); expect(copy).toHaveBeenCalledWith("http://10.0.0.5:5173/#/remote?code=4321");
@@ -381,4 +382,22 @@ describe("phone remote", () => {
     const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
     root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-details")!.textContent).toContain("Connect this computer to Wi-Fi"); expect(document.querySelector(".notice-msg")!.textContent).toContain("No phone is connected yet");
   });
+});
+
+
+it("Ctrl+F searches the workflow and Enter opens the assistant with the query and matches", async () => {
+  const { AssistantPanel } = await import("./ui/assistantPanel");
+  const submit = vi.spyOn(AssistantPanel.prototype, "submit").mockImplementation(() => {});
+  finishSetup(); const app = boot(root);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true }));
+  const finder = document.querySelector<HTMLElement>(".app-search")!;
+  expect(finder.hidden).toBe(false);
+  const scope = finder.querySelector("select")!, input = finder.querySelector("input")!;
+  input.value = "vision.boardReader"; scope.value = "everywhere"; scope.dispatchEvent(new Event("change"));
+  expect(document.body.classList.contains("simple")).toBe(false);
+  expect(app.editor.selection()).toHaveLength(1); expect(root.querySelector(".search-match")).toBeTruthy();
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  expect(app.route()).toEqual({ page: "assistant" }); expect(finder.hidden).toBe(false);
+  expect(submit).toHaveBeenCalledOnce(); expect(submit.mock.calls[0][0]).toContain("vision.boardReader");
+  expect(submit.mock.calls[0][0]).toContain("Board Reader (Workflow");
 });

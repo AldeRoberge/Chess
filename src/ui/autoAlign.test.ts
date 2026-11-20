@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
 import { squareToQuad } from "./quadMap";
 import { traceSquareGuide } from "./boardGuide";
-import { AlignFollower, AutoAligner, candidateLayouts, evaluate, rememberLayout, rememberedLayouts } from "./autoAlign";
+import { AlignFollower, AutoAligner, candidateLayouts, evaluate, plausibleBoard, rememberLayout, rememberedLayouts } from "./autoAlign";
 
 /** A checkerboard seen with some perspective: the unit square is mapped through the quad `c` (a8,h8,h1,a1), a1 dark. */
 function render(c: Pt[], W = 480, H = 360): GrayFrame {
@@ -124,11 +124,68 @@ describe("AlignBatch", () => {
   it("aligns several boards, never more than the limit at once", async () => {
     const { AlignBatch } = await import("./autoAlign");
     const fr = render(TRUE), off = TRUE.map((p, i) => ({ x: p.x + [10, -8, 7, -9][i], y: p.y + [-7, 8, 9, -6][i] }));
-    const b = new AlignBatch([1, 2, 3, 4, 5].map((n) => ({ id: `c${n}`, frame: fr, start: off })), 3, 0, undefined, 2);
+    // Scheduling must not depend on coverage overhead or other work on the machine.
+    let clock = 0;
+    const b = new AlignBatch([1, 2, 3, 4, 5].map((n) => ({ id: `c${n}`, frame: fr, start: off })), 3, 0, () => ++clock, 2);
     let peak = 0; const seen = new Set<number>();
     for (let i = 0; i < 5000 && b.step(50); i++) { peak = Math.max(peak, b.active); seen.add(b.active); }
     expect(peak).toBe(3); expect(seen.has(2)).toBe(true); // starts with 2, then scales up to the limit
     expect(b.results.size).toBe(5);
     for (const r of b.results.values()) { expect(r.phase).toBe("done"); expect(worst(r.corners, TRUE)).toBeLessThan(4.5); }
   }, 60000);
+});
+
+describe("AutoAligner with board labels", () => {
+  it("lists the labels' corners first", async () => {
+    const { candidateLayouts } = await import("./autoAlign");
+    const f = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200).fill(128), t: 0 };
+    const guess = [{ x: 20, y: 20 }, { x: 180, y: 20 }, { x: 180, y: 180 }, { x: 20, y: 180 }];
+    expect(candidateLayouts(f, null, [], [guess])[0]).toEqual(guess);
+  });
+  it("starts at once without waiting for the OCR, then still finishes", async () => {
+    const { AutoAligner } = await import("./autoAlign");
+    const f = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200).fill(128), t: 0 };
+    const start = [{ x: 30, y: 30 }, { x: 170, y: 30 }, { x: 170, y: 170 }, { x: 30, y: 170 }];
+    const a = new AutoAligner(f, start, 0);
+    a.expectLabels(new Promise(() => {})); // never answers
+    for (let i = 0; i < 400 && a.step(50); i++);
+    expect(a.done).toBe(true);
+  });
+  it("tries the labels' corners when they arrive mid-search", async () => {
+    const { AutoAligner } = await import("./autoAlign");
+    const f = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200).fill(128), t: 0 };
+    const start = [{ x: 30, y: 30 }, { x: 170, y: 30 }, { x: 170, y: 170 }, { x: 30, y: 170 }];
+    const guess = [{ x: 10, y: 10 }, { x: 190, y: 10 }, { x: 190, y: 190 }, { x: 10, y: 190 }];
+    const a = new AutoAligner(f, start, 0);
+    a.expectLabels(Promise.resolve([guess]));
+    const seen: string[] = [];
+    for (let i = 0; i < 2000 && a.step(5); i++) { seen.push(a.label); await Promise.resolve(); }
+    expect(a.done).toBe(true);
+    expect(seen.some((l) => /Trying layout \d of [2-9]/.test(l))).toBe(true);
+  });
+  it("carries on without labels when the reading fails", async () => {
+    const { AutoAligner } = await import("./autoAlign");
+    const f = { width: 100, height: 100, data: new Uint8ClampedArray(100 * 100).fill(128), t: 0 };
+    const a = new AutoAligner(f, null, 0);
+    a.expectLabels(Promise.reject(new Error("x")));
+    for (let i = 0; i < 100 && a.step(50); i++) await Promise.resolve();
+    expect(a.done).toBe(true);
+  });
+});
+
+describe("plausibleBoard", () => {
+  const f = { width: 640, height: 480 };
+  const box = (x0: number, y0: number, x1: number, y1: number): Pt[] => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  it("accepts a board of ordinary size, even with a corner a little outside", () => {
+    expect(plausibleBoard(box(120, 60, 520, 420), f)).toBe(true);
+    expect(plausibleBoard(box(-20, 30, 480, 470), f)).toBe(true);
+  });
+  it("never assumes a speck or a giant board", () => {
+    expect(plausibleBoard(box(300, 220, 340, 260), f)).toBe(false); // tiny
+    expect(plausibleBoard(box(-800, -600, 1400, 1100), f)).toBe(false); // enormous
+  });
+  it("rejects a board that is mostly out of bounds", () => {
+    expect(plausibleBoard(box(400, 100, 1000, 450), f)).toBe(false);
+    expect(plausibleBoard([{ x: NaN, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], f)).toBe(false);
+  });
 });

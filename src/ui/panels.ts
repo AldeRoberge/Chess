@@ -16,6 +16,7 @@ import { PIECE_SETS, pieceImage, pieceSet, setPieceSet } from "./pieceSets";
 import { BOARD_THEMES, boardTheme, setBoardTheme } from "./boardThemes";
 import { openChannel, type CalibCmd, type InMsg } from "./channel";
 import { drawBotAvatar, drawGrabHand } from "./botAvatar";
+import { botKnightSvg } from "./botIcon";
 import { withIcon } from "./icons";
 import type { Tip, TipRow } from "./tooltip";
 import { fenPieces, looksLikeStart } from "../plugins/shared";
@@ -207,7 +208,7 @@ export class TablePanel {
     const p = this.pending; this.promo.hidden = !p; if (!p) return;
     this.promo.append(el("span", "", "Promote to"));
     for (const ch of p.choices) {
-      const b = el("button", "", `${PROMO[ch]} (${ch})`); b.type = "button";
+      const b = withIcon(el("button", "", `${PROMO[ch]} (${ch})`), ({ q: "queen", r: "rook", b: "bishop", n: "knight" } as Record<string, string>)[ch]); b.type = "button";
       b.onclick = () => this.commit(p.from + p.to + ch);
       this.promo.append(b);
     }
@@ -292,7 +293,9 @@ export class TablePanel {
     const bot = bus.botColor === color;
     row.dataset.color = color;
     row.classList.toggle("to-move", toMove);
-    row.querySelector(".cc-avatar")!.textContent = color === "w" ? "W" : "B";
+    const avatar = row.querySelector<HTMLElement>(".cc-avatar")!;
+    if (bot) { if (avatar.dataset.bot !== "1") { avatar.dataset.bot = "1"; avatar.innerHTML = botKnightSvg(true, 42); avatar.setAttribute("role", "img"); avatar.setAttribute("aria-label", "Stockfish"); } }
+    else if (avatar.dataset.bot === "1" || avatar.textContent !== (color === "w" ? "W" : "B")) { delete avatar.dataset.bot; avatar.removeAttribute("role"); avatar.removeAttribute("aria-label"); avatar.textContent = color === "w" ? "W" : "B"; }
     row.querySelector(".cc-name")!.textContent = bot ? (bus.director?.elo ? `Stockfish ${bus.director.elo}` : "Stockfish") : (color === "w" ? "White" : "Black");
     row.querySelector(".cc-cap")!.textContent = captured || (toMove ? "to move" : "");
     const clock = row.querySelector<HTMLElement>(".cc-clock")!, c = bus.clock;
@@ -325,7 +328,7 @@ export class TablePanel {
     this.paintSide(this.botSeat, top === "w" ? "b" : "w", missing(top === "w" ? "w" : "b"));
     const head = el("div", "cc-moves-head"); head.append(el("span", "", "Moves"));
     if (hist.length) {
-      const live = el("button", this.viewPly === null ? "on" : "", "Live"); live.type = "button";
+      const live = withIcon(el("button", this.viewPly === null ? "on" : "", "Live"), "live"); live.type = "button";
       live.setAttribute("aria-label", "Follow the live game"); live.setAttribute("aria-pressed", String(this.viewPly === null));
       live.onclick = () => { this.viewPly = null; this.paintGame(); this.paintBoardAria(); };
       head.append(live);
@@ -334,7 +337,7 @@ export class TablePanel {
     for (let i = 0; i < hist.length; i += 2) {
       const tr = el("tr"); tr.append(el("th", "", String(i / 2 + 1)));
       const cell = (san: string, ply: number, side: "White" | "Black") => {
-        const td = el("td"), b = el("button", "", san); b.type = "button";
+        const td = el("td"), b = withIcon(el("button", "", san), "pawn", 12); b.type = "button";
         b.setAttribute("aria-label", `Move ${i / 2 + 1}, ${side} ${san}: show this position`);
         if (this.viewPly === ply) { b.classList.add("on"); b.setAttribute("aria-current", "true"); }
         b.onclick = () => { this.viewPly = ply; this.paintGame(); this.paintBoardAria(); };
@@ -502,7 +505,12 @@ export class TablePanel {
 /** 3D simulation + projection mapping: scan import, projector rig, auto-calibration, output windows. */
 export class WorldPanel {
   root = el("div", "panel world");
-  view: WorldView;
+  /** Built on first use: until the 3D tab is opened there is no WebGL context at all. */
+  private _view: WorldView | null = null;
+  get view(): WorldView {
+    if (!this._view) { const v = this._view = new WorldView(this.cv, this.cfg); v.showFrusta = viewSettings().display.frusta; if (!this.showProjection) { v.showProjection = false; v.setMapping(this.cfg); } }
+    return this._view;
+  }
   cfg: MappingConfig = loadMapping();
   private cv = el("canvas", "world-cv");
   private status = el("div", "muted");
@@ -512,8 +520,8 @@ export class WorldPanel {
 
   constructor(private graph: Graph) {
     const bar = el("div", "bar");
-    const frusta = this.toggle("Projector frusta", viewSettings().display.frusta, (v) => { this.view.showFrusta = v; setDisplay({ frusta: v }); });
-    const proj = this.toggle("Projected content", true, (v) => { this.view.showProjection = v; this.view.setMapping(this.cfg); });
+    const frusta = this.toggle("Projector frusta", viewSettings().display.frusta, (v) => { setDisplay({ frusta: v }); if (this._view) this._view.showFrusta = v; });
+    const proj = this.toggle("Projected content", true, (v) => { this.showProjection = v; if (this._view) { this._view.showProjection = v; this._view.setMapping(this.cfg); } });
     const scan = withIcon(el("label", "btn", "Import room scan (.glb/.obj)"), "open"); scan.dataset.tip = "Import room scan"; scan.dataset.tipBody = "Loads a 3D scan of the room, finds the flat surfaces (table, walls, floor) and maps the projectors onto them."; scan.dataset.tipTag = "file .glb · .obj"; const file = el("input"); file.type = "file"; file.accept = ".glb,.gltf,.obj"; file.hidden = true; scan.append(file);
     file.onchange = () => file.files?.[0] && void this.importScan(file.files[0]);
     const reset = withIcon(el("button", "", "Default room"), "room"); reset.dataset.tip = "Default room"; reset.dataset.tipBody = "Forgets the imported scan and projector poses and goes back to the built-in room."; reset.dataset.tipTag = "resets mapping"; reset.onclick = () => { this.cfg = defaultMapping(); this.apply(); };
@@ -522,7 +530,6 @@ export class WorldPanel {
     bar.append(frusta, proj, scan, reset, blackout, allLive);
     const rig = el("div", "rig");
     this.root.append(bar, this.cv, rig, this.status);
-    this.view = new WorldView(this.cv, this.cfg);
     registerContextMenu(this.cv, () => viewMenu([
       { kind: "action", label: "Reset camera", run: () => this.view.resetCamera() },
       { kind: "action", label: "Default room", run: () => { this.cfg = defaultMapping(); this.apply(); } },
@@ -537,7 +544,8 @@ export class WorldPanel {
     l.dataset.tipBody = { "Projector frusta": "Draws the cone of light each projector throws, so you can see what it covers.", "Projected content": "Shows the overlay (move hints, clock, menu) as it lands on the table, as the projector would draw it." }[label] ?? ""; const c = el("input"); c.type = "checkbox"; c.checked = on; c.onchange = () => cb(c.checked); l.append(c, document.createTextNode(label)); return l;
   }
 
-  private apply() { saveMapping(this.cfg); this.view.setMapping(this.cfg); this.ch.postMessage({ type: "mapping" }); }
+  private showProjection = true;
+  private apply() { saveMapping(this.cfg); this._view?.setMapping(this.cfg); this.ch.postMessage({ type: "mapping" }); }
   private calib(cmd: CalibCmd) { this.ch.postMessage({ type: "calib", cmd }); }
 
   private renderRig(rig: HTMLElement) {

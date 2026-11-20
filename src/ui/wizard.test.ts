@@ -109,9 +109,11 @@ describe("cameras step", () => {
     const rows = () => [...w.root.querySelectorAll<HTMLElement>("table.halo-cams tbody tr.sys-row")];
     expect(rows().map((r) => r.querySelector(".sys-name")!.textContent)).toEqual(["A · Virtual camera A", "B · Virtual camera B"]);
     expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Simulated"); expect(rows()[0].querySelector("canvas.halo-cam-thumb")).toBeTruthy();
-    const on = () => rows()[0].querySelector<HTMLButtonElement>('button[aria-pressed]')!;
-    expect(on().getAttribute("aria-pressed")).toBe("true");
-    on().click(); expect(w.cfg.cameras[0].online).toBe(false); expect(on().getAttribute("aria-pressed")).toBe("false"); expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Offline");
+    const on = () => rows()[0].querySelector<HTMLButtonElement>('button.sys-act')!;
+    expect(on().textContent).toBe("Turn off"); expect(on().getAttribute("aria-label")).toBe("Turn off camera A");
+    expect(rows()[0].querySelector(".halo-cam-live-dot")).toBeTruthy();
+    on().click(); expect(w.cfg.cameras[0].online).toBe(false); expect(on().textContent).toBe("Turn on"); expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Offline");
+    expect(rows()[0].querySelector(".halo-cam-live-dot")).toBeNull();
     w.cfg.cameras.push(webcamSetup("x", "Real", "C")); (w as any).render(); expect(rows()).toHaveLength(3);
     expect(w.root.querySelector(".sys-sum")!.textContent).toBe("2 of 3 online");
   });
@@ -415,4 +417,18 @@ describe("briefing: build and CI chips", () => {
     await vi.waitFor(() => expect(w.root.querySelector(".halo-build")!.textContent).toContain("CI unavailable"));
     expect(w.root.querySelectorAll(".halo-build .chip")[1].tagName).toBe("SPAN");
   });
+});
+
+
+it("search reveals the correct repeated nested setting and opens only its ancestors", async () => {
+  const { settingSearchEntries } = await import("./wizardSteps");
+  const { w } = make();
+  w.state.groups.corners = false; w.state.groups["corner.h1"] = false;
+  const match = settingSearchEntries(w.cfg, w.state).find(e => e.label === "Across (x)" && e.location.endsWith("h1"))!;
+  const before = JSON.stringify(w.cfg);
+  const row = w.revealSearch(match.step, match.path);
+  expect(w.stepId).toBe("board"); expect(w.state.groups.corners).toBe(true);
+  expect(w.state.groups["corner.h1"]).toBe(true); expect(row?.dataset.searchPath).toBe(match.path.join("."));
+  expect(row?.querySelector(".halo-label")?.textContent).toBe("Across (x)");
+  expect(JSON.stringify(w.cfg)).toBe(before); w.destroy();
 });

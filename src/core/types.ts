@@ -2,6 +2,9 @@ import type { TipPreview, TipRow } from "../ui/tooltip";
 /** Port data types. Ports only connect when types match (or either side is "any"). */
 export type PortType =
   | "frame" // GrayFrame
+  | "flat" // FlatBoard (the board cut out of the camera picture and straightened)
+  | "view" // BoardView (the board as the camera sees it, rotated upright, everything outside its outline blacked out)
+  | "reading" // Reading (one detector's piece / no piece / colour opinion of the 64 squares)
   | "obs" // SquareObs (one camera's reading of the board)
   | "board" // BoardBelief (fused / stabilised 64 squares)
   | "game" // GameState (validated position + last move + fidelity)

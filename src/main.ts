@@ -1,3 +1,4 @@
+import { withIcon } from "./ui/icons";
 import "./style.css";
 import "./ui/theme.css";
 import { applyAppTheme, onAppTheme, watchSystemScheme } from "./ui/appTheme";
@@ -32,6 +33,6 @@ function showStartupError(error: unknown) {
   const message = document.createElement("p");
   message.setAttribute("role", "alert");
   message.textContent = `Unable to open the page. ${error instanceof Error ? error.message : String(error)}`;
-  const retry = document.createElement("button"); retry.textContent = "Try again"; retry.onclick = () => location.reload();
+  const retry = document.createElement("button"); retry.textContent = "Try again"; withIcon(retry, "refresh"); retry.onclick = () => location.reload();
   document.getElementById("app")!.replaceChildren(message, retry);
 }

@@ -1,3 +1,5 @@
+import { botKnightImage } from "./botIcon";
+
 /**
  * The bot's body, drawn in the table margin on the far side (board units, board at 0..8, `px` pixels per unit).
  * `color` is the side the bot plays: black sits at the top, white at the bottom. `busy` makes the eyes glow amber
@@ -9,6 +11,17 @@ export function drawBotAvatar(c: CanvasRenderingContext2D, px: number, color: "w
   const lean = look ? Math.max(-0.35, Math.min(0.35, (look.x - 4) * 0.07)) : 0;
   const hx = 4 + lean + Math.sin(t * 1.3) * 0.04, hv = 1.7;
   c.save();
+  const knight = botKnightImage();
+  if (knight) { // the app's knight, made cute, stands still on the table margin and only animates (hops, sways toward its hand, amber glow) while it moves
+    // it stands perfectly still until it moves a piece: then it hops, sways and leans toward its hand
+    const go = busy ? 1 : 0, size = X(1.9), cx = X(4 + go * lean * 1.6), cy = Y(1.45) - go * Math.abs(Math.sin(t * 5)) * X(0.08);
+    if (busy) { const g = c.createRadialGradient(cx, cy, size * 0.15, cx, cy, size * 0.75); g.addColorStop(0, "rgba(255,179,71,.55)"); g.addColorStop(1, "rgba(255,179,71,0)"); c.fillStyle = g; c.beginPath(); c.arc(cx, cy, size * 0.75, 0, Math.PI * 2); c.fill(); }
+    const foot = Y(1.45) + size * 0.43;
+    c.fillStyle = "rgba(0,0,0,.22)"; c.beginPath(); c.ellipse(cx, foot, size * 0.32, size * 0.07, 0, 0, Math.PI * 2); c.fill(); // soft shadow under its base
+    c.save(); c.translate(cx, cy + size * 0.43); c.rotate(go * (lean * 0.6 + Math.sin(t * 4) * 0.05)); c.drawImage(knight, -size / 2, -size * 0.93, size, size); c.restore();
+    c.restore();
+    return;
+  }
   // shoulders
   c.fillStyle = "#34425c"; c.strokeStyle = "#1c2536"; c.lineWidth = 2;
   c.beginPath(); c.ellipse(X(4), Y(2.3), X(2.1), X(0.6), 0, 0, Math.PI * 2); c.fill(); c.stroke();

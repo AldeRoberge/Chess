@@ -17,6 +17,19 @@ const settled = (g: Chess, flip?: number[]): BoardBelief => {
 };
 
 describe("PositionTracker", () => {
+  it.each([0.45, 0.55])("accepts a move whose destination is firmly occupied but its colour unreadable (white=%s)", (w) => {
+    const tracker = new PositionTracker();
+    const game = new Chess();
+    game.move("Nf3");
+    tracker.play("g1", "f3", undefined, 0);
+    const after = new Chess(game.fen());
+    after.move("Nf6");
+    const b = settled(after);
+    b.white[21] = w; b.conf[21] = 0.1; // f6: seen, colour a coin flip
+    let r = tracker.observe(b);
+    for (let i = 0; i < 3 && r.status !== "moved"; i++) r = tracker.observe(b);
+    expect(r.history).toEqual(["Nf3", "Nf6"]);
+  });
   it("detects a faint single-camera knight move through fusion and hysteresis", () => {
     const tracker = new PositionTracker(), fusion = new Fusion(), filter = new Stabilizer();
     const game = new Chess();

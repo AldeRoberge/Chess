@@ -42,6 +42,7 @@ export function displayItems(): CtxItem[] {
     { kind: "toggle", label: "Legal-move dots", get: () => d().legalMoves, set: (v) => setDisplay({ legalMoves: v }) },
     { kind: "toggle", label: "Move hints", get: () => d().hints, set: (v) => setDisplay({ hints: v }) },
     { kind: "toggle", label: "Last-move highlight", get: () => d().lastMove, set: (v) => setDisplay({ lastMove: v }) },
+    { kind: "toggle", label: "3D view tab", get: () => d().world3d, set: (v) => setDisplay({ world3d: v }), hint: "Turn off to hide the 3D tab and never build the 3D scene. Saves GPU and memory." },
   ];
 }
 

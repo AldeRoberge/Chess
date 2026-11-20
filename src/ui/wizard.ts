@@ -122,6 +122,22 @@ export class SetupWizard {
     if (i < 0 || i === this.step) return;
     this.step = i; this.focus = 0; this.zone = "steps"; this.enterStep(); this.render();
   }
+  /** Open only the ancestors of a search match, without activating any setting. */
+  revealSearch(step: string, path: number[]): HTMLElement | null {
+    this.setStep(step);
+    let items = STEPS[this.step].items({ ...this.ctx(), searchOnly: true });
+    let target: Item | undefined;
+    for (let depth = 0; depth < path.length; depth++) {
+      target = items[path[depth]];
+      if (!target) return null;
+      if (target.kind === "group") { target.set(true); items = target.children; }
+    }
+    this.renderList();
+    if (!path.length) return this.title;
+    const row = [...this.list.children].find(el => (el as HTMLElement).dataset.searchPath === path.join(".")) as HTMLElement | undefined;
+    row?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    return row ?? null;
+  }
   destroy() { document.getElementById("app")?.removeAttribute("inert"); window.removeEventListener("keydown", this.onKey); this.stopStream(); this.stopCamPreviews(); this.root.remove(); }
 
   // ---- context handed to the step definitions
@@ -148,15 +164,17 @@ export class SetupWizard {
 
   /** Nesting depth of each listed item (0 = top level). Open groups are flattened into the list, so focus and keys walk them like any row. */
   private depth = new WeakMap<Item, number>();
+  private searchPaths = new WeakMap<Item, string>();
   private items(): Item[] {
     const out: Item[] = [];
-    const walk = (list: Item[], d: number) => {
-      for (const it of list) {
-        out.push(it); this.depth.set(it, d);
-        if (it.kind === "group" && it.get()) walk(it.children, d + 1);
-      }
+    const walk = (list: Item[], d: number, path: number[]) => {
+      list.forEach((it, i) => {
+        const here = [...path, i];
+        out.push(it); this.depth.set(it, d); this.searchPaths.set(it, here.join("."));
+        if (it.kind === "group" && it.get()) walk(it.children, d + 1, here);
+      });
     };
-    walk(STEPS[this.step].items(this.ctx()), 0);
+    walk(STEPS[this.step].items(this.ctx()), 0, []);
     return out;
   }
   private focusables() { return this.items().map((it, i) => ({ it, i })).filter((x) => isFocusable(x.it)); }
@@ -259,9 +277,10 @@ export class SetupWizard {
     void this.deps.openCamera(cam.deviceId).then((s) => {
       if (this.streamFor !== cam.deviceId) { s.getTracks().forEach((t) => t.stop()); return; }
       this.stream = s;
-      this.video = document.createElement("video"); this.video.muted = true; this.video.srcObject = s; void this.video.play();
-    }).catch(() => { this.stream = null; if (this.streamFor === cam.deviceId) this.streamFor = ""; });
+      this.video = document.createElement("video"); this.video.muted = true; this.video.playsInline = true; this.video.srcObject = s; void this.video.play().catch(() => {});
+    }).catch(() => { this.stream = null; if (this.streamFor === cam.deviceId) { this.streamFor = ""; this.retryAt = performance.now() + 2500; } });
   }
+  private retryAt = 0;
   private stopStream() { this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; this.video = null; this.streamFor = ""; }
 
   private pointer(kind: "down" | "move" | "up", e?: PointerEvent) {
@@ -283,9 +302,13 @@ export class SetupWizard {
   frame(now: number) {
     for (const a of this.pad.poll(now)) this.handle(a);
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0.016; this.lastFrame = now;
-    const id = STEPS[this.step].id, ctx = this.canvas.getContext("2d")!;
+    const id = STEPS[this.step].id, ctx = this.canvas.getContext("2d", { willReadFrequently: true })!;
     if (id === "scenes") this.scr.draw(ctx, this.canvas.width, this.canvas.height, this.state.scenePreview, now, dt);
-    else if (id === "board" && this.cfg.cameras.length) this.drawBoardPreview(ctx, now);
+    else if (id === "board" && this.cfg.cameras.length) {
+      // a failed or timed-out open (camera briefly busy) is retried instead of leaving "No signal" forever
+      if (!this.streamFor && this.retryAt && performance.now() >= this.retryAt) { this.retryAt = 0; this.ensureVideo(); }
+      this.drawBoardPreview(ctx, now);
+    }
     else if (id === "cameras") this.drawCamPreviews(now);
   }
 
@@ -518,11 +541,15 @@ export class SetupWizard {
       const nm = el("td", "sys-name"); nm.innerHTML = `<span class="sys-ico">${icon(cam.kind === "virtual" ? "world" : "camera", 16)}</span>`; nm.append(`${cam.id} · ${cam.label}`);
       const pv = el("td", "halo-cam-cell"); pv.append(p.canvas);
       const sv = el("td", "sys-val", st.text);
+      if (st.tone === "ok") {
+        const dot = el("span", "halo-cam-live-dot"); dot.setAttribute("aria-hidden", "true"); sv.prepend(dot);
+      }
       const tog = el("td", "sys-tog"), wrap = el("div", "sys-acts");
 
-      const on = el("button", `sys-act${cam.online ? "" : " hot"}`); on.type = "button"; on.setAttribute("aria-pressed", String(cam.online));
-      on.setAttribute("aria-label", `${cam.id}: ${cam.online ? "online" : "offline"}, switch`);
-      on.innerHTML = `<span>${cam.online ? "Online" : "Offline"}</span>`; on.dataset.tip = "Online or offline"; on.dataset.tipBody = "An offline camera is ignored by the tracker until you switch it back on.";
+      const action = cam.online ? "Turn off" : "Turn on";
+      const on = el("button", `sys-act${cam.online ? "" : " hot"}`); on.type = "button";
+      on.setAttribute("aria-label", `${action} camera ${cam.id}`);
+      on.innerHTML = `${icon(cam.online ? "stop" : "play", 14)}<span>${action}</span>`; on.dataset.tip = `${action} camera`; on.dataset.tipBody = cam.online ? "Stops this camera. The tracker ignores it until you turn it back on." : "Starts this camera so the tracker can use it again.";
       on.onclick = (e) => { e.stopPropagation(); cam.online = !cam.online; this.deps.sfx.play("tick"); this.render(); };
       wrap.append(on);
       if (st.action) {
@@ -682,6 +709,7 @@ export class SetupWizard {
     let k = -1;
     items.forEach((it, i) => {
       const li = el("li", `halo-item ${it.kind}`);
+      li.dataset.searchPath = this.searchPaths.get(it);
       if (isFocusable(it)) {
         k++;
         const idx = k;

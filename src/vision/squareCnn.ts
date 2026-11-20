@@ -140,3 +140,32 @@ export class SquareCache {
     return this.probs;
   }
 }
+
+const logit = (p: number) => { const q = Math.min(0.999, Math.max(0.001, p)); return Math.log(q / (1 - q)); };
+const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+/** The network is tempered (logits divided by this) so a camera it has never seen cannot shout. */
+const TEMPERATURE = 2;
+/** Share of the final log-odds that comes from the network; the rest stays with the brightness reader. */
+const NET_SHARE = 0.6;
+
+/**
+ * Mixes the network's reading into the brightness reader's, in place, in the log-odds domain so neither
+ * can zero a square on its own. Returns false (and leaves the brightness reading untouched) when the
+ * network's piece count is not believable: more than 32, or less than half of what the brightness reader sees.
+ * That is what a camera the model has never seen tends to look like, and one such camera must not wipe the board in fusion.
+ */
+export function blendReadings(occ: Float32Array, white: Float32Array, probs: Float32Array): boolean {
+  let rules = 0, net = 0;
+  for (let sq = 0; sq < 64; sq++) { if (occ[sq] > 0.5) rules++; if (probs[sq * 3] < 0.5) net++; }
+  if (net > 32 || (rules >= 6 && net < rules * 0.5)) return false;
+  for (let sq = 0; sq < 64; sq++) {
+    const e = probs[sq * 3], w = probs[sq * 3 + 1], b = probs[sq * 3 + 2];
+    const netOcc = Math.max(-3, Math.min(3, logit(1 - e) / TEMPERATURE));
+    occ[sq] = sigmoid(NET_SHARE * netOcc + (1 - NET_SHARE) * logit(occ[sq]));
+    if (w + b > 1e-6) {
+      const netWhite = Math.max(-3, Math.min(3, logit(w / (w + b)) / TEMPERATURE));
+      white[sq] = sigmoid(NET_SHARE * netWhite + (1 - NET_SHARE) * logit(white[sq]));
+    }
+  }
+  return true;
+}

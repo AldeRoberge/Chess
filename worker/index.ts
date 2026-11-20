@@ -10,6 +10,7 @@ export interface Env {
   ASSETS: { fetch(r: Request): Promise<Response> };
   /** Live phone room. Absent until the worker is deployed with the GameBridge migration. */
   BRIDGE?: BridgeNamespace;
+  LIMITS?: BridgeNamespace;
   ADMIN_PASSPHRASE?: string;
   /** Dashboard secrets (`wrangler secret put`). Used when KV has no key for that vendor. */
   OPENAI_API_KEY?: string;
@@ -58,17 +59,36 @@ const cors = (req: Request): Record<string, string> => {
   return o ? { "Access-Control-Allow-Origin": o, Vary: "Origin", "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS" } : {};
 };
 
-/** Fixed-window counter in KV. Returns false once `limit` is exceeded in the window. */
+// Local fallback is for tests/development; production uses the atomic LIMITS object.
+const localCounts = new WeakMap<KV, Map<string, { n: number; until: number }>>();
 async function hit(env: Env, key: string, limit: number, ttl: number): Promise<boolean> {
-  const n = Number((await env.KEYS.get(key)) || 0) + 1;
-  if (n > limit) return false;
-  await env.KEYS.put(key, String(n), { expirationTtl: ttl });
-  return true;
+  let counts = localCounts.get(env.KEYS);
+  if (!counts) { counts = new Map(); localCounts.set(env.KEYS, counts); }
+  const now = Date.now();
+  for (const [k, v] of counts) if (v.until <= now) counts.delete(k);
+  const previous = counts.get(key);
+  if (!previous && counts.size >= 10000) return false;
+  const n = (previous?.n ?? 0) + 1;
+  counts.set(key, { n, until: previous?.until ?? now + ttl * 1000 });
+  return n <= limit;
 }
 
+const keyCache = new WeakMap<KV, Map<Vendor, { value: string | null; until: number }>>();
 /** KV key if one was saved from the setup page, otherwise the Worker secret. */
 async function vendorKey(env: Env, vendor: Vendor): Promise<string | null> {
-  const fromKv = (await env.KEYS.get(`key:${vendor}`))?.trim();
+  let cache = keyCache.get(env.KEYS);
+  if (!cache) { cache = new Map(); keyCache.set(env.KEYS, cache); }
+  let entry = cache.get(vendor);
+  if (!entry || entry.until <= Date.now()) {
+    let value: string | null;
+    try { value = await env.KEYS.get(`key:${vendor}`); }
+    catch (error) {
+      if (!(vendor === "openai" ? env.OPENAI_API_KEY : env.ELEVENLABS_API_KEY)?.trim()) throw error;
+      value = null; // Dashboard secrets still work if the KV daily quota was already exhausted.
+    }
+    entry = { value, until: Date.now() + 60_000 }; cache.set(vendor, entry);
+  }
+  const fromKv = entry.value?.trim();
   if (fromKv) return fromKv;
   const fromEnv = (vendor === "openai" ? env.OPENAI_API_KEY : env.ELEVENLABS_API_KEY)?.trim();
   return fromEnv || null;
@@ -97,8 +117,15 @@ async function proxy(req: Request, env: Env, vendor: Vendor, path: string): Prom
   const ip = req.headers.get("CF-Connecting-IP") || "unknown";
   const minute = Math.floor(Date.now() / 60000);
   const day = new Date().toISOString().slice(0, 10);
-  if (!(await hit(env, `rl:${ip}:${minute}`, Number(env.RATE_PER_MIN) || 30, 120))) return json({ error: "rate limit: slow down" }, 429, { ...c, "Retry-After": "30" });
-  if (!(await hit(env, `daily:${vendor}:${day}`, Number(env.DAILY_LIMIT) || 3000, 90000))) return json({ error: "daily limit reached" }, 429, c);
+  if (env.LIMITS) {
+    const r = await env.LIMITS.get(env.LIMITS.idFromName("proxy")).fetch(new Request("https://limits.internal/", {
+      method: "POST", body: JSON.stringify({ ip, vendor, rate: Number(env.RATE_PER_MIN) || 30, daily: Number(env.DAILY_LIMIT) || 3000 }),
+    }));
+    if (!r.ok) return json({ error: await r.text() }, r.status, { ...c, "Retry-After": "60" });
+  } else {
+    if (!(await hit(env, `rl:${ip}:${minute}`, Number(env.RATE_PER_MIN) || 30, 120))) return json({ error: "rate limit: slow down" }, 429, { ...c, "Retry-After": "30" });
+    if (!(await hit(env, `daily:${vendor}:${day}`, Number(env.DAILY_LIMIT) || 3000, 90000))) return json({ error: "daily limit reached" }, 429, c);
+  }
 
   let body: string | undefined;
   if (req.method === "POST") {
@@ -121,6 +148,7 @@ async function proxy(req: Request, env: Env, vendor: Vendor, path: string): Prom
 }
 
 export { GameBridge } from "./bridge";
+export { ProxyLimits } from "./limits";
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -145,6 +173,7 @@ export default {
         const val = b[vendor];
         if (typeof val !== "string") continue;
         if (val.trim()) await env.KEYS.put(`key:${vendor}`, val.trim()); else await env.KEYS.delete(`key:${vendor}`);
+        keyCache.get(env.KEYS)?.delete(vendor);
       }
       return json({ openai: !!(await vendorKey(env, "openai")), elevenlabs: !!(await vendorKey(env, "elevenlabs")) }, 200, c);
     }

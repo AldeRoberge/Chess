@@ -126,6 +126,27 @@ describe("source.webcam", () => {
   };
   afterEach(cleanup);
 
+  it("shows Loading with a spinner and the actual pending startup operation", async () => {
+    const { gum } = setup();
+    let release!: (devices: MediaDeviceInfo[]) => void;
+    navigator.mediaDevices.enumerateDevices = vi.fn(() => new Promise<MediaDeviceInfo[]>(resolve => { release = resolve; }));
+    const n = node("source.webcam");
+    n.run({}, 0);
+    const ctx = { fillRect: vi.fn(), fillText: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), stroke: vi.fn() } as any;
+    n.spec.preview!(ctx, 240, 240, n.state, {});
+    expect(ctx.fillText.mock.calls.map((c: any[]) => c[0])).toContain("Loading");
+    expect(ctx.arc).toHaveBeenCalled();
+    expect((n.state as any).status).toBe("Enumerating video devices");
+    expect(gum).not.toHaveBeenCalled();
+    release([]); await tick();
+    expect((n.state as any).status).toBe("Waiting for first frame");
+    n.run({}, 1000);
+    expect((n.state as any).status).toBe("Captured frame 1");
+    expect((n.state as any).debug).toContain("480×360");
+    expect((n.state as any).debug).toContain("luma");
+    n.dispose();
+  });
+
   it("does nothing when offline and releases a running stream when switched off", async () => {
     setup(); const n = node("source.webcam", { fps: 30 });
     n.run({}, 0); await tick(); n.run({}, 100);
@@ -168,9 +189,10 @@ describe("source.webcam", () => {
     rnd.mockReturnValue(0.99); n.params.freeze = false;
     expect(n.run({}, 2300)!.frame).not.toBe(a); // freeze over: a new picture
   });
-  it("selects a device by exact id or label substring, otherwise the default", async () => {
+  it("selects a device by exact id or label substring; empty means default; unknown is an error, never another camera", async () => {
     const devices = [{ kind: "videoinput", deviceId: "id-1", label: "Logitech C920" }, { kind: "audioinput", deviceId: "m", label: "Mic" }];
-    for (const [want, exact] of [["id-1", "id-1"], ["c920", "id-1"], ["nothing", undefined], ["", undefined]] as const) {
+    { const { gum } = setup({ devices }); const n = node("source.webcam", { device: "nothing" }); n.run({}, 0); await tick(); expect(gum).not.toHaveBeenCalled(); expect((n.state as any).err).toContain("not found"); cleanup(); }
+    for (const [want, exact] of [["id-1", "id-1"], ["c920", "id-1"], ["", undefined]] as const) {
       const { gum } = setup({ devices }); const n = node("source.webcam", { device: want }); n.run({}, 0); await tick();
       expect(gum.mock.calls[0][0].video.deviceId?.exact).toBe(exact); cleanup(); // one spy layer per iteration
     }
@@ -244,11 +266,11 @@ describe("vision.boardReader", () => {
     const o = n.run({ frame: shoot(table, "A", 3500, 6, 9) })!.obs;
     expect(looksLikeStart(o)).toBe(true);
   });
-  it("never re-learns the start position once a move is on the board", () => {
+  it("learns the empty squares after a reload into a game under way, so the camera does not read 50% everywhere", () => {
     const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
     bus.game = { ply: 1 } as any;
     n.run({ frame: flatFrame(0, undefined, undefined, 50) }); n.run({ frame: shoot(table, "A", 2000) });
-    expect((n.state as any).sampler.calibrated).toBe(false);
+    expect((n.state as any).sampler.calibrated).toBe(true);
     bus.game = null;
   });
   it("paints the preview with corner outline and hand markers", () => {
@@ -265,7 +287,12 @@ describe("vision.boardReader", () => {
     bus.calibration = null; bus.game = null;
     let t = 0, seen = false;
     for (; t < 20000 && !cal(); t += 250) n.run({ frame: at(t) }, t);
-    expect(cal()).toMatchObject({ cam: "A", phase: "running" });
+    expect(cal()).toMatchObject({ cam: "A", phase: "suggested" });
+    expect(n.params.corners).toBe(fmtCorners(off));
+    for (let i = 0; i < 20; i++, t += 500) n.run({ frame: at(t) }, t);
+    expect(cal()?.phase).toBe("suggested");
+    expect((n.state as any).aligner).toBeNull();
+    bus.calibrationAccept = true; n.run({ frame: at(t) }, t);
     for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) { n.run({ frame: at(t) }, t); seen ||= (cal()?.progress ?? 0) > 0; }
     expect(seen).toBe(true);
     expect(cal()?.phase).toBe("done");
@@ -280,6 +307,7 @@ describe("vision.boardReader", () => {
     bus.calibration = null; bus.game = null;
     let t = 0;
     for (; t < 20000 && !cal(); t += 250) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
+    bus.calibrationAccept = true; n.run({ frame: flatFrame(110, 480, 360, t) }, t);
     for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
     expect(cal()?.phase).toBe("failed");
     expect(n.params.corners).toBe(start);
@@ -290,7 +318,7 @@ describe("vision.boardReader", () => {
     bus.calibration = null; bus.game = null;
     let t = 0;
     for (; t < 20000 && !cal(); t += 250) n.run({ frame: shoot(table, "A", t) }, t);
-    expect(cal()?.phase).toBe("running");
+    expect(cal()?.phase).toBe("suggested");
     bus.calibrationDismiss = true; n.run({ frame: shoot(table, "A", t) }, t);
     expect(cal()).toBeNull(); expect(bus.calibrationDismiss).toBe(false);
     for (let i = 0; i < 60; i++, t += 1000) n.run({ frame: shoot(table, "A", t) }, t);
@@ -335,4 +363,13 @@ it("registers every source and vision node type once", () => {
   const types = createRegistry().all().map((s) => s.type);
   expect(new Set(types).size).toBe(types.length);
   expect(types).toEqual(expect.arrayContaining(["source.webcam", "source.synthetic", "vision.boardReader", "vision.fuse", "vision.stabilize"]));
+});
+
+describe("pieces seen without a known type (presence view)", () => {
+  it("score as sure as the camera is, not as unsure as it is of 'empty'", () => {
+    const occ = new Float32Array(64).fill(0.02), white = new Float32Array(64).fill(0.5), conf = new Float32Array(64).fill(0.96);
+    for (const i of [0, 63]) { occ[i] = 0.98; white[i] = i ? 0.97 : 0.03; }
+    const { reads } = readSquares({ occ, white, conf }, undefined, false, true);
+    expect(reads[0]).toMatchObject({ piece: null, seen: true }); expect(reads[0].score).toBeGreaterThan(0.9); expect(reads[63].score).toBeGreaterThan(0.9); expect(reads[30].score).toBeGreaterThan(0.9);
+  });
 });

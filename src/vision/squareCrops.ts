@@ -6,10 +6,10 @@ export const CROP = 32;
 /** Width of the crop window in squares, centred on the square. Wide enough to take in a tall piece's lean and the neighbours. */
 export const CROP_SPAN = 2;
 /** Mean brightness that every frame is scaled to before cropping, so exposure does not matter. */
-const TARGET_MEAN = 118;
+export const TARGET_MEAN = 118;
 const SAT = 250;
 
-function pixel(frame: GrayFrame, x: number, y: number): number {
+export function pixel(frame: GrayFrame, x: number, y: number): number {
   if (x < 0 || y < 0 || x >= frame.width - 1 || y >= frame.height - 1) return NaN;
   const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0, w = frame.width, d = frame.data;
   return d[y0 * w + x0] * (1 - tx) * (1 - ty) + d[y0 * w + x0 + 1] * tx * (1 - ty) + d[(y0 + 1) * w + x0] * (1 - tx) * ty + d[(y0 + 1) * w + x0 + 1] * tx * ty;

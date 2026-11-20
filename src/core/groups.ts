@@ -7,7 +7,9 @@ export const NODE_W = 280;
 export const NODE_H = 300;
 /** Narrowest a node may be once organised; anything narrower is widened so its controls and labels breathe. */
 export const AMPLE_W = 360;
-const COL_W = 330, ROW_H = 800, PAD = 24, HEAD = 40, GAP = 56, WRAP = 3; // ROW_H is the step: cards are taller than NODE_H, and a short step paints them on top of each other
+/** Card height assumed when the real one is not known (a layout built without a screen). Cards are taller than NODE_H, and a short guess paints them on top of each other. */
+const EST_H = 520;
+const COL_GAP = 32, ROW_GAP = 32, PAD = 24, HEAD = 40, GAP = 40, WRAP = 3;
 
 /** What a node is for. Sections follow this when the patch is organised. */
 const ROLES: { title: string; color: string; match: RegExp }[] = [
@@ -32,29 +34,70 @@ export function depths(g: GraphJSON): Map<string, number> {
 }
 
 /**
- * Lays the patch out in horizontal bands by role (input, analysis, game, output), each wrapped in a titled,
+ * Lays the patch out left to right: each camera feed is its own row, stacked, merging into the game state on the right;
+ * everything else sits in horizontal bands by role (input, analysis, game, output), each wrapped in a titled,
  * coloured section. Moves nodes and replaces `g.groups`; wires and params are untouched.
  */
 export function organize(g: GraphJSON, size?: (id: string) => { w: number; h: number } | null): void {
   const depth = depths(g), groups: GroupDef[] = [];
-  const dims = (x: GraphJSON["nodes"][number]) => { const m = size?.(x.id); return { w: Math.max(x.w ?? 0, m?.w ?? 0, AMPLE_W), h: Math.max(x.h ?? 0, m?.h ?? 0, NODE_H) }; };
-  let y = 30, n = 0;
+  const dims = (x: GraphJSON["nodes"][number]) => { const m = size?.(x.id); return { w: Math.max(x.w ?? 0, m?.w ?? 0, AMPLE_W), h: Math.max(x.h ?? 0, m?.h ?? 0) || EST_H }; };
+  const byDepth = (nodes: GraphJSON["nodes"]) => nodes.map((x, i) => ({ x, i })).sort((a, b) => (depth.get(a.x.id) ?? 0) - (depth.get(b.x.id) ?? 0) || a.i - b.i).map((o) => o.x);
+  let n = 0;
+  /** Places the nodes in a titled section with its top-left corner at (x0, y0), `wrap` nodes per row; returns the section. */
+  const place = (nodes: GraphJSON["nodes"], title: string, color: string, x0: number, y0: number, wrap: number): GroupDef => {
+    const ordered = byDepth(nodes);
+    const cols = Math.min(wrap, ordered.length), rows = Math.ceil(ordered.length / wrap);
+    // column widths and row heights follow the largest node in them, so tall or resized nodes never spill out
+    const cw = Array<number>(cols).fill(0), rh = Array<number>(rows).fill(0);
+    // nodes narrower than AMPLE_W are widened here, so the new width is kept with the patch
+    ordered.forEach((node, i) => { const d = dims(node); node.w = d.w; cw[i % wrap] = Math.max(cw[i % wrap], d.w); rh[Math.floor(i / wrap)] = Math.max(rh[Math.floor(i / wrap)], d.h); });
+    const colX = cw.map((_, c) => x0 + PAD + cw.slice(0, c).reduce((t, v) => t + v + COL_GAP, 0));
+    const rowY = rh.map((_, r) => y0 + HEAD + PAD + rh.slice(0, r).reduce((t, v) => t + v + ROW_GAP, 0));
+    ordered.forEach((node, i) => { node.x = colX[i % wrap]; node.y = rowY[Math.floor(i / wrap)]; });
+    const grp = { id: `g${++n}`, title, color, x: x0, y: y0, w: colX[cols - 1] + cw[cols - 1] + PAD - x0, h: rowY[rows - 1] + rh[rows - 1] + PAD - y0 };
+    groups.push(grp);
+    return grp;
+  };
+
+  // Cameras: each feed into a fusion node (source, reader, ...) is a row of its own, read left to right, rows stacked.
+  const claimed = new Set<string>();
+  const byId = new Map(g.nodes.map((x) => [x.id, x]));
+  const feeds: GraphJSON["nodes"][] = [];
+  for (const f of g.nodes.filter((x) => x.type === "vision.fuse")) {
+    for (const e of g.edges.filter((e) => e.to.node === f.id).sort((a, b) => a.to.port.localeCompare(b.to.port))) {
+      const chain: GraphJSON["nodes"] = [], todo = [e.from.node];
+      while (todo.length) {
+        const id = todo.pop()!, node = byId.get(id);
+        if (!node || claimed.has(id) || node.type === "vision.fuse") continue;
+        claimed.add(id); chain.push(node);
+        for (const up of g.edges) if (up.to.node === id) todo.push(up.from.node);
+      }
+      if (chain.length) feeds.push(chain);
+    }
+  }
+  let y = 30;
+  if (feeds.length) {
+    let right = 0, top = y;
+    feeds.forEach((chain, i) => {
+      const s = place(chain, feeds.length > 1 ? `Camera ${i + 1}` : "Camera", GROUP_COLORS[1], 20, y, chain.length);
+      right = Math.max(right, s.x + s.w); y += s.h + GAP / 2;
+    });
+    // ...then they merge into the game state, to the right of the cameras
+    const merge = g.nodes.filter((x) => !claimed.has(x.id) && /^(vision\.(fuse|stabilize)|game\.tracker)$/.test(x.type));
+    if (merge.length) {
+      merge.forEach((x) => claimed.add(x.id));
+      const probe = place(merge, "Merge into game state", GROUP_COLORS[2], right + GAP, top, merge.length);
+      const dy = Math.max(0, Math.round((y - GAP / 2 - top - probe.h) / 2));
+      if (dy) { probe.y += dy; merge.forEach((x) => { x.y += dy; }); }
+    }
+    y += GAP / 2;
+  }
+
   for (const role of [...ROLES, OTHER]) {
-    const nodes = g.nodes.filter((x) => roleOf(x.type) === role);
+    const nodes = g.nodes.filter((x) => !claimed.has(x.id) && roleOf(x.type) === role);
     if (!nodes.length) continue;
     // left to right in pipeline order, wrapping into a new row after WRAP nodes
-    const ordered = nodes.map((x, i) => ({ x, i })).sort((a, b) => (depth.get(a.x.id) ?? 0) - (depth.get(b.x.id) ?? 0) || a.i - b.i).map((o) => o.x);
-    const cols = Math.min(WRAP, ordered.length), rows = Math.ceil(ordered.length / WRAP);
-    // column widths and row heights follow the largest node in them, so tall or resized nodes never spill out
-    const cw = Array<number>(cols).fill(NODE_W), rh = Array<number>(rows).fill(NODE_H);
-    // nodes narrower than AMPLE_W are widened here, so the new width is kept with the patch
-    ordered.forEach((node, i) => { const d = dims(node); node.w = d.w; cw[i % WRAP] = Math.max(cw[i % WRAP], d.w); rh[Math.floor(i / WRAP)] = Math.max(rh[Math.floor(i / WRAP)], d.h); });
-    const colX = cw.map((_, c) => 20 + PAD + cw.slice(0, c).reduce((t, v) => t + v + (COL_W - NODE_W), 0));
-    const rowY = rh.map((_, r) => y + HEAD + PAD + rh.slice(0, r).reduce((t, v) => t + v + (ROW_H - NODE_H), 0));
-    ordered.forEach((node, i) => { node.x = colX[i % WRAP]; node.y = rowY[Math.floor(i / WRAP)]; });
-    const w = colX[cols - 1] + cw[cols - 1] + PAD - 20, h = rowY[rows - 1] + Math.max(rh[rows - 1], ROW_H) + PAD - y;
-    groups.push({ id: `g${++n}`, title: role.title, color: role.color, x: 20, y, w, h });
-    y += h + GAP;
+    y += place(nodes, role.title, role.color, 20, y, WRAP).h + GAP;
   }
   g.groups = groups;
 }

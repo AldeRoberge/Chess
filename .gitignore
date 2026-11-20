@@ -1,7 +1,12 @@
 node_modules/
+.wrangler/
 dist/
 coverage/
 public/stockfish/
 .DS_Store
 ml/data/
 ml/__pycache__/
+ml/real/
+ml/.venv-render/
+ml/assets/*/
+ml/renders/

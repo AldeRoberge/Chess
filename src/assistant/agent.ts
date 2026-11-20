@@ -117,6 +117,8 @@ export function trimHistory(h: ChatMsg[], max = 60): ChatMsg[] {
 
 export interface RunOptions {
   system: string;
+  /** Re-read live state before every model step, including after tools run. */
+  context?: () => string;
   /** Persistent conversation (user, assistant and tool messages). Completed steps are appended in place. */
   history: ChatMsg[];
   tools: AgentTool[];
@@ -133,7 +135,7 @@ export async function runAgent(r: RunOptions): Promise<string> {
   const max = r.opts.maxSteps ?? 10;
   for (let step = 1; step <= max; step++) {
     r.emit({ type: "step", n: step });
-    const c = await complete([{ role: "system", content: r.system }, ...trimHistory(r.history)], r.tools, r.opts, r.signal, (d) => r.emit({ type: "text", delta: d }), r.doFetch);
+    const c = await complete([{ role: "system", content: r.system }, ...(r.context ? [{ role: "system" as const, content: r.context() }] : []), ...trimHistory(r.history)], r.tools, r.opts, r.signal, (d) => r.emit({ type: "text", delta: d }), r.doFetch);
     if (c.usage) r.emit({ type: "usage", ...c.usage });
     const turn: ChatMsg[] = [{ role: "assistant", content: c.content || null, ...(c.toolCalls.length ? { tool_calls: c.toolCalls } : {}) }];
     if (!c.toolCalls.length) { r.history.push(...turn); return c.content; }

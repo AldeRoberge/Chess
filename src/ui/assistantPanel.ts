@@ -3,12 +3,12 @@ import { guideLines, guideReply, isGuideStart, plainSpeech } from "../assistant/
 import type { AssistantHost } from "../assistant/host";
 import { Watcher, suggestions, type Nudge } from "../assistant/proactive";
 import { ChatSession, type SessionEvent } from "../assistant/session";
-import { icon } from "./icons";
+import { icon, withIcon } from "./icons";
 import { KeyBox } from "./assistantKeyBox";
 import { Transcript } from "./assistantTranscript";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
-const button = (label: string, cls = "", fn?: () => void) => { const b = el("button", cls, label); b.type = "button"; if (fn) b.onclick = fn; return b; };
+const button = (label: string, cls = "", fn?: () => void) => { const b = el("button", cls, label); b.type = "button"; if (fn) b.onclick = fn; return withIcon(b, ({ Clear: "trash", Key: "key", "✕": "x", "Ask AI": "assistant", Undo: "undo", Decline: "x", Approve: "check", Retry: "refresh" } as Record<string, string>)[label] ?? "chat", 14); };
 
 export interface AssistantDeps {
   fetchImpl?: typeof fetch;

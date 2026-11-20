@@ -71,4 +71,22 @@ describe("sections in the editor", () => {
   it("a saved patch redraws its sections on rebuild", () => {
     ed.organize(); const json = g.toJSON(); g.load(json); ed.rebuild(); expect(sections()).toHaveLength(3);
   });
+  it("a section's switch bypasses every node inside it, and back, and follows single-node changes", () => {
+    g.groups.push({ id: "g1", title: "Both", color: "#fff", x: 0, y: 0, w: 900, h: 400 });
+    ed.rebuild?.(); (ed as any).layer.render();
+    const sw = () => document.querySelector<HTMLButtonElement>(".ne-gb")!;
+    expect(sw().getAttribute("aria-pressed")).toBe("false");
+    sw().click();
+    expect(g.nodes.get("a")!.bypass).toBe(true); expect(g.nodes.get("b")!.bypass).toBe(true); expect(g.nodes.get("far")!.bypass).toBeUndefined();
+    expect(sw().getAttribute("aria-pressed")).toBe("true"); expect(sections()[0].classList.contains("off")).toBe(true); expect(changed).toBeGreaterThan(0);
+    ed.toggleBypass("a"); // one node back on: the section is no longer fully off
+    expect(sw().getAttribute("aria-pressed")).toBe("false");
+    sw().click(); expect(g.nodes.get("a")!.bypass).toBe(true); // a mixed section switches everything off first
+    sw().click(); expect(g.nodes.get("a")!.bypass).toBeUndefined(); expect(g.nodes.get("b")!.bypass).toBeUndefined();
+  });
+  it("an empty section has nothing to switch off", () => {
+    g.groups.push({ id: "g1", title: "Empty", color: "#fff", x: 2000, y: 0, w: 200, h: 200 });
+    (ed as any).layer.render();
+    document.querySelector<HTMLButtonElement>(".ne-gb")!.click(); expect(document.querySelector(".ne-g.off")).toBeNull();
+  });
 });

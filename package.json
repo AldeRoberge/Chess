@@ -24,6 +24,7 @@
     "chess.js": "^1.4.0",
     "qrcode-generator": "^2.0.4",
     "stockfish": "^19.0.1",
+    "tesseract.js": "^7.0.0",
     "three": "^0.187.0"
   },
   "devDependencies": {

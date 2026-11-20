@@ -1,5 +1,5 @@
 import type { Graph } from "../core/graph";
-import { nodeIcon, paramIcon, portIcon } from "./icons";
+import { icon, nodeIcon, paramIcon, portIcon, withIcon } from "./icons";
 import { onPieceStyle, pieceImage } from "./pieceSets";
 import { pixelRatio, viewSettings } from "./viewSettings";
 import { registerContextMenu, type CtxItem } from "./contextMenu";
@@ -16,22 +16,56 @@ import type { GrayFrame } from "../vision/types";
 import { previewPoint, setPreviewPointer, setPreviewSize } from "./previewHover";
 
 export const PORT_COLOR: Record<PortType, string> = {
-  frame: "#5aa9ff", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
+  frame: "#5aa9ff", flat: "#8f9bff", view: "#b08fff", reading: "#5be08a", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
   seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", world: "#4fd1c5", player: "#f472b6", action: "#fde047", fx: "#5cf2ff", any: "#9aa4b8",
 };
 export const CAT_COLOR: Record<string, string> = {
   Source: "#4a8fd9", Vision: "#3fb59a", Game: "#d98c4a", Narration: "#4fb0d0", Scene: "#62c27a", Output: "#7c8aa0", Tracking: "#c76fb0", Experience: "#9a78e0", Effects: "#2fd3e6",
 };
 
+/** Dark disc of a port's colour (about 20% of it over near-black), so the bright icon and ring stand out against it. */
+const portDisc = (hex: string): string => { const n = parseInt(hex.slice(1), 16), k = 0.2, m = (c: number, base: number) => Math.round(base + (c - base) * k); return `rgb(${m(n >> 16, 11)},${m((n >> 8) & 255, 15)},${m(n & 255, 20)})`; };
+const portDot = (dot: HTMLElement, hex: string) => { dot.style.background = portDisc(hex); dot.style.setProperty("--pc", hex); };
+
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
 interface View { x: number; y: number; k: number }
-interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HTMLElement }; el: HTMLElement; preview?: HTMLCanvasElement; generic?: boolean; fid: HTMLElement; ms: HTMLElement; err: HTMLElement; params: Map<string, (v: any) => void>; statKey?: string; seen?: Map<string, unknown>; pins: Map<string, HTMLElement> }
+interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HTMLElement }; el: HTMLElement; preview?: HTMLCanvasElement; generic?: boolean; fid: HTMLElement; ms: HTMLElement; err: HTMLElement; params: Map<string, (v: any) => void>; statKey?: string; seen?: Map<string, unknown>; pins: Map<string, HTMLElement>; paint?: { outs: unknown[]; extra: string; at: number }; cost?: number; hidden?: boolean; holdUntil?: number; fadeAt?: number }
+
+/** A preview may repaint at least this often even when nothing it shows seems to have changed (status text, theme, animations). */
+const PREVIEW_REFRESH_MS = 500;
+/** All previews together may spend about this long per repaint pass; the costliest ones beyond it are hidden. */
+const PREVIEW_BUDGET_MS = 6;
+/** A preview cheaper than this is never worth hiding. */
+const PREVIEW_CHEAP_MS = 1.5;
+/** A hidden preview is painted for real now and then so its cost is measured again (and it returns once it is cheap). */
+const PREVIEW_PROBE_MS = 2000;
+/** A preview the pointer touched stays visible this long after the pointer leaves. */
+const PREVIEW_HOLD_MS = 30000;
+/** Hiding fades the picture out over about this long. */
+const PREVIEW_FADE_MS = 600;
+export const HIDDEN_NOTE = "Hidden to preserve performance";
+
+/** Which previews to hide: the costliest first, until the rest fit the budget. Hovered previews and cheap ones always stay. */
+export function chooseHidden(costs: Map<string, number>, keep: (id: string) => boolean, budget = PREVIEW_BUDGET_MS): Set<string> {
+  const out = new Set<string>();
+  let total = 0;
+  for (const c of costs.values()) total += c;
+  for (const [id, c] of [...costs].sort((a, b) => b[1] - a[1])) {
+    if (total <= budget || c < PREVIEW_CHEAP_MS) break;
+    if (keep(id)) continue;
+    out.add(id); total -= c;
+  }
+  return out;
+}
 
 /** Blueprint / TouchDesigner style graph editor on plain DOM + SVG (no framework, no canvas layout cost). */
 export class NodeEditor {
   root = h("div", "ne");
   private world = h("div", "ne-world");
+  private resetButton = withIcon(h("button", "ne-reset-view", "Reset view"), "target", 16);
+  private resetControls = h("div", "ne-reset-controls");
+  private resetDismissed = false;
   private svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   private views = new Map<string, NodeView>();
   private view: View = { x: 40, y: 30, k: 0.85 };
@@ -41,8 +75,13 @@ export class NodeEditor {
   private palette: HTMLElement;
   private lastWire = 0;
   private lastPrev = 0;
+  private lastProbe = 0;
+  private probe = 0;
+  /** Simplified drawing for slow machines: previews and wires refresh less often and heat bars are not painted. */
+  lite = false;
   private lastHeat = 0;
   private heat = false;
+  private sections = new Map<string, boolean>();
   onChange: () => void = () => {};
   /** Called after the user pans or zooms, so the view can be remembered. */
   onView: () => void = () => {};
@@ -65,6 +104,7 @@ export class NodeEditor {
       box: (id) => { const n = this.graph.nodes.get(id); if (!n) return null; const el = this.views.get(id)?.el; return { x: n.x, y: n.y, w: n.w ?? (el?.offsetWidth || NODE_W), h: n.h ?? (el?.offsetHeight || NODE_H) }; },
       place: (id) => { const n = this.graph.nodes.get(id), v = this.views.get(id); if (n && v) { v.el.style.left = n.x + "px"; v.el.style.top = n.y + "px"; if (n.w !== undefined) this.applySize(n); this.dirty = true; } },
       track: (el, e, move, end) => this.track(el, e, move, end),
+      bypass: (ids, on) => { for (const id of ids) { const n = this.graph.nodes.get(id); if (!n) continue; if (on) n.bypass = true; else delete n.bypass; this.views.get(id)?.el.classList.toggle("bypass", on); } this.dirty = true; this.onChange(); },
       changed: () => { this.dirty = true; this.onChange(); },
     });
     this.svg.classList.add("ne-wires");
@@ -74,6 +114,20 @@ export class NodeEditor {
     });
     this.world.append(this.layer.el, this.svg);
     this.root.append(this.world);
+    this.resetButton.type = "button";
+    this.resetButton.hidden = true;
+    this.resetButton.addEventListener("pointerdown", e => e.stopPropagation());
+    this.resetButton.addEventListener("dblclick", e => e.stopPropagation());
+    this.resetButton.addEventListener("click", () => this.resetView());
+    const closeReset = withIcon(h("button", "ne-reset-close"), "x", 14);
+    closeReset.type = "button";
+    closeReset.setAttribute("aria-label", "Hide reset view");
+    closeReset.title = "Hide until you return to the graph";
+    closeReset.addEventListener("click", () => { this.resetDismissed = true; this.updateResetButton(); });
+    this.resetControls.addEventListener("pointerdown", e => e.stopPropagation());
+    this.resetControls.addEventListener("dblclick", e => e.stopPropagation());
+    this.resetControls.append(this.resetButton, closeReset);
+    this.root.append(this.resetControls);
     this.palette = h("div", "ne-palette"); this.palette.hidden = true; this.root.append(this.palette);
     this.bindInteraction();
     this.rebuild();
@@ -97,11 +151,11 @@ export class NodeEditor {
     const ico = h("span", "ne-ico"); ico.innerHTML = nodeIcon(n.type, spec.category, 18);
     head.append(ico, h("span", "ne-title", spec.title));
     const fid = h("span", "ne-fid", ""), ms = h("span", "ne-ms", "");
-    const byp = h("button", "ne-btn", "⏻"); byp.type = "button"; byp.setAttribute("aria-label", "Bypass"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
-    byp.onclick = (e) => { e.stopPropagation(); n.bypass = !n.bypass; el.classList.toggle("bypass", !!n.bypass); this.onChange(); };
-    const del = h("button", "ne-btn", "✕"); del.type = "button"; del.setAttribute("aria-label", "Delete node"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "#ff7070";
+    const byp = h("button", "ne-btn byp"); byp.innerHTML = icon("bypass", 16); byp.type = "button"; byp.setAttribute("aria-label", "Bypass"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
+    byp.onclick = (e) => { e.stopPropagation(); n.bypass = !n.bypass; el.classList.toggle("bypass", !!n.bypass); this.layer.render(); this.onChange(); };
+    const del = h("button", "ne-btn del"); del.innerHTML = icon("trash", 16); del.type = "button"; del.setAttribute("aria-label", "Delete node"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "var(--bad)";
     del.onclick = (e) => { e.stopPropagation(); this.removeNode(n.id); };
-    const exp = h("button", "ne-btn", "⤢"); exp.type = "button"; exp.setAttribute("aria-label", "Expand"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
+    const exp = h("button", "ne-btn exp"); exp.innerHTML = icon("expand", 16); exp.type = "button"; exp.setAttribute("aria-label", "Expand"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
     exp.onclick = (e) => { e.stopPropagation(); if (n.w || n.h) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); };
     const acts = h("span", "ne-acts"); acts.append(byp, del, exp);
     head.append(fid, acts);
@@ -113,11 +167,11 @@ export class NodeEditor {
     const ins = h("div", "ne-col"), outs = h("div", "ne-col right");
     const pins = new Map<string, HTMLElement>();
     for (const p of spec.inputs) {
-      const row = h("div", "ne-pin in"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "in"; dot.innerHTML = portIcon(p.type);
+      const row = h("div", "ne-pin in"), dot = h("span", "ne-dot"); portDot(dot, PORT_COLOR[p.type]); dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "in"; dot.innerHTML = portIcon(p.type, 15);
       row.append(dot, h("span", "ne-pl", p.label ?? p.id)); ins.append(row); pins.set("in:" + p.id, dot);
     }
     for (const p of spec.outputs) {
-      const row = h("div", "ne-pin out"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "out"; dot.innerHTML = portIcon(p.type);
+      const row = h("div", "ne-pin out"), dot = h("span", "ne-dot"); portDot(dot, PORT_COLOR[p.type]); dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "out"; dot.innerHTML = portIcon(p.type, 15);
       row.append(h("span", "ne-pl", p.label ?? p.id), dot); outs.append(row); pins.set("out:" + p.id, dot);
     }
     pinsRow.append(ins, outs); body.append(pinsRow);
@@ -130,12 +184,67 @@ export class NodeEditor {
       this.watchPreview(n.id, preview, w, hh);
     }
     const params = new Map<string, (v: any) => void>();
+    // Corner editing sits right under the picture, not folded into a section.
+    const quads = spec.preview ? (spec.params ?? []).filter((p): p is Extract<ParamDef, { kind: "text" }> => p.kind === "text" && !!p.quad) : [];
+    if (quads.length) {
+      const bar = h("div", "ne-calbar");
+      for (const p of quads) {
+        const b = this.cornersButton(n, p, (s) => { n.params[p.id] = s; params.get(p.id)?.(s); this.onChange(); }, quads.length > 1 ? `Adjust ${p.label.toLowerCase()}` : "Calibrate: adjust corners");
+        b.classList.add("ne-calbtn"); bar.append(b);
+      }
+      body.append(bar);
+    }
     if (spec.params?.length) {
       const box = h("div", "ne-params");
+      const groups = new Map<string, { defs: ParamDef[]; content: HTMLElement; summary: HTMLElement }>();
+      const section = (key: string, title: string, glyph: string) => {
+        let group = groups.get(key); if (group) return group;
+        const details = h("details", "ne-section"), summary = h("summary", "ne-section-head");
+        const ico = h("span", "ne-section-icon"); ico.innerHTML = icon(glyph, 16); ico.setAttribute("aria-hidden", "true");
+        const label = h("span", "ne-section-label"); label.append(h("strong", "", title));
+        const caption = h("span", "ne-section-caption"); label.append(caption); summary.append(ico, label);
+        const content = h("div", "ne-section-content"); details.append(summary, content);
+        const stateKey = `${n.id}:${key}`; details.open = this.sections.get(stateKey) ?? false;
+        details.addEventListener("toggle", () => { this.sections.set(stateKey, details.open); this.dirty = true; });
+        box.append(details); group = { defs: [], content, summary: caption }; groups.set(key, group); return group;
+      };
       let listed = false;
+      let provider: string | undefined;
       for (const p of spec.params) {
-        if ((p.kind === "bool" && p.optional) || (p.kind === "number" && p.group)) { if (!listed) { listed = true; box.append(this.optionalList(n, spec.params, params)); } continue; }
-        box.append(this.paramRow(n, p, params));
+        if (p.kind === "separator") { provider = p.label; continue; }
+        if ((p.kind === "bool" && p.optional) || (p.kind === "number" && p.group)) {
+          const group = section("optional", "Simulate camera problems", "camera"); group.defs.push(p);
+          if (!listed) { listed = true; group.content.append(this.optionalList(n, spec.params, params)); } continue;
+        }
+        let group: ReturnType<typeof section> | undefined;
+        if (provider) group = section(`provider:${provider}`, provider, "voice");
+        else if (p.kind === "text" && p.secret) group = section("keys", "Enter API keys", "gear");
+        else if (/^(dmx|dmxUrl|universe)$/.test(p.id)) group = section("dmx", "Set up DMX lighting", "scene");
+        else if (p.kind === "text" && /url|endpoint/i.test(p.id) || /^(port|host)$/.test(p.id)) group = section("connection", "Change server address", "unlink");
+        else if (p.kind === "text" && p.quad) group = section("corners", "Adjust image regions & corners", "board");
+        else if (/^(autoCal|autoFind|learn)$/.test(p.id)) group = section("learning", "Teach it the board", "board");
+        else if (/^(follow|cam1|cam2|cam3|seat)$/.test(p.id)) group = section("placement", "Set camera & seat placement", "camera");
+        else if (/^(cnn|board|collect)$/.test(p.id) && spec.category === "Vision") group = section("reader", "Choose neural readers & training", "frame");
+        else if (/^(memory|hysteresis|average|settleMs|holdOnHand|bypass|clean)$/.test(p.id)) group = section("stability", "Steady the readings", "setup");
+        else if (/^(staleMs|handMotion)$/.test(p.id)) group = section("feeds", "Tune feed freshness & hand movement", "camera");
+        else if (/^(margin|confirm|maxCost|minConf)$/.test(p.id)) group = section("confidence", "Tune when a reading is accepted", "setup");
+        else if (/threshold|weight|softness|patch|grid/i.test(p.id)) group = section("detection", "Tune piece detection", "search");
+        else if (/^(poll|cooldown|delay|fps)$/.test(p.id)) group = section("timing", "Adjust timing & FPS", "clock");
+        else if (p.id === "seed") group = section("random", "Set the random seed", "refresh");
+        else if (p.id === "flagHour") group = section("flag", "Set clock flag position", "clock");
+        if (group) group.defs.push(p);
+        (group?.content ?? box).append(this.paramRow(n, p, params));
+      }
+      for (const [key, group] of groups) {
+        if (key !== "optional" && group.defs.length < 2) { const d = group.content.parentElement!; d.replaceWith(...group.content.children); groups.delete(key); continue; } // never fold a single setting
+        const update = () => {
+          const changed = group.defs.filter((p) => n.params[p.id] !== p.value && !(p.kind === "bool" && p.action)).length;
+          const names = group.defs.filter((p) => !(p.kind === "number" && p.group)).map((p) => p.label);
+          group.summary.textContent = changed ? `${names.length} settings · ${changed} changed` : `${names.length} settings`; // one short line, never the list of names
+        };
+        group.content.addEventListener("input", update); group.content.addEventListener("change", update); group.content.addEventListener("click", update);
+        for (const p of group.defs) { const sync = params.get(p.id); if (sync) params.set(p.id, (v) => { sync(v); update(); }); }
+        update();
       }
       body.append(box);
     }
@@ -190,7 +299,7 @@ export class NodeEditor {
   private applySize(n: NodeInstance) {
     const el = this.views.get(n.id)?.el; if (!el) return;
     el.style.width = n.w ? n.w + "px" : ""; el.style.height = n.h ? n.h + "px" : "";
-    el.classList.toggle("sized", !!n.h); el.classList.toggle("wide", (n.w ?? 0) >= 480);
+    el.classList.toggle("sized", !!n.h); const eb = el.querySelector<HTMLElement>(".ne-btn.exp"); if (eb) { eb.innerHTML = icon(n.h || n.w ? "collapse" : "expand", 16); eb.dataset.tip = n.h || n.w ? "Collapse" : "Expand"; eb.setAttribute("aria-label", eb.dataset.tip); } el.classList.toggle("wide", (n.w ?? 0) >= 480);
     const v = this.views.get(n.id)!;
     if (n.h && !v.preview && !this.spec(n).preview) { // a node without a preview gets a live readout of its outputs once it is expanded
       v.preview = h("canvas", "ne-preview"); v.generic = true; v.preview.width = 160; v.preview.height = 100; this.watchPreview(n.id, v.preview, 160, 100);
@@ -222,6 +331,31 @@ export class NodeEditor {
     return wrap;
   }
 
+  /** Opens the drag-the-corners editor for a quad param. `apply` receives the corners in the stored 480×360 frame. */
+  private cornersButton(n: NodeInstance, p: Extract<ParamDef, { kind: "text" }>, apply: (stored: string) => void, text: string) {
+    const q = p.quad!, b = withIcon(h("button", "ne-qbtn", text), "board", 13); b.type = "button"; b.dataset.tip = "Adjust corners"; b.dataset.tipBody = "Drag the corners on the live camera picture, or let Auto detect find them.";
+    b.onpointerdown = (e) => e.stopPropagation();
+    b.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const live = () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null;
+      // The editor works in the picture's own pixels. Saved corners stay in the 480×360 reader frame, so a sharper camera does not move the grid.
+      const toView = (stored: string) => {
+        const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(stored);
+        return !pts || (sc.sx === 1 && sc.sy === 1) ? stored : fmtCorners(pts.map((pt) => ({ x: pt.x * sc.sx, y: pt.y * sc.sy })));
+      };
+      const toStored = (view: string) => {
+        const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(view);
+        return !pts || (sc.sx === 1 && sc.sy === 1) ? view : fmtCorners(pts.map((pt) => ({ x: pt.x / sc.sx, y: pt.y / sc.sy })));
+      };
+      openQuadEditor({
+        title: `${this.spec(n).title} — ${p.label}`, value: toView(String(n.params[p.id])), names: q.names, grid: q.grid,
+        frame: live,
+        change: (v) => apply(toStored(v)), done: () => {},
+      });
+    };
+    return b;
+  }
+
   private paramRow(n: NodeInstance, p: ParamDef, sync: Map<string, (v: any) => void>) {
     if (p.kind === "separator") { const sep = h("div", "ne-param-sep", p.label); sep.setAttribute("role", "separator"); sep.dataset.node = n.id; sep.dataset.param = p.id; return sep; }
     // A div, not a label: a checkbox inside a label is toggled when it is inserted, which cleared "Seated" on every new patch.
@@ -241,7 +375,7 @@ export class NodeEditor {
       sync.set(p.id, (v) => { if (document.activeElement !== r) { r.value = String(v); val.textContent = String(v); fill(); } });
       row.append(r, val);
     } else if (p.kind === "bool" && p.action) {
-      const b = h("button", "ne-action", p.label); b.type = "button"; b.setAttribute("aria-label", p.label);
+      const b = h("button", "ne-action", p.label); b.innerHTML = paramIcon(p.id, "action") + `<span></span>`; b.querySelector("span")!.textContent = p.label; b.classList.add("has-ic"); b.type = "button"; b.setAttribute("aria-label", p.label);
       b.onpointerdown = (e) => e.stopPropagation();
       b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); n.params[p.id] = true; this.onChange(); };
       pn.setAttribute("aria-hidden", "true"); row.append(b);
@@ -274,7 +408,7 @@ export class NodeEditor {
         queueMicrotask(() => draw());
       } else row.append(s);
       if (p.pick) {
-        const pick = p.pick, b = h("button", "ne-qbtn", "◫ Compare"); b.type = "button"; b.dataset.tip = "Compare options"; b.dataset.tipBody = "See each option's price per token on a chart and pick one.";
+        const pick = p.pick, b = withIcon(h("button", "ne-qbtn", "Compare"), "gauge", 13); b.type = "button"; b.dataset.tip = "Compare options"; b.dataset.tipBody = "See each option's price per token on a chart and pick one.";
         b.onpointerdown = (e) => e.stopPropagation();
         b.onclick = (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -285,27 +419,8 @@ export class NodeEditor {
     } else {
       const t = h("input"); t.type = p.secret ? "password" : "text"; if (p.secret) { t.autocomplete = "off"; t.spellcheck = false; } t.setAttribute("aria-label", p.label); t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
       sync.set(p.id, (v) => { if (document.activeElement !== t) t.value = String(v); }); row.append(t);
-      if (p.quad) {
-        const q = p.quad, b = h("button", "ne-qbtn", "⌖ Edit"); b.type = "button"; b.dataset.tip = "Edit corners"; b.dataset.tipBody = "Drag the corners on the live camera picture instead of typing numbers.";
-        b.onpointerdown = (e) => e.stopPropagation();
-        b.onclick = (e) => {
-          e.preventDefault(); e.stopPropagation();
-          const live = () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null;
-          // The editor works in the picture's own pixels. Saved corners stay in the 480×360 reader frame, so a sharper camera does not move the grid.
-          const toView = (stored: string) => {
-            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(stored);
-            return !pts || (sc.sx === 1 && sc.sy === 1) ? stored : fmtCorners(pts.map((pt) => ({ x: pt.x * sc.sx, y: pt.y * sc.sy })));
-          };
-          const toStored = (view: string) => {
-            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(view);
-            return !pts || (sc.sx === 1 && sc.sy === 1) ? view : fmtCorners(pts.map((pt) => ({ x: pt.x / sc.sx, y: pt.y / sc.sy })));
-          };
-          openQuadEditor({
-            title: `${this.spec(n).title} — ${p.label}`, value: toView(String(n.params[p.id])), names: q.names, grid: q.grid,
-            frame: live,
-            change: (v) => { const s = toStored(v); t.value = s; commit(s); }, done: () => {},
-          });
-        };
+      if (p.quad && !this.spec(n).preview) { // with a picture, the button under it does this
+        const b =this.cornersButton(n, p, (s) => { t.value = s; commit(s); }, "Adjust");
         pn.append(b);
       }
     }
@@ -318,13 +433,33 @@ export class NodeEditor {
   get heatOn() { return this.heat; }
 
   /** Select a node and pan so it sits in the middle of the view. */
-  reveal(id: string) {
+  reveal(id: string, param?: string): HTMLElement | null {
     const n = this.graph.nodes.get(id), v = this.views.get(id);
-    if (!n || !v) return;
+    if (!n || !v) return null;
+    const target = param?.startsWith("section:")
+      ? [...v.el.querySelectorAll<HTMLElement>(".ne-section-label strong")].find(el => el.textContent === param.slice(8))
+      : param ? [...v.el.querySelectorAll<HTMLElement>("[data-param]")].find(el => el.dataset.param === param) : v.el;
+    // Optional features that are not enabled stay disabled: reveal their Add menu instead.
+    const found = target ?? v.el.querySelector<HTMLElement>(".ne-opt-add") ?? v.el;
+    for (let ancestor: HTMLElement | null = found; ancestor && ancestor !== v.el; ancestor = ancestor.parentElement) {
+      if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+    }
     this.selected.clear(); this.selected.add(id); this.refreshSel();
     this.view.x = this.root.clientWidth / 2 - (n.x + v.el.offsetWidth / 2) * this.view.k;
     this.view.y = this.root.clientHeight / 2 - (n.y + v.el.offsetHeight / 2) * this.view.k;
     this.applyView(); this.dirty = true; this.onView();
+    if (param) found.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    return found;
+  }
+
+  revealGroup(id: string): HTMLElement | null {
+    const g = this.graph.groups.find(g => g.id === id);
+    if (!g) return null;
+    this.view.k = Math.max(0.15, Math.min(1, (this.root.clientWidth - 80) / g.w, (this.root.clientHeight - 80) / g.h));
+    this.view.x = this.root.clientWidth / 2 - (g.x + g.w / 2) * this.view.k;
+    this.view.y = this.root.clientHeight / 2 - (g.y + g.h / 2) * this.view.k;
+    this.applyView(); this.dirty = true; this.onView();
+    return [...this.root.querySelectorAll<HTMLElement>("[data-g]")].find(el => el.dataset.g === id) ?? null;
   }
 
   private paintHeat(now: number) {
@@ -366,7 +501,7 @@ export class NodeEditor {
   }
   toggleBypass(id: string) {
     const n = this.graph.nodes.get(id); if (!n) return;
-    n.bypass = !n.bypass; this.views.get(id)?.el.classList.toggle("bypass", !!n.bypass); this.onChange();
+    n.bypass = !n.bypass; this.views.get(id)?.el.classList.toggle("bypass", !!n.bypass); this.layer.render(); this.onChange();
   }
 
   /** Right-click menu: a wire, a node, or the empty canvas (the "add node" palette lives under Add node…). */
@@ -378,7 +513,7 @@ export class NodeEditor {
     if (n) {
       const spec = this.spec(n), v = this.views.get(n.id), big = !!(n.w || n.h);
       return [
-        { kind: "toggle", label: "Bypass", get: () => !!n.bypass, set: (b) => { n.bypass = b; v?.el.classList.toggle("bypass", b); this.onChange(); } },
+        { kind: "toggle", label: "Bypass", get: () => !!n.bypass, set: (b) => { n.bypass = b; v?.el.classList.toggle("bypass", b); this.layer.render(); this.onChange(); } },
         { kind: "action", label: big ? "Collapse" : "Expand", run: () => { if (big) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); } },
         { kind: "action", label: "Duplicate", run: () => this.duplicate(n.id) },
         { kind: "action", label: "Reset parameters", disabled: !spec.params?.length, hint: spec.params?.length ? undefined : "This node has no parameters to reset.", run: () => { for (const p of spec.params ?? []) n.params[p.id] = p.value; this.dirty = true; this.onChange(); } },
@@ -391,7 +526,7 @@ export class NodeEditor {
     return [
       { kind: "action", label: "Add node…", run: () => this.openPalette(ev.clientX, ev.clientY) },
       { kind: "action", label: "Select all", run: () => { this.selected = new Set(this.views.keys()); this.refreshSel(); } },
-      { kind: "action", label: "Reset view", run: () => { this.view.x = 0; this.view.y = 0; this.view.k = 1; this.applyView(); this.onView(); } },
+      { kind: "action", label: "Reset view", run: () => this.resetView() },
     ];
   }
 
@@ -403,7 +538,31 @@ export class NodeEditor {
     return n;
   }
 
-  private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; }
+  private resetView() {
+    cancelAnimationFrame(this.fling); this.fling = 0;
+    const n = this.graph.nodes.values().next().value;
+    const el = n && this.views.get(n.id)?.el;
+    this.view = n ? {
+      x: this.root.clientWidth / 2 - (n.x + (el?.offsetWidth || n.w || NODE_W) / 2) * 0.85,
+      y: this.root.clientHeight / 2 - (n.y + (el?.offsetHeight || n.h || NODE_H) / 2) * 0.85,
+      k: 0.85,
+    } : { x: 40, y: 30, k: 0.85 };
+    this.applyView(); this.dirty = true; this.onView();
+  }
+
+  private updateResetButton() {
+    const width = this.root.clientWidth, height = this.root.clientHeight;
+    const { x, y, k } = this.view;
+    const inBounds = !this.graph.nodes.size || [...this.graph.nodes.values()].some(n => {
+      const el = this.views.get(n.id)?.el;
+      const left = n.x * k + x, top = n.y * k + y;
+      return left < width && top < height && left + (el?.offsetWidth || n.w || NODE_W) * k > 0 && top + (el?.offsetHeight || n.h || NODE_H) * k > 0;
+    });
+    if (width && height && inBounds) this.resetDismissed = false;
+    this.resetButton.hidden = this.resetControls.hidden = !width || !height || inBounds || this.resetDismissed;
+  }
+
+  private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; this.updateResetButton(); }
   /** Pan and zoom gestures change the view many times a frame; the transform is written once, on the next animation frame. */
   private viewRaf = 0;
   private scheduleView() { if (!this.viewRaf) this.viewRaf = requestAnimationFrame(() => { this.viewRaf = 0; this.applyView(); }); }
@@ -511,7 +670,8 @@ export class NodeEditor {
     this.root.addEventListener("dblclick", (e) => { if (!(e.target as HTMLElement).closest(".ne-node")) this.openPalette(e.clientX, e.clientY); });
     registerContextMenu(this.root, (e) => this.contextItems(e));
     window.addEventListener("keydown", (e) => {
-      if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "SELECT") return;
+      const target = e.target as HTMLElement;
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName) || target.isContentEditable || target.closest?.("[contenteditable=true]")) return;
       if (e.key === "Delete" || e.key === "Backspace") for (const id of [...this.selected]) this.removeNode(id);
     });
   }
@@ -612,7 +772,7 @@ export class NodeEditor {
       chips.replaceChildren();
       for (const c of ["", ...cats]) {
         if (!c && cats.length < 2) continue;
-        const b = h("button", "ne-chip" + (c === cat ? " on" : ""), c || "All"); b.style.setProperty("--cat", c ? CAT_COLOR[c] : "#9aa4b8");
+        const b = withIcon(h("button", "ne-chip" + (c === cat ? " on" : ""), c || "All"), "layers", 12); b.style.setProperty("--cat", c ? CAT_COLOR[c] : "#9aa4b8");
         b.onclick = () => { cat = c; paintChips(); fill(); q.focus(); };
         chips.append(b);
       }
@@ -692,7 +852,8 @@ export class NodeEditor {
 
   frame(now: number) {
     if (this.viewRaf) this.applyView();
-    if (this.dirty || now - this.lastWire > 400) {
+    this.updateResetButton();
+    if (this.dirty || now - this.lastWire > (this.lite ? 1000 : 400)) {
       this.lastWire = now; this.dirty = false;
       // Wires are reconciled in place rather than rebuilt: replacing the <path> elements would restart their CSS flow animation on every refresh (the visible back-and-forth jitter).
       const wanted = new Map<string, { d: string; stroke: string; cls: string; tip: string; style: string; e?: string }>();
@@ -715,12 +876,21 @@ export class NodeEditor {
       }
       this.reconcileWires(wanted);
     }
-    const doPrev = !this.moving && now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
+    const doPrev = !this.moving && now - this.lastPrev > Math.max(this.lite ? 250 : 66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
     if (doPrev) this.lastPrev = now;
     // Measure which previews are on screen before anything below writes to the DOM. Reading a node's size
     // after another node's stats were rewritten would force a fresh layout once per node, every frame.
     const visible = new Set<string>();
     if (doPrev) for (const [id, v] of this.views) { const n = this.graph.nodes.get(id); if (n && v.preview && this.onScreen(n, v)) visible.add(id); }
+    if (doPrev) { // measured from each preview's own paint time (the "<node> preview" spans of the flame graph)
+      const costs = new Map<string, number>();
+      for (const id of visible) { const c = this.views.get(id)?.cost; if (c) costs.set(id, c); }
+      for (const [id, v] of this.views) if (previewPoint(id)) v.holdUntil = now + PREVIEW_HOLD_MS; // hovering brings a preview back and keeps it for a while after the pointer leaves
+      // A camera picture on screen is never hidden or faded to save time; it only stops painting once scrolled out of view (`visible`).
+      const hide = chooseHidden(costs, (id) => (this.views.get(id)?.holdUntil ?? 0) > now || this.graph.nodes.get(id)?.type === "source.webcam",this.lite ? PREVIEW_BUDGET_MS / 2 : PREVIEW_BUDGET_MS);
+      if (hide.size && now - this.lastProbe > PREVIEW_PROBE_MS) { this.lastProbe = now; const ids = [...hide]; this.probe = (this.probe + 1) % ids.length; hide.delete(ids[this.probe]); }
+      for (const [id, v] of this.views) { v.hidden = hide.has(id); if (!v.hidden) v.fadeAt = undefined; }
+    }
     for (const [id, v] of this.views) {
       const st = this.graph.stats.get(id);
       const n = this.graph.nodes.get(id)!;
@@ -759,15 +929,43 @@ export class NodeEditor {
         const ctx = v.preview.getContext("2d")!; ctx.setTransform(k, 0, 0, k, 0, 0);
         const outs = this.graph.outputs.get(id) ?? {};
         setPreviewSize(id, lw, lh);
+        // Nothing changed since the last paint (same picture / reading objects, params, size, pointer): the pixels on the canvas are still right.
+        // Skipped for nodes that animate or show only state, i.e. without a live output value.
+        if (!v.generic && v.hidden) {
+          const key = `hidden|${bw}x${bh}`;
+          if (v.paint?.extra !== key) {
+            v.fadeAt ??= now;
+            if (now - v.fadeAt < PREVIEW_FADE_MS) { // smooth fade: wash the last picture out a little more on each pass
+              ctx.globalAlpha = 0.25; ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh); ctx.globalAlpha = 1;
+              continue;
+            }
+            v.paint = { outs: [], extra: key, at: now };
+            ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh);
+            ctx.fillStyle = "#8fa0a8"; ctx.font = "11px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            const words = HIDDEN_NOTE.split(" "), fits = ctx.measureText(HIDDEN_NOTE).width <= lw - 12;
+            const lines = fits ? [HIDDEN_NOTE] : [words.slice(0, 3).join(" "), words.slice(3).join(" ")];
+            lines.forEach((t, i) => ctx.fillText(t, lw / 2, lh / 2 + (i - (lines.length - 1) / 2) * 14));
+          }
+          continue;
+        }
+        if (!v.generic) {
+          const hover = spec.hover && previewPoint(id), values = Object.values(outs);
+          const extra = `${bw}x${bh}|${hover ? `${hover.p.x},${hover.p.y}` : ""}|${JSON.stringify(n.params)}`, last = v.paint;
+          if (last && values.length && values.every((x) => x != null) && last.extra === extra && last.outs.length === values.length && values.every((x, i) => x === last.outs[i]) && now - last.at < PREVIEW_REFRESH_MS) continue;
+          v.paint = { outs: values, extra, at: now };
+        } else v.paint = undefined;
         if (v.generic) { ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh); drawRows(ctx, 0, 0, lw, lh, objRows(outs).length ? objRows(outs) : [["outputs", "none yet"]]); }
         else {
+          const t0 = performance.now();
           profiler.span(`${spec.title} preview`, () => spec.preview!(ctx, lw, lh, this.graph.states.get(id), outs), id);
           const hp = spec.hover && previewPoint(id); // light up whatever the pointer is over
           if (hp) { try { spec.hover!(hp.p, lw, lh, this.graph.states.get(id), outs)?.mark?.(ctx); } catch { /* a hover glitch must never break painting */ } }
+          const ms = performance.now() - t0;
+          v.cost = v.cost === undefined ? ms : v.cost + (ms - v.cost) * 0.3;
         }
       }
     }
-    if (this.heat) this.paintHeat(now);
+    if (this.heat && !this.lite) this.paintHeat(now);
   }
 }
 

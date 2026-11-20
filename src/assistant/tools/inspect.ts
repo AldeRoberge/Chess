@@ -3,7 +3,8 @@ import type { Registry } from "../../core/types";
 import { validateSetup } from "../../setup/config";
 import { SCENARIOS } from "../../sim/scenarios";
 import { catalog } from "../../workflows/ai";
-import { redact } from "../host";
+import { PARAM_DOCS } from "../../ui/paramDocs";
+import { publicNodeParams, redact } from "../host";
 import { problems, snapshot } from "../snapshot";
 import { SECRET, obj, str, type ToolGroup } from "./shared";
 
@@ -15,11 +16,11 @@ export function nodeTypes(reg: Registry, query = "", category = ""): string {
 }
 
 /** What a node's parameters accept, without the secret ones. */
-export const paramInfo = (reg: Registry, type: string) => (reg.get(type)?.params ?? []).filter((p) => p.kind !== "separator" && !SECRET.test(p.id)).map((p) => p.kind === "number" ? { id: p.id, kind: "number", min: p.min, max: p.max, default: p.value } : p.kind === "select" ? { id: p.id, kind: "select", options: p.options, default: p.value } : p.kind === "bool" ? { id: p.id, kind: "bool", default: p.value } : { id: p.id, kind: "text", default: p.value });
+export const paramInfo = (reg: Registry, type: string) => (reg.get(type)?.params ?? []).filter((p) => p.kind !== "separator" && !SECRET.test(p.id) && !(p.kind === "text" && p.secret)).map((p) => ({ label: p.label, about: PARAM_DOCS[`${type}.${p.id}`], ...(p.kind === "number" ? { id: p.id, kind: "number", min: p.min, max: p.max, default: p.value } : p.kind === "select" ? { id: p.id, kind: "select", options: p.options, default: p.value } : p.kind === "bool" ? { id: p.id, kind: "bool", default: p.value, action: !!p.action } : { id: p.id, kind: "text", default: p.value }) }));
 
 /** Read-only tools: nothing here changes the app. */
 export const inspectTools: ToolGroup = (h) => [
-  { name: "think", risk: "read", label: { doing: "Thinking", done: "Thought it through" }, description: "Write down your plan or reasoning before a multi-step task. Shown to the person as your thinking. Has no effect.",
+  { name: "think", risk: "read", label: { doing: "Planning", done: "Planned the next actions" }, description: "State a short action plan before a multi-step task: what you will inspect and change. Shown to the person. Do not include private internal reasoning. Has no effect.",
     parameters: obj({ thought: str("Short plan: what you know, what you will check or change, in what order.") }, ["thought"]), run: () => ({ ok: true }) },
 
   { name: "get_state", risk: "read", label: { doing: "Looking at the app", done: "Looked at the app" }, description: "Fresh snapshot of the running app: page, selection, setup, problems, workflow summary, tracked game, table, cameras, director, scene, recent events, commentary. Use `sections` to get only some keys.",
@@ -50,7 +51,8 @@ export const inspectTools: ToolGroup = (h) => [
     run: (a) => {
       const g = h.graph(), n = g.nodes.find((x) => x.id === a.id);
       if (!n) throw new Error(`No node "${a.id}". Use get_state to see the workflow.`);
-      return { id: n.id, type: n.type, bypass: !!n.bypass, params: redact(n.params), allowed: paramInfo(h.registry, n.type), wires_in: g.edges.filter((e) => e.to.node === n.id).map((e) => `${e.from.node}.${e.from.port} -> ${e.to.port}`), wires_out: g.edges.filter((e) => e.from.node === n.id).map((e) => `${e.from.port} -> ${e.to.node}.${e.to.port}`), error: h.nodeErrors().find((e) => e.node === n.id) ?? null };
+      const spec = h.registry.get(n.type);
+      return { id: n.id, type: n.type, title: spec?.title, description: spec?.desc, inputs: spec?.inputs, outputs: spec?.outputs, bypass: !!n.bypass, params: publicNodeParams(h.registry, n), allowed: paramInfo(h.registry, n.type), wires: g.edges.filter(e => e.from.node === n.id || e.to.node === n.id), wires_in: g.edges.filter((e) => e.to.node === n.id).map((e) => `${e.from.node}.${e.from.port} -> ${e.to.port}`), wires_out: g.edges.filter((e) => e.from.node === n.id).map((e) => `${e.from.port} -> ${e.to.node}.${e.to.port}`), error: h.nodeErrors().find((e) => e.node === n.id) ?? null };
     } },
 
   { name: "list_scenarios", risk: "read", label: { doing: "Listing demo games", done: "Listed demo games" }, description: "Scripted demo games that can be played without a camera (use update_setup demo.scenario / demo.autoplay).",

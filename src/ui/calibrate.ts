@@ -1,3 +1,4 @@
+import { withIcon } from "./icons";
 import { Chess } from "chess.js";
 import type { Graph } from "../core/graph";
 import type { CalibrationCommand } from "../remote/protocol";
@@ -200,7 +201,7 @@ function buildShell(): Shell {
   const actions = mk("div", "cal-actions", el);
   const back = mk("button", "cal-btn", actions), main = mk("button", "cal-btn primary", actions);
   back.type = main.type = "button";
-  const close = mk("button", "cal-close", el, "Stop and close"); close.type = "button";
+  const close = mk("button", "cal-close", el, "Stop and close"); close.type = "button"; withIcon(close, "x");
   const details = mk("details", "cal-details", el); mk("summary", "", details, "Detection details");
   const results = mk("div", "cal-results", details);
   let boardKey = "", resultKey = "", onMain: () => void = () => {}, onBack: () => void = () => {}, onClose: () => void = () => {};

@@ -39,6 +39,8 @@ export function markSquares(ctx: CanvasRenderingContext2D, w: number, h: number,
 
 export interface BoardHoverOpts {
   title: string; fen?: string;
+  /** Say only whether the tracked game has a piece (and its colour) on the square, never which piece. */
+  presence?: boolean;
   /** Squares the node flagged (tracker mismatches, ...), by index. */
   flagged?: number[]; flagLabel?: string;
   /** Rows for this square that only this node knows. */
@@ -54,7 +56,8 @@ export function boardHover(p: P, w: number, h: number, b: BoardBelief | null | u
   if (sq === null) return null;
   const name = sqName(sq), piece = fenPieces(o.fen)[sq] ?? null;
   const rows: TipRow[] = [];
-  if (o.fen) rows.push({ label: "Tracked piece", value: pieceLabel(piece) });
+  const colourOnly = (ch: string | null) => (ch ? `${ch === ch.toUpperCase() ? "white" : "black"} piece` : "nothing");
+  if (o.fen) rows.push({ label: o.presence ? "Game has" : "Tracked piece", value: o.presence ? colourOnly(piece) : pieceLabel(piece) });
   let verdict = "";
   if (b) {
     const occ = b.occ[sq], seenPiece = occ > 0.5, white = b.white[sq];
@@ -77,7 +80,7 @@ export function boardHover(p: P, w: number, h: number, b: BoardBelief | null | u
   const also = o.also?.(sq) ?? [];
   return {
     title: name, tag: `${isLightSquare(sq) ? "light" : "dark"} square · ${o.title}`, color: "#ffe45c",
-    body: (o.body?.(sq) ?? (piece ? `A ${pieceLabel(piece)} is on ${name}.` : `${name} is empty in the tracked game.`)) + verdict,
+    body: (o.body?.(sq) ?? (piece ? `A ${o.presence ? colourOnly(piece) : pieceLabel(piece)} is on ${name}.` : `${name} is empty in the tracked game.`)) + verdict,
     rows, mark: (ctx) => markSquares(ctx, w, h, sq, "#ffe45c", also),
   };
 }

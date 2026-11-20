@@ -3,6 +3,8 @@ import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
 import { Fusion } from "../vision/fusion";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
+import { collectFrame } from "../vision/collect";
+import { loadBoardCnn } from "../vision/boardModel";
 import { loadSquareCnn } from "../vision/squareModel";
 import { Stabilizer } from "../vision/stabilizer";
 import type { BoardBelief, GrayFrame, SquareObs } from "../vision/types";
@@ -15,12 +17,15 @@ import { brief, CAM_PRESETS, drawBoard, drawFrame, drawReaderBoard, readerTiles,
 import { FRAME_H, FRAME_W } from "../sim/rigs";
 import { boardHover, boardSquareAt, markSquares, cropFrame, framePixel, isLightSquare, markPixel, pieceLabel, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
+import { labelHints } from "../vision/boardLabels";
+import { alignPrefs } from "../ui/alignPrefs";
 import { AlignFollower, AutoAligner, evaluate, rememberLayout, rememberedLayouts } from "../ui/autoAlign";
 import { findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import { CalibrationWatch, type WatchReading } from "../vision/autoCalibrate";
 import { GOOD } from "../ui/boardGuide";
+import { recallCorners, rememberCorners } from "../vision/cornerMemory";
 
-interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; calT: number; calTries: number; lastT: number; cleaner: FrameCleaner; key: string; inflight: number; epoch: number; ready: Cleaned | null; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number }
+interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; calT: number; calTries: number; lastT: number; cleaner: FrameCleaner; key: string; inflight: number; epoch: number; ready: Cleaned | null; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number; camName: string }
 const AUTO_CAL_RETRY_MS = 1000, AUTO_CAL_MAX_TRIES = 8, AUTO_CAL_MIN_LUMA = 20;
 /** A move has been played: the pieces are no longer where the start-position calibration assumes. */
 const gameStarted = () => (bus.game?.ply ?? 0) > 0;
@@ -43,24 +48,37 @@ const READER_BASE: [number, number] = [160, 280];
 const readerSplit = (w: number, h: number) => { const fh = Math.min(w * 0.75, h * (120 / 280)); return { fh, bh: h - fh }; };
 
 let readerSeq = 0;
+/** What the auto-calibration watch needs from a node: the Board Reader and the pipeline's Flatten Board both provide it. */
+export interface CalState { sampler: { cam: string }; obs: SquareObs | null; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number; follower?: { unlock(): void } }
 /** Drops this reader's calibration (no camera, node removed) and its window. */
-function stopCalibration(state: ReaderState, now: number) {
+export function stopCalibration(state: CalState, now: number) {
   if (state.aligner) { state.aligner = null; state.watch.ended(now); }
-  if (bus.calibration?.cam === state.sampler.cam) bus.calibration = null;
+  if (bus.calibration?.cam === state.sampler.cam) { bus.calibration = null; bus.calibrationAccept = bus.calibrationDismiss = false; state.watch.dismiss(now); }
 }
 
 const storage = () => (typeof localStorage === "undefined" ? undefined : localStorage);
 
 /**
  * When the board stays unreadable, find the corners again (the same search as Auto detect in the corners editor) and
- * re-learn the empty squares when the start position stands on the board. Shows "Calibration in progress..." on the bus
- * while it runs. CalibrationWatch keeps it from looping: a cooldown, three tries, and Dismiss holds it off.
+ * offer calibration in the top menu. Only explicit approval starts the search.
+ * Dismissal and completed attempts stay quiet until sustained recovery.
  */
-function autoCalibrate(state: ReaderState, params: Record<string, number | string | boolean>, f: GrayFrame, now: number, fresh: boolean) {
+export function autoCalibrate(state: CalState, params: Record<string, number | string | boolean>, f: GrayFrame, now: number, fresh: boolean) {
   const cam = state.sampler.cam, view = bus.calibration, mine = view?.cam === cam;
-  if (mine && bus.calibrationDismiss) { bus.calibrationDismiss = false; state.aligner = null; state.watch.dismiss(now); bus.calibration = null; return; }
-  if (mine && view.phase !== "running" && now >= (view.hideAt ?? 0)) bus.calibration = null;
-  if (!params.autoFind) { if (state.aligner) stopCalibration(state, now); return; }
+  if (mine && bus.calibrationDismiss) { bus.calibrationDismiss = bus.calibrationAccept = false; state.aligner = null; state.watch.dismiss(now); bus.calibration = null; return; }
+  if (mine && view.phase !== "suggested" && view.phase !== "running" && now >= (view.hideAt ?? 0)) bus.calibration = null;
+  if (!params.autoFind) { if (state.aligner || mine) stopCalibration(state, now); return; }
+  if (mine && view.phase === "suggested" && bus.calibrationAccept) {
+    bus.calibrationAccept = false;
+    const corners = parseCorners(String(params.corners));
+    let seed: { x: number; y: number }[] | null = null;
+    try { const q = findCheckerCorners(f); seed = q ? orientBoardCorners(f, q) : null; } catch { seed = null; }
+    const store = storage();
+    state.aligner = new AutoAligner(f, seed ?? corners, 60, undefined, store ? rememberedLayouts(f.width, f.height, store) : []);
+    if (alignPrefs().ocr) state.aligner.expectLabels(labelHints(f));
+    state.follower?.unlock();
+    bus.calibration = { cam, phase: "running", label: "Looking for the board...", progress: 0 };
+  }
   // Judge the board twice a second: how well the grid fits, how much of it reads, and whether the start position shows.
   if (fresh && now - state.checkAt >= 500) {
     state.checkAt = now;
@@ -79,15 +97,13 @@ function autoCalibrate(state: ReaderState, params: Record<string, number | strin
       }
     } else {
       const why = state.watch.feed(r);
-      const busy = !!bus.calibration && !mine && bus.calibration.phase === "running"; // one camera at a time
+      const busy = !!bus.calibration && !mine;
       if (why && busy) state.watch.ended(now);
       else if (why) {
-        let seed: { x: number; y: number }[] | null = null;
-        try { const q = findCheckerCorners(f); seed = q ? orientBoardCorners(f, q) : null; } catch { seed = null; }
-        const store = storage();
-        state.aligner = new AutoAligner(f, seed ?? corners, 60, undefined, store ? rememberedLayouts(f.width, f.height, store) : []);
-        state.follower.unlock();
-        bus.calibration = { cam, phase: "running", label: why === "no-start" ? "The start position is not showing. Looking for the board…" : "Looking for the board…", progress: 0 };
+        bus.calibration = { cam, phase: "suggested", label: "Do you want to auto calibrate", progress: 0 };
+      }
+      if (mine && view.phase === "suggested" && state.watch.healthy(r)) {
+        state.watch.dismiss(now); bus.calibration = null; bus.calibrationAccept = false;
       }
     }
   }
@@ -96,7 +112,7 @@ function autoCalibrate(state: ReaderState, params: Record<string, number | strin
   al.step(8);
   bus.calibration = { cam, phase: "running", label: al.label, progress: al.progress };
   if (!al.done) return;
-  state.aligner = null; state.watch.ended(now);
+  state.aligner = null; state.watch.dismiss(now);
   if (al.phase === "done" && al.corners.length === 4 && al.confidence >= Math.max(0.45, state.fit + 0.05)) {
     params.corners = fmtCorners(al.corners);
     const store = storage(); if (store) rememberLayout(al.corners, f.width, f.height, store);
@@ -113,8 +129,11 @@ const reader: NodeSpec<ReaderState> = {
   params: [
     { id: "cam", kind: "text", label: "Camera id", value: "A" },
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
-    { id: "follow", kind: "bool", label: "Follow camera moves", value: true },
+    { id: "follow", kind: "bool", label: "Follow camera moves", value: false },
+    { id: "split", kind: "bool", label: "Split into separate detector nodes", value: false, action: true },
     { id: "cnn", kind: "bool", label: "Neural square reader (beta)", value: false },
+    { id: "board", kind: "bool", label: "Neural whole-board reader (beta, wins over the square reader)", value: false },
+    { id: "collect", kind: "bool", label: "Save training frames (dev server only)", value: true },
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.15, max: 0.6, step: 0.01, value: 0.22 },
     { id: "shapeWeight", kind: "number", label: "Shape / texture evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
     { id: "colorWeight", kind: "number", label: "Color / brightness evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
@@ -126,15 +145,22 @@ const reader: NodeSpec<ReaderState> = {
     { id: "clean", kind: "bool", label: "Clean up noise", value: true },
     { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
-    { id: "autoFind", kind: "bool", label: "Auto-calibrate when lost", value: true },
-    { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
+    { id: "autoFind", kind: "bool", label: "Suggest auto-calibration when lost", value: true },
+    { id: "learn", kind: "bool", label: "Re-learn now (normally automatic)", value: false, action: true },
   ],
   previewSize: READER_BASE,
   frameOf: (s) => s.frame,
-  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, calT: -Infinity, calTries: 0, lastT: -1, cleaner: new FrameCleaner(), key: `reader${++readerSeq}`, inflight: 0, epoch: 0, ready: null, raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1 }),
+  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, calT: -Infinity, calTries: 0, lastT: -1, cleaner: new FrameCleaner(), key: `reader${++readerSeq}`, inflight: 0, epoch: 0, ready: null, raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1, camName: "" }),
   process({ frame }, { now, params, state, setFidelity, span }) {
+    if (params.split) { params.split = false; bus.splitReaders = true; }
     const s = state.sampler;
     s.cam = String(params.cam);
+    // A camera this app has calibrated before: start from its last corners instead of the default grid (unless these were already moved by hand).
+    if (frame?.source && frame.source !== state.camName) {
+      state.camName = frame.source;
+      const saved = recallCorners(frame.source);
+      if (saved && String(params.corners) === fmtCorners(CAM_PRESETS.A) && saved !== params.corners && parseCorners(saved)) params.corners = saved;
+    }
     if (!frame) { stopCalibration(state, now); if (state.raw) cleanPool().forget(state.key); state.frame = state.raw = state.analysis = state.cleaned = state.ready = null; state.cleaner.recent = []; state.epoch++; state.inflight = 0; state.obs = null; state.follower.unlock(); setFidelity(null); return { obs: null }; }
     // The picture you line up stays at the camera's resolution. The squares are read from a 480×360 average of it, which is the space the saved corners are in.
     // Clean-up: a median filter plus the mean of the last few frames of a still board (benchmarked: far fewer phantom and missed pieces than reading raw frames).
@@ -175,6 +201,7 @@ const reader: NodeSpec<ReaderState> = {
         }
       }
     }
+    if (state.camName && String(params.corners) !== fmtCorners(CAM_PRESETS.A)) rememberCorners(state.camName, String(params.corners)); // every calibration, hand fit or follow step is kept for next time
     if (state.corners !== params.corners) {
       const c = parseCorners(String(params.corners));
       // New corners make the learned empty squares stale: learn the start position again, unless a game is under way.
@@ -188,22 +215,25 @@ const reader: NodeSpec<ReaderState> = {
     s.cfg.shapeWeight = Number(params.shapeWeight ?? 1); s.cfg.colorWeight = Number(params.colorWeight ?? 1);
     s.cfg.positionWeight = Number(params.positionWeight ?? 1); s.cfg.patch = Number(params.patch ?? 0.6);
     s.cfg.softness = Number(params.softness ?? 0.06); s.cfg.grid = Math.round(Number(params.grid ?? 6));
-    s.cfg.engine = params.cnn ? "cnn" : "rules";
-    if (params.cnn && !BoardSampler.cnn) void loadSquareCnn(); // reads fall back to the brightness reader until the model has loaded
+    s.cfg.engine = params.board ? "board" : params.cnn ? "cnn" : "rules";
+    if (params.board && !BoardSampler.boardNet) void loadBoardCnn();
+    else if (params.cnn && !BoardSampler.cnn) void loadSquareCnn(); // reads fall back to the brightness reader until the model has loaded
     if (!state.cleaned) { setFidelity(null); return { obs: null }; } // the first picture is still being cleaned
     const img = state.cleaned!;
     if (params.learn) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; state.readOf = null; }
-    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && !gameStarted() && img !== state.readOf && img.t - state.calT >= AUTO_CAL_RETRY_MS && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
+    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && (!gameStarted() || !s.calibrated) && img !== state.readOf && img.t - state.calT >= (state.calTries >= AUTO_CAL_MAX_TRIES ? 5 * AUTO_CAL_RETRY_MS : AUTO_CAL_RETRY_MS) && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
       // Auto-learn keeps trying until the reading looks like the start position. Learning once from the first frame locked in a
       // dark warm-up frame or the default corners for good: every square then read wrong and the game never started.
       span("calibrateFromStart", () => s.calibrateFromStart(img));
       state.calT = img.t; state.calTries++;
       state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight)));
-      if (looksLikeStart(state.obs) || state.calTries >= AUTO_CAL_MAX_TRIES) state.autoDone = true;
+      // Reloaded mid-game: the open ranks are enough to learn the empty squares, but the start position will not show, so learn once.
+      if (looksLikeStart(state.obs) || (gameStarted() && s.calibrated)) state.autoDone = true; // otherwise keep looking, slowly, until the start position is on the board
     }
     if (img !== state.readOf || !state.obs) { state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight))); } // one read per camera frame
     if (state.analysis && !calibrationRuntime.active) { const f = state.analysis; span("auto-calibrate", () => autoCalibrate(state, params, f, now, !!ready)); }
     setFidelity(state.obs.quality * (1 - Math.min(1, state.obs.motion * 4)));
+    if (params.collect && !calibrationRuntime.active) collectFrame({ cam: s.cam, frame: img, corners: s.cfg.corners, fen: bus.game?.fen, board: bus.board }); // dev server only: keeps real frames labelled by the tracker's confirmed position
     return { obs: state.obs };
   },
   dispose(s) { cleanPool().forget(s.key); },
@@ -213,12 +243,12 @@ const reader: NodeSpec<ReaderState> = {
     if (p.y > fh) { // the board under the picture: this square as the reader reads it
       const q = boardSquareAt({ x: p.x, y: p.y - fh }, v.w, bh);
       if (q === null || !s.obs) return null;
-      const t = readerTiles(s.obs, bus.game?.fen)[q];
+      const t = readerTiles(s.obs, undefined, true)[q];
       const rows: TipRow[] = [{ label: "Square", value: `${sqName(q)} (${isLightSquare(q) ? "light" : "dark"})` },
-        { label: "Reads as", value: t.occupied ? (t.piece ? pieceLabel(t.piece) : `${t.white ? "white" : "black"} piece (type unknown)`) : "empty" },
+        { label: "Reads as", value: t.occupied ? `${t.white ? "white" : "black"} piece` : "empty" },
         { label: "Confidence", value: pct(t.conf), bar: t.conf, tone: tone(t.conf) },
         { label: "Says occupied", value: pct(s.obs.occ[q]), bar: s.obs.occ[q] }];
-      return { title: sqName(q), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4", body: "What this camera alone reads on the square, before the cameras are fused. The piece type comes from the tracked game; the reader itself only tells empty, white and black apart.", rows,
+      return { title: sqName(q), tag: `Board Reader · cam ${s.sampler.cam}`, color: "#35e0b4", body: "What this camera alone reads on the square, before the cameras are fused: empty, a white piece or a black piece. Piece types are not read; the tracker works them out from the moves.", rows,
         mark: (ctx) => { ctx.save(); ctx.translate(0, fh); markSquares(ctx, v.w, bh, q); ctx.restore(); } };
     }
     if (!f) return { title: "No camera picture", tag: "Board Reader", body: "Wire a camera into this node: it reads the 64 squares from the picture.", rows: [{ label: "Calibrated", value: s.sampler.calibrated ? "yes" : "no", tone: s.sampler.calibrated ? "ok" : "warn" }] };
@@ -274,7 +304,7 @@ const reader: NodeSpec<ReaderState> = {
       const { fh, bh } = readerSplit(pw, ph);
       const r = drawFrame(ctx, pw, fh, s.frame);
       // what the reader sees, tile by tile, under the picture it reads
-      ctx.save(); ctx.translate(0, fh); ctx.beginPath(); ctx.rect(0, 0, pw, bh); ctx.clip(); drawReaderBoard(ctx, pw, bh, s.obs, bus.game?.fen); ctx.restore();
+      ctx.save(); ctx.translate(0, fh); ctx.beginPath(); ctx.rect(0, 0, pw, bh); ctx.clip(); drawReaderBoard(ctx, pw, bh, s.obs, undefined, true); ctx.restore();
       if (!s.frame || !r) return;
       const sc = frameScale(s.frame.width, s.frame.height);
       const at = (p: { x: number; y: number }) => ({ x: r.x + p.x * sc.sx * r.s, y: r.y + p.y * sc.sy * r.s }), c = s.sampler.cfg.corners;
@@ -307,7 +337,7 @@ const fuse: NodeSpec<FuseState> = {
   process(inputs, { now, params, state, setFidelity, span }) {
     const obs = (["o1", "o2", "o3", "o4"].map((k) => inputs[k]).filter(Boolean)) as SquareObs[];
     // timestamp with graph time: cameras that stop producing frames age out and drop from the vote
-    const live = obs.map((o) => ({ ...o, t: o.t || now }));
+    const live = state.fusion.orient(obs.map((o) => ({ ...o, t: o.t || now })));
     state.board = span("fuse", () => state.fusion.fuse(live, now, Number(params.staleMs), Number(params.handMotion)));
     state.obs = live; state.handMotion = Number(params.handMotion);
     bus.cameras = live.map((o) => ({ id: o.cam, online: true, quality: o.quality, reliability: state.fusion.reliability.get(o.cam) ?? 0.8 }));
@@ -328,8 +358,8 @@ const fuse: NodeSpec<FuseState> = {
       },
     });
   },
-  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [120, 120], (pw, ph) => drawBoard(ctx, pw, ph, s.board, { fen: bus.game?.fen, live: true }), () => [
-    ["cameras", String(s.board?.cams ?? 0)], ["fidelity", s.board ? brief(s.board.fidelity) : "—"], ["hand over", brief(s.board?.handOver)], ["settled", brief(s.board?.settled)],
+  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [120, 120], (pw, ph) => drawBoard(ctx, pw, ph, s.board, { fen: bus.game?.fen }), () => [
+    ["cameras", String(s.board?.cams ?? 0)], ...Array.from(s.fusion.turned).filter(([, t]) => t).map(([cam]): DetailRow => [`cam ${cam}`, "turned 180° (white was on top)"]), ["fidelity", s.board ? brief(s.board.fidelity) : "—"], ["hand over", brief(s.board?.handOver)], ["settled", brief(s.board?.settled)],
     ["pieces seen", s.board ? String(Array.from(s.board.occ).filter((v) => v > 0.5).length) : "—"],
     ...(bus.cameras ?? []).map((c): DetailRow => [`cam ${c.id}`, `q ${brief(c.quality)} · rel ${brief(c.reliability)}`])]),
 };
@@ -343,11 +373,13 @@ const stabilize: NodeSpec<StabState> = {
     { id: "hysteresis", kind: "number", label: "Hysteresis", min: 1, max: 6, step: 0.5, value: 3 },
     { id: "settleMs", kind: "number", label: "Settle time (ms)", min: 100, max: 3000, step: 50, value: 700 },
     { id: "holdOnHand", kind: "bool", label: "Freeze while hand present", value: true },
+    { id: "bypass", kind: "bool", label: "Bypass (pass the fused board straight through)", value: false },
   ],
   previewSize: [120, 120],
   init: () => ({ stab: new Stabilizer(), out: null, inp: null }),
   process({ board }, { params, state, setFidelity, span }) {
     if (!board) return { board: null };
+    if (params.bypass) { state.inp = board; state.out = board; bus.board = board; setFidelity(board.fidelity); return { board }; }
     const c = state.stab.cfg;
     c.decay = Number(params.memory); c.on = Number(params.hysteresis); c.off = -Number(params.hysteresis); c.settleMs = Number(params.settleMs); c.holdOnHand = !!params.holdOnHand;
     state.inp = board;
@@ -376,7 +408,7 @@ const stabilize: NodeSpec<StabState> = {
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, [120, 120], (pw, ph) => {
-      drawBoard(ctx, pw, ph, s.out, { fen: bus.game?.fen, live: true });
+      drawBoard(ctx, pw, ph, s.out, { fen: bus.game?.fen });
       if (s.out) { ctx.fillStyle = s.out.handOver ? "#ff5a6e" : s.out.settled ? "#35e0b4" : "#ffb347"; ctx.fillRect(pw - 10, 2, 8, 8); }
     }, () => [["state", s.out ? (s.out.handOver ? "hand over board" : s.out.settled ? "settled" : "settling") : "no input", s.out?.handOver ? "#ff5a6e" : s.out?.settled ? "#35e0b4" : "#ffb347"],
       ["fidelity", s.out ? brief(s.out.fidelity) : "—"], ["pieces", s.out ? String(Array.from(s.out.occ).filter((v) => v > 0.5).length) : "—"],

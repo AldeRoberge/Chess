@@ -1,5 +1,6 @@
 import type { Graph } from "../core/graph";
 import type { GroupDef } from "../core/types";
+import { icon } from "./icons";
 import { GROUP_COLORS, NODE_H, NODE_W, fitAround, nextGroupId, nodesInside, organize } from "../core/groups";
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
@@ -12,6 +13,8 @@ export interface GroupHooks {
   /** Re-apply a node's position to its element after the graph moved it. */
   place(id: string): void;
   track(el: HTMLElement, e: PointerEvent, move: (ev: PointerEvent) => void, end: (ev: PointerEvent | null) => void): void;
+  /** Bypass (or switch back on) these nodes together. */
+  bypass(ids: string[], on: boolean): void;
   changed(): void;
 }
 
@@ -19,6 +22,8 @@ export interface GroupHooks {
  * Titled, coloured sections drawn behind the nodes. Drag the title bar to move a section together with the nodes
  * inside it, drag the corner to resize, double-click the title to rename, click the dot to recolour.
  * Section bodies ignore the pointer, so panning and wiring work straight through them.
+ * The switch in the title bar bypasses every node inside the section at once (and back): a section is a part of the
+ * patch that can be turned off as a whole. Wires into its nodes stay where they are, so switching it back on resumes at once.
  */
 export class GroupLayer {
   readonly el = h("div", "ne-glayer");
@@ -28,6 +33,15 @@ export class GroupLayer {
 
   render() {
     this.el.replaceChildren(...this.groups.map((g) => this.build(g)));
+  }
+
+  /** Nodes inside a section, and whether all of them are bypassed (an empty section is never "off"). */
+  members(g: GroupDef) { const ids = nodesInside({ nodes: [...this.o.graph.nodes.values()] }, g); return { ids, off: ids.length > 0 && ids.every((id) => !!this.o.graph.nodes.get(id)?.bypass) }; }
+
+  /** Turns a section on or off as a whole. */
+  setSectionBypass(id: string, on: boolean) {
+    const g = this.groups.find((x) => x.id === id); if (!g) return false;
+    this.o.bypass(this.members(g).ids, on); this.render(); return true;
   }
 
   /** New section around `ids` (or at `at` when nothing is selected), named and ready to rename. */
@@ -53,12 +67,18 @@ export class GroupLayer {
     const dot = h("button", "ne-gdot"); dot.type = "button"; dot.setAttribute("aria-label", "Section colour"); dot.dataset.tip = "Colour"; dot.dataset.tipBody = "Pick a colour for this section.";
     const name = h("span", "ne-gname", g.title);
     const del = h("button", "ne-gx", "✕"); del.type = "button"; del.setAttribute("aria-label", "Remove section"); del.dataset.tip = "Remove section"; del.dataset.tipBody = "Removes the frame only. Its nodes stay."; del.dataset.tipTag = "keeps nodes";
-    bar.append(dot, name, del);
+    const m = this.members(g);
+    const sw = h("button", "ne-gb" + (m.off ? " off" : "")); sw.type = "button"; sw.innerHTML = icon("bypass", 15); sw.setAttribute("aria-label", m.off ? "Switch section on" : "Bypass section"); sw.setAttribute("aria-pressed", String(m.off));
+    sw.dataset.tip = m.off ? "Section is off" : "Bypass section"; sw.dataset.tipBody = m.off ? "Every node in this section is bypassed. Click to switch them back on." : "Skip every node in this section without deleting anything. Click again to turn them back on.";
+    bar.append(dot, name, sw, del);
+    el.classList.toggle("off", m.off);
     const grip = h("div", "ne-gr"); grip.dataset.tip = "Resize section";
     el.append(bar, grip);
 
     dot.onpointerdown = (e) => e.stopPropagation();
     dot.onclick = (e) => { e.stopPropagation(); this.swatches(g, el, dot); };
+    sw.onpointerdown = (e) => e.stopPropagation();
+    sw.onclick = (e) => { e.stopPropagation(); this.setSectionBypass(g.id, !this.members(g).off); };
     del.onpointerdown = (e) => e.stopPropagation();
     del.onclick = (e) => { e.stopPropagation(); this.o.graph.groups = this.groups.filter((x) => x.id !== g.id); this.render(); this.o.changed(); };
     // double-click anywhere on the title bar renames (never opens the node palette)

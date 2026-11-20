@@ -1,10 +1,10 @@
 import type { AgentEvent } from "../assistant/agent";
-import { icon } from "./icons";
+import { icon, withIcon, setLabel } from "./icons";
 import { md } from "./markdown";
 import { spinnerHTML } from "./spinner";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
-const button = (label: string, cls = "", fn?: () => void) => { const b = el("button", cls, label); b.type = "button"; if (fn) b.onclick = fn; return b; };
+const button = (label: string, cls = "", fn?: () => void) => { const b = el("button", cls, label); b.type = "button"; if (fn) b.onclick = fn; return withIcon(b, ({ Clear: "trash", Key: "key", "✕": "x", "Ask AI": "assistant", Undo: "undo", Decline: "x", Approve: "check", Retry: "refresh" } as Record<string, string>)[label] ?? "chat", 14); };
 
 interface Turn { box: HTMLElement; text: HTMLElement; raw: string; waiting: HTMLElement }
 
@@ -75,7 +75,7 @@ export class Transcript {
     det.append(el("summary", "", e.ok ? "details" : "error"), pre); c.append(det);
     if (!e.ok) c.append(el("div", "as-err", String(r?.error ?? "")));
     if (e.ok && c.dataset.undoable && !declined && !blocked) {
-      const u = button("Undo", "ghost as-undo"); u.onclick = () => { if (this.onUndo()) { u.textContent = "Undone"; u.disabled = true; } }; c.append(u);
+      const u = button("Undo", "ghost as-undo"); u.onclick = () => { if (this.onUndo()) { setLabel(u, "Undone"); u.disabled = true; } }; c.append(u);
     }
   }
 

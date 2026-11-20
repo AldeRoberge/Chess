@@ -8,7 +8,7 @@ const reg = createRegistry();
 
 describe("demo workflow files", () => {
   it("ships basic, the simulated and real complete demos and chess.com, easiest first", () => {
-    expect(WORKFLOWS.map((w) => w.id)).toEqual(["basic", "complete", "real", "chesscom", "pieceless", "botplay", "humanvsbot"]);
+    expect(WORKFLOWS.map((w) => w.id)).toEqual(["basic", "complete", "real", "chesscom", "pieceless", "botplay", "humanvsbot", "camera-bot", "modular-vision"]);
     expect(WORKFLOWS[0].graph.nodes.length).toBeLessThan(WORKFLOWS[1].graph.nodes.length);
     expect(WORKFLOWS[3].graph.nodes.some((n) => n.type === "game.chesscom")).toBe(true);
     expect(WORKFLOWS[3].graph.nodes.some((n) => n.type === "game.engine")).toBe(false);
@@ -60,8 +60,8 @@ describe("draftToGraph", () => {
   });
   it("lays the result out in titled sections by role, and copes with junk and feedback loops", () => {
     const b = draftToGraph(reg, { nodes: [{ id: "a", type: "source.synthetic" }, { id: "b", type: "vision.boardReader" }, { id: "c", type: "vision.fuse" }], edges: [{ from: "a.frame", to: "b.frame" }, { from: "b.obs", to: "c.o1" }] });
-    expect(b.graph.groups!.map((g) => g.title)).toEqual(["Demo & input", "Analysis"]);
-    const [src, rd, fuse] = b.graph.nodes; expect(src.y).toBeLessThan(rd.y); expect(rd.x).toBeLessThan(fuse.x);
+    expect(b.graph.groups!.map((g) => g.title)).toEqual(["Camera", "Merge into game state"]); // the layout is one row per camera, then the merge
+    const [src, rd, fuse] = b.graph.nodes; expect(src.x).toBeLessThan(rd.x); expect(rd.x).toBeLessThan(fuse.x); // left to right along the camera row
     expect(draftToGraph(reg, {}).graph.nodes).toEqual([]);
     expect(draftToGraph(reg, { nodes: "x" as any, edges: "y" as any }).name).toBe("AI workflow");
     const loop = draftToGraph(reg, { nodes: [{ id: "t", type: "game.tracker" }, { id: "d", type: "experience.director" }], edges: [{ from: "d.director", to: "t.director" }, { from: "t.events", to: "d.events" }] });
@@ -121,5 +121,18 @@ describe("ai settings", () => {
     saveAiSettings({ apiKey: "sk-1", model: "m1", remember: true });
     expect(loadAiSettings().apiKey).toBe("sk-1");
     localStorage.setItem("cx.ai.v1", "{bad"); expect(loadAiSettings().apiKey).toBe("");
+  });
+});
+
+describe("modular detection demo", () => {
+  it("keeps the rule-based reader in its own section, bypassed, and the neural reader on", async () => {
+    const { modularBotGraph } = await import("./modular");
+    const { webcamSetup } = await import("../setup/config");
+    const g = modularBotGraph([webcamSetup("", "Cam", "A")], 800);
+    expect(g.nodes.find((n) => n.id === "bright1")!.bypass).toBe(true);
+    for (const id of ["neural1", "blend1", "reading1"]) expect(g.nodes.find((n) => n.id === id)!.bypass).toBeUndefined();
+    const sec = g.groups!.find((x) => x.title.startsWith("Rule-based"))!, b = g.nodes.find((n) => n.id === "bright1")!;
+    expect(b.x + 150).toBeGreaterThan(sec.x); expect(b.x + 150).toBeLessThan(sec.x + sec.w);
+    for (const id of ["neural1", "blend1", "clean1"]) { const n = g.nodes.find((x) => x.id === id)!; expect(n.x + 150 > sec.x && n.x + 150 < sec.x + sec.w).toBe(false); }
   });
 });

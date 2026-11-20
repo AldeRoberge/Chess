@@ -1,0 +1,44 @@
+/* Setup wizard: cameras. */
+.halo-cam-live-dot{display:inline-block;width:8px;height:8px;margin-right:7px;border-radius:50%;background:#22a65a;vertical-align:middle}
+
+/* board step: one tab per camera, its status flags under the name */
+.cam-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.cam-tab{display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 12px;min-width:200px;padding:8px 12px 8px 14px;border:1px solid var(--line-hi);border-left:3px solid var(--ok);background:color-mix(in srgb,var(--ink-0) 60%,transparent);color:var(--text);font:600 var(--t-sm,.9em)/1.2 var(--font-ui);text-align:left;cursor:pointer}
+.cam-tab.warn{border-left-color:var(--amber)}
+.cam-tab.fail{border-left-color:var(--bad)}
+.cam-tab:hover,.cam-tab:focus-visible{border-color:var(--signal);outline:none}
+.cam-tab.sel{background:linear-gradient(90deg,var(--signal-hi),var(--signal));border-color:var(--signal-hi);color:var(--ink-0)}
+.cam-tab-name{display:flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cam-tab.sel .cam-tab-name .sys-ico{color:var(--ink-0)}
+.cam-flags{display:inline-flex;gap:4px;justify-self:end}
+.cam-tab-status{grid-column:1/-1;font-weight:400;color:var(--text-dim)}
+.cam-tab.sel .cam-tab-status{color:var(--ink-0)}
+.cam-flag{display:inline-grid;place-items:center;width:20px;height:20px;border:1px solid var(--line-hi);border-radius:3px;color:var(--text-dim);opacity:.4}
+.cam-flag.on{opacity:1;color:var(--ok)}
+.cam-flag.bad.on{color:var(--bad)}
+.cam-tab.sel .cam-flag{border-color:color-mix(in srgb,var(--ink-0) 45%,transparent);color:var(--ink-0)}
+.cam-tab.sel .cam-flag.bad.on{color:var(--bad);background:#fff}
+
+/* cameras table + collapsible system check (reconstructed: the original CSS was not in the transcript) */
+.halo-cams .halo-cam-cell{width:1%;padding:6px 12px}
+.halo-cam-thumb{display:block;width:128px;aspect-ratio:4/3;object-fit:cover;background:#04101c;border:1px solid var(--line)}
+
+/* Use the pane width: a desktop window can still have a narrow setup column. */
+.halo-cams .sys-name{white-space:normal;overflow-wrap:anywhere}
+.halo-cams .sys-acts{flex-wrap:wrap;white-space:normal}
+@container (max-width:700px){
+  .halo-cams,.halo-cams tbody{display:block}
+  .halo-cams thead{display:none}
+  .halo-cams tr.sys-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:4px 8px;padding:12px 0;border-bottom:1px solid var(--line)}
+  .halo-cams td{min-width:0;width:auto;border:0;padding:4px 0}
+  .halo-cams .sys-badge{grid-column:1;grid-row:1;width:auto}
+  .halo-cams .sys-name{grid-column:2;grid-row:1}
+  .halo-cams .halo-cam-cell{grid-column:2;width:auto;padding:4px 0}
+  .halo-cams .halo-cam-thumb{box-sizing:border-box;max-width:100%;height:auto}
+  .halo-cams .sys-val,.halo-cams .sys-tog{grid-column:2;margin-left:0;text-align:left;white-space:normal}
+  .halo-cams .sys-acts{display:flex;justify-content:flex-start}
+  .halo-cams tr.sys-detail{display:block;padding:0}
+  .halo-cams .sys-detail td{display:block;padding:8px 0 12px}
+  .halo-cams .sys-detail dl{grid-template-columns:minmax(0,1fr);gap:4px}
+  .halo-cams .sys-detail dd{margin-bottom:8px}
+}

@@ -21,6 +21,44 @@ const post = (room: GameBridge, path: string, body: string, auth = token) =>
   room.fetch(new Request(`https://alderoberge.com/chess/remote/${path}`, { method: "POST", headers: { Authorization: `Bearer ${auth}` }, body }));
 
 describe("phone bridge", () => {
+  it("reports exhausted Cloudflare quotas and avoids repeatedly calling the object", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 120_000);
+    const fetch = vi.fn(async () => { throw new Error("Exceeded allowed volume of requests in Durable Objects free tier."); });
+    const env = { BRIDGE: { idFromName: (code: string) => code, get: () => ({ fetch }) } } as unknown as Env;
+    try {
+      for (let i = 0; i < 2; i++) {
+        const r = await worker.fetch(new Request("https://alderoberge.com/chess/remote/api/state?code=123456"), env);
+        expect(r.status).toBe(503); expect((await r.json()).error).toContain("quota");
+      }
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { clock.mockRestore(); }
+  });
+  it("does not send reserved close codes back to a WebSocket peer", () => {
+    const room = new GameBridge(memory(), {});
+    const close = vi.fn();
+    room.webSocketClose({ close } as unknown as WebSocket, 1005, "");
+    expect(close).toHaveBeenCalledWith();
+    room.webSocketClose({ close } as unknown as WebSocket, 1000, "done");
+    expect(close).toHaveBeenLastCalledWith(1000, "done");
+  });
+  it("checkpoints frequent state updates instead of writing each poll, but saves commands immediately", async () => {
+    vi.useFakeTimers();
+    try {
+      const ctx = memory(); const exec = vi.spyOn(ctx.storage.sql, "exec");
+      const room = new GameBridge(ctx, {});
+      for (let i = 0; i < 50; i++) await post(room, "host/state?code=4321", state);
+      const writes = () => exec.mock.calls.filter(([q]) => q.includes("INSERT")).length;
+      expect(writes()).toBe(1);
+      await room.fetch(new Request("https://relay/chess/remote/api/cmd?code=4321", { method: "POST", body: JSON.stringify({ type: "resign" }) }));
+      expect(writes()).toBe(2);
+      expect((await (await post(room, "host/state?code=4321", state)).json()).commands).toEqual([{ type: "resign" }]);
+      expect(writes()).toBe(3);
+      vi.advanceTimersByTime(30_000);
+      await post(room, "host/state?code=4321", state);
+      expect(writes()).toBe(4);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("lets a phone read the game and send a move only with the code", async () => {
     const room = new GameBridge(memory(), {});
     expect((await post(room, "host/state?code=4321", state, "short")).status).toBe(401);

@@ -29,7 +29,7 @@ Requires a recent Node.js LTS and a browser with WebGL (Chromium or Edge recomme
 ```bash
 npm install
 npm run setup:stockfish   # copies the single-thread WASM into public/ (otherwise a weak fallback engine plays)
-npm run dev               # http://localhost:5173  -> the guided setup opens by itself
+npm run dev               # http://localhost:5555  -> the guided setup opens by itself
 npm test                  # the whole suite, including full-game end-to-end runs
 npm run coverage          # same, enforcing 100% lines / branches / functions / statements
 npm run check             # full local suite, coverage and production build
@@ -70,7 +70,7 @@ and hover the mouse over the menu buttons to test dwell selection.
 
 ## Phone remote: watch and play from a phone
 
-Run the app on the computer that has the webcam (`npm run dev`, or `start-chess.bat`), open it there as `http://localhost:5173`, and click **Phone** in the ribbon (Home, Start). The window shows an address and a four-digit join code. On a phone on the **same Wi-Fi**, open the address (the code is already in it).
+Run the app on the computer that has the webcam (`npm run dev`, or `start-chess.bat`), open it there as `http://localhost:5555`, and click **Phone** in the ribbon (Home, Start). The window shows an address and a four-digit join code. On a phone on the **same Wi-Fi**, open the address (the code is already in it).
 
 The phone page shows:
 
@@ -82,7 +82,11 @@ The phone page shows:
 
 How it works: the dev server (`src/remote/relay.ts`, a Vite plugin with no dependencies) relays between the app on the computer and the phone. The app pushes the game state a few times a second; the phone polls. Host routes only answer requests from the computer itself, and phone routes need the join code. The server listens on the network (`server.host` in `vite.config.ts`), so on Windows the first start asks whether Node may use private networks: allow it. The code changes every time the server starts. This is for a home or venue network you trust; there is no encryption, so do not expose the port to the internet.
 
-On the production site, open **alderoberge.com/chess/** on the host PC. Its **This PC’s join code** badge displays a six-digit code. Open the same site on a phone, type that code and tap **Join**. The Cloudflare worker relays the game and camera pictures over HTTPS, so the devices can be on different networks. Keep the host page open. Each desktop session gets a separate room; reloading the host creates a new code. Plain static hosting without the worker has no phone relay.
+On the production site, open **alderoberge.com/chess/** on the host PC. Its **This PC’s join code** badge displays a six-digit code. Open the same site on a phone, type that code and tap **Join**. The Cloudflare worker relays the game and camera pictures over a persistent secure WebSocket, so the devices can be on different networks. Keep the host page open. Each desktop session gets a separate room; reloading the host creates a new code. Plain static hosting without the worker has no phone relay.
+
+Cloudflare usage: remote state, commands and images share one connection per browser instead of invoking the Worker for every poll. An unwatched host publishes every five seconds. The room checkpoints state every 30 seconds and saves command queue changes immediately; a room restart can briefly show an older position until the next host update. API quota counters use the `ProxyLimits` SQLite Durable Object, and API key lookups are cached for 60 seconds per Worker isolate. Saving keys clears the serving isolate's cache immediately; other isolates refresh within a minute. KV writes occur only when an administrator edits keys. Worker secrets remain usable if the KV quota is already exhausted.
+
+Deploy both the browser build and Worker together with `npm run build` then `npx wrangler deploy`. The `v2` migration adds the quota object while retaining existing game rooms. Already exhausted Cloudflare quotas still need to reset before the affected service can accept traffic.
 
 ## Calibrate piece detection
 

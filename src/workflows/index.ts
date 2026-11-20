@@ -1,4 +1,6 @@
 import type { GraphJSON } from "../core/types";
+import { buildCameraBot } from "./cameraBot";
+import { buildModularBot } from "./modular";
 import type { SetupConfig } from "../setup/config";
 import basic from "./basic.workflow.json";
 import botplay from "./botplay.workflow.json";
@@ -23,13 +25,17 @@ export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
   { id: "pieceless", ...(pieceless as unknown as WorkflowFile) },
   { id: "botplay", ...(botplay as unknown as WorkflowFile) },
   { id: "humanvsbot", ...(humanvsbot as unknown as WorkflowFile) },
+  { id: "camera-bot", app: "chess-experience", kind: "workflow", name: "Simple cameras → bot", description: "Every camera from Settings feeds one on-screen board processor. Play against Stockfish and move its indicated piece on your physical board. Uses saved board corners; no projector or people tracking.", ...buildCameraBot(null) },
+  { id: "modular-vision", app: "chess-experience", kind: "workflow", name: "Modular detection → bot", description: "The same camera-to-bot play, with the board reading split into nodes you can watch one by one: clean picture, flatten board, a rule-based and a neural detector, blend, camera reading. Only piece presence and colour are read.", ...buildModularBot(null) },
 ];
 
 /**
  * A live workflow ships wired to one webcam. When the saved setup has two or more enabled webcams, give it a second one:
  * the first keeps its source and board reader, the second is a copy of them (own device and corners) feeding the fuser and people tracker.
  */
-export function withLiveCameras(w: WorkflowFile, saved: SetupConfig | null): { graph: GraphJSON; setup: SetupConfig | null } {
+export function withLiveCameras(w: WorkflowFile & { id?: string }, saved: SetupConfig | null): { graph: GraphJSON; setup: SetupConfig | null } {
+  if (w.id === "camera-bot") return buildCameraBot(saved);
+  if (w.id === "modular-vision") return buildModularBot(saved);
   const cams = (saved?.cameras ?? []).filter((c) => c.kind === "webcam" && c.online).slice(0, 2);
   const src = w.graph.nodes.find((n) => n.type === "source.webcam"), rd = src && w.graph.nodes.find((n) => n.type === "vision.boardReader" && w.graph.edges.some((e) => e.from.node === src.id && e.to.node === n.id));
   if (cams.length < 2 || !src || !rd || w.graph.nodes.filter((n) => n.type === "source.webcam").length !== 1) return { graph: w.graph, setup: w.setup };

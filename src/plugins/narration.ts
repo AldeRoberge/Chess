@@ -11,7 +11,7 @@ import { commentate, LLM_DEFAULT_MODEL } from "../narrator/llm";
 import { chatModelsFrom, fetchOpenAiModelIds, OPENAI_PRICES } from "../narrator/openaiModels";
 import { BROWSER_PROVIDER, ELEVENLABS_DEFAULTS, ELEVENLABS_PROVIDER, elevenVoiceLabel, fetchElevenVoices, speak as speak_, TTS_PROVIDERS, type ElevenVoice, type VoiceSettings } from "../narrator/voice";
 
-interface NarState { n: Narrator; lines: NarrationLine[] }
+interface NarState { n: Narrator; lines: NarrationLine[]; started: boolean }
 /** Newest lines at the bottom, wrapped to the width; as many as fit, so an expanded node shows more history. */
 function layoutLines(measure: (t: string) => number, w: number, h: number, ls: NarrationLine[]) {
   const fs = Math.max(10.5, Math.min(16, h / 12)), lh = fs + 4.5;
@@ -69,13 +69,19 @@ const narrator: NodeSpec<NarState> = {
     { id: "setupChatter", kind: "bool", label: "Narrate the set-up (seat, opponent, intro)", value: true },
   ],
   previewSize: [200, 70],
-  init: () => ({ n: new Narrator(), lines: [] }),
+  init: () => ({ n: new Narrator(), lines: [], started: false }),
   process(i, { params, state, span }) {
     state.n.cfg.voices = params.voices === "1" ? 1 : 2;
     state.n.cfg.lang = langOf(params.language);
     state.n.cfg.names = [String(params.nameA), String(params.nameB)];
     let evs = [...(i.events ?? []), ...(i.events2 ?? []), ...(i.events3 ?? []), ...(i.events4 ?? [])] as ExperienceEvent[];
     // quick-play games start over and over: "a player sits down, against the machine, the lights dim" gets old fast
+    // Nothing is said at start-up (the camera isn't even calibrated yet): set-up lines wait until a game has really begun with a first move.
+    const setup = (e: ExperienceEvent) => e.type === "seat" || e.type === "leave" || e.type === "mode" || (e.type === "phase" && e.data?.phase === "intro");
+    evs = evs.filter((e) => {
+      if (e.type === "move" || e.type === "capture" || e.type === "castle" || e.type === "promotion" || e.type === "engine-move") state.started = true;
+      return state.started || !setup(e);
+    });
     if (params.setupChatter === false) evs = evs.filter((e) => !(e.type === "seat" || e.type === "leave" || e.type === "mode" || (e.type === "phase" && e.data?.phase === "intro")));
     const lines = evs.length ? span("narrate events", () => state.n.handle(evs)) : [];
     if (lines.length) { state.lines.push(...lines); state.lines = state.lines.slice(-30); pushLog(bus.lines, lines); }
@@ -152,6 +158,19 @@ const voiceParam = (id: "voiceIdA" | "voiceIdB", label: string) => ({
 });
 const voiceParamA = voiceParam("voiceIdA", "Voice A");
 const voiceParamB = voiceParam("voiceIdB", "Voice B");
+/** The browser's installed voices for the Voice A/B dropdowns, edited in place (the editor re-reads them each time a list opens). The browser loads its voices late, so this also refreshes when they arrive. */
+const browserVoiceOptions: string[] = [""], browserVoiceLabels: string[] = ["Automatic"];
+function refreshBrowserVoices() {
+  if (typeof speechSynthesis === "undefined") return;
+  const vs = speechSynthesis.getVoices(); if (!vs.length) return;
+  browserVoiceOptions.length = 0; browserVoiceLabels.length = 0;
+  browserVoiceOptions.push(""); browserVoiceLabels.push("Automatic");
+  for (const v of vs) { browserVoiceOptions.push(v.name); browserVoiceLabels.push(`${v.name} (${v.lang})`); }
+}
+if (typeof speechSynthesis !== "undefined") {
+  refreshBrowserVoices();
+  speechSynthesis.addEventListener?.("voiceschanged", refreshBrowserVoices);
+}
 function adoptElevenVoices(vs: ElevenVoice[]) {
   if (!vs.length) return;
   for (const p of [voiceParamA, voiceParamB]) { p.options = vs.map((v) => v.id); p.labels = vs.map(elevenVoiceLabel); }
@@ -166,13 +185,13 @@ const speak: NodeSpec<SpeakState> = {
     { id: "volume", kind: "number", label: "Volume", min: 0, max: 1, step: 0.05, value: 0.9 },
     { id: "provider", kind: "select", label: "Voice engine", options: TTS_PROVIDERS.map((p) => p.id), labels: TTS_PROVIDERS.map((p) => p.label), value: "browser" },
     { id: "sepBrowser", kind: "separator", label: BROWSER_PROVIDER.label, value: "" },
-    { id: "browserA", kind: "text", label: "Voice A", value: "" },
-    { id: "browserB", kind: "text", label: "Voice B", value: "" },
+    { id: "browserA", kind: "select", label: "Voice A", options: browserVoiceOptions, labels: browserVoiceLabels, value: "" },
+    { id: "browserB", kind: "select", label: "Voice B", options: browserVoiceOptions, labels: browserVoiceLabels, value: "" },
     { id: "sepElevenlabs", kind: "separator", label: ELEVENLABS_PROVIDER.label, value: "" },
     { id: "apiKey", kind: "text", label: "API key", value: "", secret: true },
     voiceParamA,
     voiceParamB,
-    { id: "model", kind: "text", label: "Model", value: ELEVENLABS_DEFAULTS.model },
+    { id: "model", kind: "select", label: "Model", options: ["eleven_multilingual_v2", "eleven_turbo_v2_5", "eleven_flash_v2_5"], labels: ["Multilingual v2 (best quality)", "Turbo v2.5 (faster)", "Flash v2.5 (fastest)"], value: ELEVENLABS_DEFAULTS.model },
     langParam,
   ],
   init: () => ({ enabled: true, keyFetched: "" }),

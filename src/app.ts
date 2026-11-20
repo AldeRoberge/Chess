@@ -3,7 +3,8 @@ import "./style.css";
 import { chipIcons, chipTone } from "./ui/chipIcons";
 import { installContextMenus, registerContextMenu } from "./ui/contextMenu";
 import { appMenu } from "./ui/menus/appMenu";
-import "./ui/halo.css";
+import { installMenuBar } from "./ui/menus/menuBar";
+import "./ui/setup-wizard.css";
 import "./ui/theme.css";
 import "./ui/tooltip.css";
 import "@fontsource/chakra-petch/400.css";
@@ -27,6 +28,10 @@ import { Sfx } from "./ui/sfx";
 import { SetupWizard } from "./ui/wizard";
 import { NodeEditor } from "./ui/editor";
 import { alignAllBoards } from "./ui/alignAll";
+import { AlignProgressPanel } from "./ui/alignProgress";
+import { migrateCameraBot } from "./workflows/cameraBot";
+import { splitBoardReaders } from "./workflows/splitReader";
+import { buildModularBot } from "./workflows/modular";
 import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
@@ -42,7 +47,6 @@ import { drawFrame } from "./plugins/shared";
 import type { GrayFrame } from "./vision/types";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
-import { buildBotPlay } from "./setup/botPlay";
 import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
@@ -50,11 +54,16 @@ import { speakAssistant } from "./assistant/voiceOut";
 import { AssistantPanel } from "./ui/assistantPanel";
 import { createAppHost } from "./assistant/appHost";
 import { profiler } from "./core/profiler";
+import { PerfAdvisor, type PerfSample, type TipAction } from "./core/perfAdvisor";
+import { showPerfToast } from "./ui/perfToast";
+import { onViewSettings, setQuality, setRender, viewSettings } from "./ui/viewSettings";
 import { CalibrationOverlay } from "./ui/calibrationOverlay";
+import { AppSearch, domSearchEntries, type SearchHit } from "./ui/search";
+import { settingSearchEntries } from "./ui/wizardSteps";
 import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
 import { STEPS } from "./ui/wizardSteps";
-import { icon, withIcon } from "./ui/icons";
+import { icon, withIcon, setPressed } from "./ui/icons";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
 import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
 import { installJoinBadge } from "./ui/joinBadge";
@@ -70,19 +79,20 @@ export function boot(root: HTMLElement): Boot {
   const crashed = openSession();
   let recovered: Backup | null = null;
   let savedRaw: string | null = null; try { savedRaw = localStorage.getItem(KEY); } catch { /* storage blocked */ }
-  try { if (savedRaw) graph.load(JSON.parse(savedRaw) as GraphJSON); } catch {
+  try { if (savedRaw) graph.load(migrateCameraBot(JSON.parse(savedRaw) as GraphJSON)); } catch {
     // Unreadable save: keep a copy for forensics, then fall back to the newest backup.
     try { localStorage.setItem("cx.graph.corrupt.v1", savedRaw ?? ""); } catch { /* storage full */ }
     for (const id of [...graph.nodes.keys()]) graph.removeNode(id);
     recovered = listBackups()[0] ?? null;
-    if (recovered) try { graph.load(recovered.graph); } catch { recovered = null; for (const id of [...graph.nodes.keys()]) graph.removeNode(id); }
+    if (recovered) try { graph.load(migrateCameraBot(recovered.graph)); } catch { recovered = null; for (const id of [...graph.nodes.keys()]) graph.removeNode(id); }
   }
   void loadServerKeys(); // which API keys the site worker holds (see worker/index.ts)
   let setup = loadSetup();
   if (!graph.nodes.size) {
     if (!setup && !loadPrefs().draft) {
-      // First run: skip the guided setup and sit the player down against Stockfish (simulated, mouse, White). Setup stays reachable from the top bar.
-      const r = buildBotPlay(registry, { start: "me-white", presence: "simulated", elo: 1200 }, null);
+      // First run: skip the guided setup and start on the modular detection demo (one webcam, against Stockfish). Setup stays reachable from the top bar.
+      // From then on the open workflow is autosaved and restored on reload.
+      const r = buildModularBot(null);
       graph.load(r.graph); saveSetup(r.setup); setup = r.setup;
     } else buildGraphFromConfig(graph, setup ?? defaultSetup());
   }
@@ -138,6 +148,7 @@ export function boot(root: HTMLElement): Boot {
         <div class="spacer"></div>
         <div class="chips" id="hud"></div>
         <div class="chips" id="buildchips"></div>
+        <div id="notifications"></div>
         <button id="scenpause" class="scen-pause" type="button" disabled aria-label="Pause scenario" data-tip="Pause scenario" data-tip-body="Holds the scenario player between moves while a game is replaying. Press again to resume.">${icon("pause", 16)}<span class="lbl">Pause</span></button>
         <div class="chips" id="hist">
           <button id="hudundo" class="chip" type="button" disabled aria-label="Undo" data-act="undo" data-tip="Undo" data-tip-keys="Ctrl,Z" data-tip-body="Step back through your edits to the workflow."></button>
@@ -159,8 +170,8 @@ export function boot(root: HTMLElement): Boot {
             <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
             <button id="settings" class="rb" data-tip="Settings" data-tip-body="Cameras, projector, narration, and players.">${icon("setup", 22)}<span>Settings</span></button>
-            <button id="calibrate" class="rb"><span>Calibrate</span></button>
-            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8)."><span>Align boards</span></button>
+            <button id="calibrate" class="rb">${icon("target", 22)}<span>Calibrate</span></button>
+            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8).">${icon("board", 22)}<span>Align boards</span></button>
             <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
           </div><div class="rlabel">Start</div></div>
           <div class="rgroup"><div class="rbtns">
@@ -215,6 +226,7 @@ export function boot(root: HTMLElement): Boot {
   // ---- ribbon: tab headers switch panes; "File" dropdown closes on outside click / Escape
   // Clicking the tab that is already open folds the ribbon away (Office-style); any tab click brings it back. Remembered between visits.
   const headerEl = app.querySelector("header")!;
+  installMenuBar(app.querySelector<HTMLElement>(".rtabs")!);
   const setRibbonCollapsed = (c: boolean, save = true) => {
     headerEl.classList.toggle("ribbon-collapsed", c);
     for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) o.setAttribute("aria-expanded", String(!c));
@@ -270,7 +282,7 @@ export function boot(root: HTMLElement): Boot {
   const inputPreview = document.createElement("section"); inputPreview.className = "simple-input";
   const inputHeader = document.createElement("div"); inputHeader.className = "simple-input-header";
   const inputTitle = document.createElement("strong"); inputTitle.textContent = "Input webcam";
-  const adjustCorners = document.createElement("button"); adjustCorners.type = "button"; adjustCorners.textContent = "Adjust corners";
+  const adjustCorners = document.createElement("button"); adjustCorners.type = "button"; adjustCorners.textContent = "Adjust corners"; withIcon(adjustCorners, "board", 14);
   adjustCorners.onclick = () => go({ page: "settings", step: "board" });
   const inputCanvas = document.createElement("canvas"); inputCanvas.width = 480; inputCanvas.height = 360;
   inputCanvas.setAttribute("aria-label", "Input webcam preview");
@@ -284,6 +296,20 @@ export function boot(root: HTMLElement): Boot {
     registry, graph, loadSetup,
     applySetup: (cfg, why) => { addBackup(why, graph.toJSON(), loadSetup(), true); saveSetup(cfg); buildGraphFromConfig(graph, cfg); editor.rebuild(); persist(); },
     applyGraph: (g, why) => restore(g, null, why),
+    refreshGraph: () => editor.rebuild(),
+    uiRoots: () => panels.map(([, panel]) => panel.root),
+    revealNode: (id) => { setSimple(false); editor.reveal(id); },
+    appAction: (action) => {
+      if (action === "show_nodes") setSimple(false);
+      else if (action === "hide_nodes") setSimple(true);
+      else if (action === "organize_nodes") editor.organize();
+      else if (action === "pause_demo") bus.scenarioPaused = true;
+      else if (action === "resume_demo") bus.scenarioPaused = false;
+      else if (action === "open_mixer") document.getElementById("mixer")?.click();
+      else if (action === "open_backups") document.getElementById("backups")?.click();
+      else if (action === "backup_now") document.getElementById("backupnow")?.click();
+      else throw new Error(`Unsupported app action: ${action}`);
+    },
     persist: () => persist(), toggleBypass: (id) => editor.toggleBypass(id), selection: () => editor.selection(),
     route: () => route, go: (r) => go(r), history: { get canUndo() { return edits.canUndo; }, get canRedo() { return edits.canRedo; } }, undo: () => undo(), redo: () => redo(),
     table: {
@@ -294,7 +320,7 @@ export function boot(root: HTMLElement): Boot {
   });
   const assistant = new AssistantPanel(assistantHost, { speak: speakAssistant });
   const panels: [string, { root: HTMLElement }][] = [["Game", table], ["World", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
-  const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };
+  const setHeat = (on: boolean) => { editor.setHeat(on); setPressed(document.getElementById("heat")!, on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);
   const themeSel = document.getElementById("theme") as HTMLSelectElement, modeBtn = document.getElementById("mode")!;
   const syncTheme = () => { themeSel.value = appTheme().id; modeBtn.querySelector(".lbl")!.textContent = appMode()[0].toUpperCase() + appMode().slice(1); };
@@ -309,10 +335,12 @@ export function boot(root: HTMLElement): Boot {
   nodesBtn.onclick = () => setSimple(!document.body.classList.contains("simple"));
   const tabs = document.getElementById("tabs")!, dock = document.getElementById("dock")!;
   let active = 0;
-  const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
+  const show = (i: number) => { if (i === 1 && !viewSettings().display.world3d) i = 0; active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
   const TAB_INFO = ["The game: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing.", "Chat with the AI: it sees the game, cameras and setup, and can change them for you."];
   const TAB_SHORT = ["Table", "3D", "Log", "Perf", "AI"]; // phone bar: icon over a one-word label
   panels.forEach(([name], i) => { const b = document.createElement("button"); b.setAttribute("aria-label", name); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span class="tl">${name}</span><span class="ts" aria-hidden="true">${TAB_SHORT[i]}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  const sync3d = () => { const on = viewSettings().display.world3d; (tabs.children[1] as HTMLElement).hidden = !on; if (!on && active === 1) go({ page: PAGES[0] }); };
+  onViewSettings(sync3d); sync3d();
   assistant.onNudge = () => { if (active !== 4) tabs.children[4]?.classList.add("ping"); };
   show(prefs.tab !== undefined && prefs.tab >= 0 && prefs.tab < panels.length ? prefs.tab : 0);
 
@@ -370,7 +398,8 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("export")!.onclick = doExport;
 
   // ---- undo / redo, backups, crash recovery
-  const loadState = (g: GraphJSON) => { graph.load(g); editor.rebuild(); save(); syncUndo(); };
+  /** Opening a workflow, file or backup tidies the nodes into sections first, so none overlap whatever layout it was saved with. */
+  const loadState = (g: GraphJSON) => { const m = migrateCameraBot(g); graph.load(m); editor.rebuild(); if (!m.groups?.length) editor.organize(); /* a workflow that brings its own sections keeps them */ save(); syncUndo(); };
   const stepState = (g: GraphJSON) => { graph.restore(g); editor.rebuild(); save(); dirty = true; syncUndo(); }; // in place: nothing restarts
   const undo = () => { const s = edits.undo(); if (s) stepState(s); };
   const redo = () => { const s = edits.redo(); if (s) stepState(s); };
@@ -426,7 +455,7 @@ export function boot(root: HTMLElement): Boot {
   function syncRibbon() {
     const sel = editor.selection(), n = sel.length, btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
     for (const id of ["seldup", "selbypass", "seldel"]) btn(id).disabled = n === 0;
-    btn("selbypass").classList.toggle("on", n > 0 && sel.every((id) => !!graph.nodes.get(id)?.bypass));
+    setPressed(btn("selbypass"), n > 0 && sel.every((id) => !!graph.nodes.get(id)?.bypass));
     document.getElementById("sellabel")!.textContent = n ? `${n} selected` : "Select nodes";
     document.getElementById("selgroup")!.classList.toggle("idle", n === 0);
     btn("export").classList.toggle("attn", dirty);
@@ -492,12 +521,34 @@ export function boot(root: HTMLElement): Boot {
   };
   let lastTick = 0, lastHud = 0, lastPost = 0, lastLine = "", lastFrame = 0, frameMs = 16.7, worstMs = 0;
   let lastBackup = 0, lastBeat = 0;
+  // ---- performance advisor: times the main parts of a frame and, when the page struggles, suggests the biggest win
+  const advisor = new PerfAdvisor();
+  let tickMs = 0, editorMs = 0, viewMs = 0;
+  const ema = (cur: number, v: number) => cur + (v - cur) * 0.1;
+  const perfActions: Record<TipAction, () => void> = {
+    "lite": () => { editor.lite = true; }, "hide-nodes": () => setSimple(true), "table-tab": () => go({ page: PAGES[0] }),
+    "quality-low": () => setQuality("low"), "quality-medium": () => setQuality("medium"), "fps-30": () => setRender({ fps: 30 }),
+    "heat-off": () => setHeat(false), "open-perf": () => go({ page: PAGES[3] }), "close-perf": () => go({ page: PAGES[0] }),
+  };
+  const perfCheck = (now: number) => {
+    const vs = viewSettings(), sample: PerfSample = { frameMs, tickMs, editorMs, viewMs, tab: active, simple: document.body.classList.contains("simple"), heat: editor.heatOn, lite: editor.lite, quality: vs.render.quality, scale: vs.render.scale, fps: vs.render.fps };
+    if (PerfAdvisor.struggling(sample)) {
+      let best: PerfSample["hot"];
+      for (const id of profiler.nodes.keys()) { const sm = profiler.summarize(id), n = graph.nodes.get(id); if (sm && n && (!best || sm.avg > best.avg)) best = { title: graph.registry.get(n.type)?.title ?? n.type, avg: sm.avg }; }
+      sample.hot = best;
+    }
+    const tip = advisor.feed(now, sample);
+    if (!tip) return;
+    const host = document.body, onMute = (id: string) => advisor.mute(id);
+    if (tip.auto) { perfActions[tip.actions[0].act](); showPerfToast(host, tip, (a) => perfActions[a](), { onMute, undo: () => { editor.lite = false; advisor.mute(tip.id); } }); }
+    else showPerfToast(host, tip, (a) => perfActions[a](), { onMute });
+  };
   let hudBarHtml = "", hudMenuHtml = "";
   // ---- phone remote: publishes the game to the relay in the dev server and plays the moves a phone sends
   const camFrames = () => [...graph.nodes.values()].flatMap((n) => {
-    if (n.type !== "vision.boardReader") return [];
+    if (n.type !== "vision.boardReader" && n.type !== "vision.flatten") return [];
     const f = registry.get(n.type)?.frameOf?.(graph.states.get(n.id)) as GrayFrame | null | undefined;
-    const cam = (graph.states.get(n.id) as { sampler?: { cam?: string } } | undefined)?.sampler?.cam;
+    const cam = n.type === "vision.flatten" ? String(n.params.cam ?? "A") : (graph.states.get(n.id) as { sampler?: { cam?: string } } | undefined)?.sampler?.cam;
     return f && cam ? [{ id: cam, frame: f }] : [];
   });
   const virtualBoard = () => {
@@ -535,11 +586,12 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("alignall")!.onclick = async (e) => {
     const btn = e.currentTarget as HTMLButtonElement; if (btn.disabled) return;
     const label = btn.querySelector("span")!, was = label.textContent; btn.disabled = true;
+    const panel = new AlignProgressPanel(btn); panel.start();
     try {
-      const r = await alignAllBoards(graph, (d, t) => { label.textContent = `Aligning ${d}/${t}`; });
+      const r = await alignAllBoards(graph, (d, t, info) => { label.textContent = `Aligning ${d}/${t}`; panel.update(d, t, info); });
       if (r.aligned) { editor.rebuild(); persist(); }
       notify(r.total ? `Aligned ${r.aligned} of ${r.total} board${r.total === 1 ? "" : "s"}, up to ${alignConcurrency()} at a time.` : "No camera with a live picture and a board grid was found.", [], r.aligned === r.total && r.total ? "info" : "warn", { title: "Align boards" });
-    } finally { label.textContent = was; btn.disabled = false; }
+    } finally { panel.stop(); label.textContent = was; btn.disabled = false; }
   };
   document.getElementById("phone")!.onclick = () => {
     if (remote.available === false) notify("The phone connection could not be opened. Reload this page to retry. If it still fails, the server’s phone bridge may be unavailable.", [], "warn", { title: "Phone remote is not running" });
@@ -555,22 +607,24 @@ export function boot(root: HTMLElement): Boot {
         { title: `This PC’s join code: ${remote.code}`, details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
     }
   };
-  const calWin = new CalibrationOverlay(() => { bus.calibrationDismiss = true; });
-  installJoinBadge(remote, () => document.getElementById("phone")!.click());
+  const calWin = new CalibrationOverlay(() => { bus.calibrationDismiss = true; }, document.getElementById("notifications")!, () => { bus.calibrationAccept = true; });
+  installJoinBadge(remote, () => document.getElementById("buildchips"));
   const step = (now: number) => {
     remote.tick(now);
+    if (bus.splitReaders) { bus.splitReaders = false; const g = splitBoardReaders(graph.toJSON()); if (g.nodes.length) { graph.load(g); editor.rebuild(); editor.organize(); persist(); } } // the Board Reader's "Split" button
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }
     lastFrame = now;
     profiler.beginFrame(now);
     if (now - lastBeat > 5000) { lastBeat = now; beatSession(); }
     if (now - lastBackup > 300000) { lastBackup = now; if (dirty) { dirty = false; addBackup("Autosave", graph.toJSON(), loadSetup(), true); } }
-    if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
+    if (now - lastTick >= 1000 / 15) { lastTick = now; const t0 = performance.now(); profiler.span("graph.tick", () => graph.tick(now)); tickMs = ema(tickMs, performance.now() - t0); }
     calWin.render(bus.calibration);
-    profiler.span("editor", () => editor.frame(now));
+    if (!document.body.classList.contains("simple")) { const t0 = performance.now(); profiler.span("editor", () => editor.frame(now)); editorMs = ema(editorMs, performance.now() - t0); } else editorMs = 0; // a hidden editor paints nothing
     if (calibrationDialog.open) drawCalibration();
-    document.getElementById("calibrate")!.classList.toggle("on", !!calibrate.view);
+    setPressed(document.getElementById("calibrate")!, !!calibrate.view);
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
+    const viewT0 = performance.now();
     profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {
       if (active === 0) {
         table.frame(now);
@@ -586,6 +640,7 @@ export function boot(root: HTMLElement): Boot {
       else if (active === 2) log.frame();
       else if (active === 3) perf.frame(now);
     });
+    viewMs = ema(viewMs, performance.now() - viewT0);
     if (now - lastPost > 33 && bus.scene) {
       lastPost = now;
       const g = bus.game;
@@ -616,7 +671,7 @@ export function boot(root: HTMLElement): Boot {
       if (menuHtml !== hudMenuHtml) { hudMenuHtml = menuHtml; hudMenu.innerHTML = menuHtml; hudMenu.append(buildChips); }
       hudMore.disabled = quiet.length === 0; // stays in place, just grayed out, so nothing shifts
       if (!quiet.length) setHudMenu(false);
-      syncHistChips(); syncScenarioPause();
+      syncHistChips(); syncScenarioPause(); perfCheck(now);
       const l = bus.lines[bus.lines.length - 1];
       const text = l ? `${l.name}: ${l.text}` : "";
       if (text !== lastLine) { lastLine = text; sub.textContent = text; sub.className = l ? `A${l.speaker}` : ""; }
@@ -633,13 +688,13 @@ export function boot(root: HTMLElement): Boot {
   function apply(r: Route) {
     route = r;
     if (r.page === "settings") { openWizard(); if (r.step) wiz?.setStep(r.step); }
-    else { if (wiz && loadSetup()?.completed) closeWizard(); show(PAGES.indexOf(r.page)); }
+    else { if (wiz && (loadSetup()?.completed || r.page === "assistant")) closeWizard(); show(PAGES.indexOf(r.page)); }
     document.title = routeTitle(r, r.page === "settings" ? STEPS.find((x) => x.id === r.step)?.title : undefined);
     document.body.dataset.page = r.page;
   }
   /** Navigate: show it and push a history entry so Back works. */
   function go(r: Route, replace = false) {
-    if (r.page !== "settings" && !loadSetup()?.completed) r = { page: "settings", step: wiz?.stepId ?? stepIds[loadPrefs().draft?.step ?? 0] ?? stepIds[0] };
+    if (r.page !== "settings" && r.page !== "assistant" && !loadSetup()?.completed) r = { page: "settings", step: wiz?.stepId ?? stepIds[loadPrefs().draft?.step ?? 0] ?? stepIds[0] };
     if (sameRoute(r, route) && location.hash === formatRoute(r)) return;
     apply(r);
     const h = formatRoute(r);
@@ -696,6 +751,53 @@ export function boot(root: HTMLElement): Boot {
     wiz.mount(document.body);
   };
   const closeWizard = () => { wiz?.destroy(); wiz = null; };
+
+  const search = new AppSearch({
+    entries: (scope) => {
+      const everywhere = scope === "everywhere", hits: SearchHit[] = [];
+      const modal = document.querySelector<HTMLDialogElement>("dialog[open]");
+      if (!everywhere && modal) return domSearchEntries(modal, modal.getAttribute("aria-label") ?? "This dialog");
+      const revealEditor = () => { if (wiz) closeWizard(); setSimple(false); };
+      if (!wiz || everywhere) {
+        const header = root.querySelector<HTMLElement>("header")!;
+        hits.push(...domSearchEntries(header, "Top menu", () => setRibbonCollapsed(false)));
+        for (let i = 0; i < panels.length; i++) {
+          if (!everywhere && i !== active) continue;
+          hits.push(...domSearchEntries(panels[i][1].root, panels[i][0], () => go({ page: PAGES[i] })));
+        }
+      }
+      if (everywhere || (!wiz && !document.body.classList.contains("simple"))) {
+        for (const node of graph.nodes.values()) {
+          const spec = registry.get(node.type); if (!spec) continue;
+          hits.push({ id: `node:${node.id}`, label: spec.title, location: `Workflow / ${node.id}`, text: `${spec.type} ${spec.category} ${spec.desc ?? ""}`, reveal: () => { revealEditor(); return editor.reveal(node.id); } });
+          for (const param of spec.params ?? []) if (param.kind !== "separator") hits.push({ id: `param:${node.id}:${param.id}`, label: param.label, location: `Workflow / ${spec.title} / ${node.id}`, text: param.id, reveal: () => { revealEditor(); return editor.reveal(node.id, param.id); } });
+          const card = [...editor.root.querySelectorAll<HTMLElement>(".ne-node")].find(el => el.dataset.id === node.id);
+          for (const [i, section] of [...card?.querySelectorAll<HTMLElement>(".ne-section-label strong") ?? []].entries()) {
+            const title = section.textContent ?? "";
+            hits.push({ id: `section:${node.id}:${i}`, label: title, location: `Workflow / ${spec.title} / ${node.id}`, text: "section settings", reveal: () => { revealEditor(); return editor.reveal(node.id, `section:${title}`); } });
+          }
+        }
+        for (const group of graph.groups) hits.push({ id: `group:${group.id}`, label: group.title, location: "Workflow / Region", text: "section group region", reveal: () => { revealEditor(); return editor.revealGroup(group.id); } });
+      }
+      if (everywhere || wiz) {
+        const extra = wiz?.root.querySelector<HTMLElement>(".halo-extra");
+        if (extra) hits.push(...domSearchEntries(extra, `Settings / ${wiz?.stepId}`));
+        for (const entry of settingSearchEntries(wiz?.cfg ?? loadSetup() ?? defaultSetup(), wiz?.state)) {
+          if (!everywhere && entry.step !== wiz?.stepId) continue;
+          hits.push({ ...entry, id: `settings:${entry.step}:${entry.path.join(".")}`, reveal: () => { go({ page: "settings", step: entry.step }); return wiz?.revealSearch(entry.step, entry.path); } });
+        }
+      }
+      return hits;
+    },
+    ask: (query, scope, hits) => {
+      document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach(dialog => dialog.close());
+      go({ page: "assistant" });
+      assistant.submit(`Search ${scope === "window" ? "the window I was viewing" : "everywhere in this app"} for: ${query}\n\nLocal matches:\n${hits.slice(0, 30).map(h => `- ${h.label} (${h.location})`).join("\n") || "No exact local matches."}\n\nUse the app context and available tools to find relevant items. Explain where they are and how to get to them. Do not change settings unless I ask.`);
+    },
+  });
+  const searchButton = document.createElement("button"); searchButton.type = "button"; searchButton.className = "chip";
+  searchButton.textContent = "Search"; searchButton.title = "Search (Ctrl+F)"; searchButton.onclick = () => search.open();
+  document.getElementById("notifications")!.before(searchButton);
   document.getElementById("home")!.onclick = (e) => { e.preventDefault(); go({ page: PAGES[0] }); };
   document.getElementById("settings")!.onclick = () => go({ page: "settings", step: wiz?.stepId ?? stepIds[0] });
   fromUrl();

@@ -268,7 +268,25 @@ function boardPaint(corners: { x: number; y: number }[], colour: (sq: number, u:
 
 const obs = (cam: string, occ: number, white: number, extra: Partial<SquareObs> = {}): SquareObs => ({ cam, t: 1000, quality: 1, weight: 1, occ: new Float32Array(64).fill(occ), white: new Float32Array(64).fill(white), motion: 0, handSquares: new Uint8Array(64), ...extra });
 
+/** The start position as a camera reads it: black on the top two rows, white on the bottom two, `turned` for a camera whose corners are turned half way. */
+const startObs = (cam: string, turned = false): SquareObs => {
+  const occ = new Float32Array(64), white = new Float32Array(64).fill(0.5);
+  for (let sq = 0; sq < 64; sq++) { const home = sq < 16 || sq >= 48; occ[sq] = home ? 0.97 : 0.03; if (home) white[sq] = (sq >= 48) !== turned ? 0.95 : 0.05; }
+  return { ...obs(cam, 0, 0), occ, white };
+};
+
 describe("Fusion", () => {
+  it("turns a camera that puts white on top back, so two cameras no longer cancel each other's colours", () => {
+    const fusion = new Fusion(), b = fusion.fuse(fusion.orient([startObs("A"), startObs("B", true)]), 1000);
+    expect(fusion.turned.get("A")).toBe(false); expect(fusion.turned.get("B")).toBe(true);
+    expect(b.white[60]).toBeGreaterThan(0.9); expect(b.white[4]).toBeLessThan(0.1); expect(b.conf[60]).toBeGreaterThan(0.8);
+    const cancelled = new Fusion().fuse([startObs("A"), startObs("B", true)], 1000);
+    expect(cancelled.conf[60]).toBeLessThan(0.1); // what the nodes showed before: doubtful red squares
+  });
+  it("leaves a camera alone when white is at the bottom or the sides are unclear", () => {
+    const fusion = new Fusion(); fusion.orient([startObs("A"), obs("B", 0.9, 0.9)]);
+    expect(fusion.turned.get("A")).toBe(false); expect(fusion.turned.get("B")).toBeUndefined();
+  });
   it("keeps unusable and undecided camera readings unknown rather than confidently empty", () => {
     for (const extra of [{ quality: 0 }, { weight: 0 }]) {
       const b = new Fusion().fuse([obs("A", 0.99, 0.99, extra)], 1000);

@@ -1,5 +1,7 @@
 import type { GrayFrame, Pt } from "../vision/types";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
+import type { BoardCnn } from "../vision/boardCnn";
+import { extractBoard } from "../vision/boardImage";
 import { pieceImage } from "./pieceSets";
 import { squareToQuad } from "./quadMap";
 
@@ -484,7 +486,125 @@ export function iconLevels(f: GrayFrame, corners: Pt[], q: number): number[] {
   });
 }
 
+/**
+ * Which way round the pieces stand, judged from brightness alone: in the start position the pieces on the bottom two rows
+ * (a1–h2 as the grid has them) should be brighter than the squares under them and the ones on the top two rows darker.
+ * Returns the difference, positive when white is at the bottom (right), negative when the grid is turned half way,
+ * and 0 when no pieces can be seen. The empty middle ranks give the square brightness, so the pieces are not needed to calibrate it.
+ * It cannot tell a real turned board from a game that is not at the start, so callers only suggest, never force.
+ */
+export function pieceSides(f: GrayFrame, corners: Pt[]): number {
+  const s = new BoardSampler("guide", { ...defaultSamplerConfig(), corners });
+  s.calibrateFromStart(f);
+  const side = (from: number, to: number) => {
+    let sum = 0, n = 0;
+    for (let sq = from; sq < to; sq++) {
+      const d = s.diagnose(f, sq);
+      if (!Number.isFinite(d.crown) || !Number.isFinite(d.ref) || d.ref <= 1) continue;
+      sum += (d.crown - d.ref) / d.ref; n++;
+    }
+    return n >= 8 ? sum / n : NaN;
+  };
+  const bottom = side(48, 64), top = side(0, 16);
+  return Number.isFinite(bottom) && Number.isFinite(top) ? bottom - top : 0;
+}
+
+/**
+ * How well the board, read by the neural board reader with the corners in this order, matches the start position
+ * (black on the top two rows, white on the bottom two, the middle empty): the mean probability of the expected
+ * class over all 64 squares (0..1). Pieces' colour comes from the model's whole-board read, not from brightness, so a
+ * dark piece on a dark square or an infra-red picture does not confuse it.
+ */
+export function startMatch(net: BoardCnn, f: GrayFrame, corners: Pt[]): number {
+  const p = net.classify(extractBoard(f, corners));
+  let s = 0;
+  for (let sq = 0; sq < 64; sq++) s += p[sq * 3 + (sq < 16 ? 2 : sq >= 48 ? 1 : 0)];
+  return s / 64;
+}
+
+/**
+ * How much the board reader believes a layout (0..1), without assuming the game is at the start: a layout that sits on the squares
+ * gives sure, board-like reads (each square clearly empty, white or black, a believable number of pieces), a layout off the squares
+ * gives muddled ones. The start position, in either corner order, adds a little when it matches. Used to rank guesses, never to veto one.
+ */
+export function netFit(net: BoardCnn, f: GrayFrame, corners: Pt[]): number {
+  const p = net.classify(extractBoard(f, corners));
+  let sure = 0, pieces = 0;
+  for (let sq = 0; sq < 64; sq++) { sure += Math.max(p[sq * 3], p[sq * 3 + 1], p[sq * 3 + 2]); if (p[sq * 3] < 0.5) pieces++; }
+  sure /= 64;
+  const plausible = pieces >= 4 && pieces <= 32 ? 1 : 0.6;
+  let here = 0, turned = 0;
+  for (let sq = 0; sq < 64; sq++) {
+    here += p[sq * 3 + (sq < 16 ? 2 : sq >= 48 ? 1 : 0)];
+    turned += p[sq * 3 + (sq < 16 ? 1 : sq >= 48 ? 2 : 0)];
+  }
+  return (sure * 0.75 + (Math.max(here, turned) / 64) * 0.25) * plausible;
+}
+
+/** The start position must fit this well, in the order that is claimed right, before anything is said. */
+const START_FIT = 0.7;
+/** ...and this much better than in the other order, so neither a messy board nor a half-played game decides. */
+const START_GAP = 0.2;
+
+export interface Orientation {
+  /** "right": the start position reads correctly as the corners are. "turned": it reads correctly only with the corners turned half way. "unknown": neither (not at the start, hands in the way, grid off). */
+  verdict: "right" | "turned" | "unknown";
+  /** Start-position match with the corners as they are, and turned half way (0..1). */
+  here: number;
+  turned: number;
+}
+
+/**
+ * Decides which way round the corners are from the start position alone, by reading the board in both orders and
+ * keeping an answer only when exactly one of them reads as the start position (a clear fit, a clear lead). A board that is
+ * mid-game, half hidden, or a grid that is off the squares gives "unknown", never a guess, so the caller can offer the flip
+ * only when it is certain.
+ */
+export function startOrientation(net: BoardCnn, f: GrayFrame, corners: Pt[]): Orientation {
+  const here = startMatch(net, f, corners), turned = startMatch(net, f, [corners[2], corners[3], corners[0], corners[1]]);
+  const verdict = here >= START_FIT && here - turned >= START_GAP ? "right" : turned >= START_FIT && turned - here >= START_GAP ? "turned" : "unknown";
+  return { verdict, here, turned };
+}
+
+/** How far apart the two sides must be before the colours are called the wrong way round. */
+const SIDES_SURE = 0.25;
+
+/** True when the grid fits but the pieces stand the other way round: white where black should be. Turning the corner order by two puts it right. */
+export function piecesLookTurned(f: GrayFrame, corners: Pt[]): boolean {
+  try { return pieceSides(f, corners) < -SIDES_SURE; } catch { return false; }
+}
+
 const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔", bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚" };
+
+/**
+ * An arrow across the board from black's side (a8–h8) to white's (a1–h1), so which way the corners say white sits is
+ * visible at a glance. It is always red, and the only arrow: when the pieces say white stands on the other side, the flip button offers the fix.
+ */
+export function drawDirection(ctx: CanvasRenderingContext2D, P: (u: number, v: number) => Pt, verdict: Orientation["verdict"]) {
+  const arrow = (from: Pt, to: Pt, color: string, dash: number[], head: string, tail: string, headIcon = "", tailIcon = "") => {
+    const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, hs = Math.min(18, len * 0.28);
+    ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const [w, c] of [[6, "rgba(7,9,13,.75)"], [3, color]] as const) {
+      ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = w; ctx.setLineDash(w === 3 ? dash : []);
+      ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x - ux * hs * 0.6, to.y - uy * hs * 0.6); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(to.x, to.y); ctx.lineTo(to.x - ux * hs - uy * hs * 0.55, to.y - uy * hs + ux * hs * 0.55); ctx.lineTo(to.x - ux * hs + uy * hs * 0.55, to.y - uy * hs - ux * hs * 0.55); ctx.closePath(); w === 3 ? ctx.fill() : ctx.stroke();
+    }
+    ctx.font = '700 11px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(7,9,13,.85)"; ctx.fillStyle = color;
+    // a pawn of each colour marks the two ends (the word stands in until the picture has loaded)
+    const r = 13;
+    for (const [t, icon, p, k] of [[head, headIcon, to, 1], [tail, tailIcon, from, -1]] as const) {
+      const x = p.x + ux * (r + 6) * k, y = p.y + uy * (r + 6) * k, img = icon ? pieceImage(icon) : null;
+      if (img) {
+        ctx.fillStyle = "rgba(236,240,245,.94)"; ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.drawImage(img, x - r * 0.9, y - r * 0.9, r * 1.8, r * 1.8);
+      } else if (t) { ctx.fillStyle = color; ctx.strokeText(t, x, y); ctx.fillText(t, x, y); }
+    }
+    ctx.restore();
+  };
+  // One red arrow, whatever the verdict: the corner order says white sits at the arrow's head. The flip button (shown when the pieces disagree) says the rest.
+  void verdict;
+  arrow(P(0.5, 0.3), P(0.5, 0.7), "#ff3b3b", [], "WHITE", "BLACK", "wp", "bp");
+}
 
 /** Draws the edge icons. `P` maps the unit square to canvas pixels; `ring` is the colour of the badge behind each icon. */
 export function drawEdgeIcons(ctx: CanvasRenderingContext2D, P: (u: number, v: number) => Pt, ring: string, levels?: number[]) {

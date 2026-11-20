@@ -33,6 +33,8 @@ export interface WizardState {
 }
 
 export interface StepCtx {
+  /** Build search metadata without network requests or subscriptions. */
+  searchOnly?: boolean;
   cfg: SetupConfig;
   state: WizardState;
   refresh(): void; // re-render after a state change
@@ -140,6 +142,7 @@ const testLine = (c: StepCtx, id: string): Item[] => { const r = c.state.tests[i
 const server = { pass: "", msg: undefined as TestResult | undefined, busy: false };
 /** Re-render once when the worker's answer arrives and changes what this step showed. */
 function watchServerKeys(c: StepCtx) {
+  if (c.searchOnly) return;
   const before = { openai: serverHas("openai"), elevenlabs: serverHas("elevenlabs") };
   void loadServerKeys().then(() => {
     if (serverHas("openai") !== before.openai || serverHas("elevenlabs") !== before.elevenlabs) c.refresh();
@@ -203,6 +206,7 @@ const aiItems = (c: StepCtx): Item[] => {
 /** The ElevenLabs voices of the key last loaded (kept across re-renders of the step). */
 const voiceList: { key: string; voices: ElevenVoice[]; busy: boolean; error: string } = { key: "", voices: [], busy: false, error: "" };
 function loadVoices(c: StepCtx) {
+  if (c.searchOnly) return;
   const key = effectiveKey(c.cfg.voice.apiKey, "elevenlabs").trim();
   if (!key || voiceList.busy || voiceList.key === key) return;
   voiceList.busy = true; voiceList.error = "";
@@ -332,7 +336,7 @@ export const STEPS: Step[] = [
       { kind: "choice", label: "Opponent for each game", options: [{ value: "menu", label: "Ask at the table" }, { value: "engine", label: "Always the computer" }, { value: "human", label: "Always another person" }], get: () => c.cfg.opponent.mode, set: (v) => { c.cfg.opponent.mode = v as "menu"; },
         hint: ({ menu: "Players hover a hand over a button on the table to choose the computer or another person each game.", engine: "No question is asked: every game is played against the computer. Good for a kiosk.", human: "No question is asked: every game is two people at the board. The computer is never used." } as Record<string, string>)[c.cfg.opponent.mode] },
       { kind: "slider", label: "Computer strength", min: 500, max: 2800, step: 50, get: () => c.cfg.opponent.elo, set: (v) => { c.cfg.opponent.elo = v; }, fmt: (v) => `${v} Elo`,
-        visual: eloVisual(c.cfg.opponent.elo),
+        visual: c.searchOnly ? undefined : eloVisual(c.cfg.opponent.elo),
         hint: c.cfg.opponent.mode === "human" ? "Not used while every game is two people." : "Elo is the chess rating the computer plays at: higher is harder to beat." },
     ] },
   { id: "room", title: "Room", blurb: "Projectors and lights. Scan your room and aim each projector later from the World tab.",
@@ -365,3 +369,28 @@ export const STEPS: Step[] = [
       ];
     } },
 ];
+
+
+export interface SettingSearchEntry { step: string; path: number[]; label: string; location: string; text: string }
+/** Index labels and help, including closed groups, without reading field values. */
+export function settingSearchEntries(cfg: SetupConfig, state?: WizardState): SettingSearchEntry[] {
+  const noop = () => {};
+  const ctx: StepCtx = {
+    cfg, searchOnly: true,
+    state: state ?? { checks: null, detected: [], scanning: false, boardCam: 0, scenePreview: sceneStateFor(cfg), tests: {}, groups: {}, frame: null, board: {}, autoMsg: "" },
+    refresh: noop, scan: noop, runChecks: noop, speak: noop, thunder: noop, open: noop, test: noop,
+    voiceSettings: () => ({ provider: "elevenlabs", lang: "fr", volume: 0, browserA: "", browserB: "", apiKey: "", voiceIdA: "", voiceIdB: "", model: "" }),
+    finish: noop, go: noop, syncScenePreview: noop, detect: noop,
+  };
+  const entries: SettingSearchEntry[] = [];
+  for (const step of STEPS) {
+    entries.push({ step: step.id, path: [], label: step.title, location: "Settings", text: step.blurb });
+    const walk = (items: Item[], path: number[], ancestors: string[]) => items.forEach((item, i) => {
+      const here = [...path, i];
+      entries.push({ step: step.id, path: here, label: item.label, location: ["Settings", step.title, ...ancestors].join(" / "), text: "hint" in item ? item.hint ?? "" : "" });
+      if (item.kind === "group") walk(item.children, here, [...ancestors, item.label]);
+    });
+    walk(step.items(ctx), [], []);
+  }
+  return entries;
+}

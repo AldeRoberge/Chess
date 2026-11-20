@@ -34,6 +34,7 @@ export const configureTools: ToolGroup = (h) => {
         const n = h.graph().nodes.find((x) => x.id === a.node_id); if (!n) throw new Error(`No node "${a.node_id}".`);
         if (SECRET.test(a.param)) throw new Error("Secrets are never set through chat.");
         const def = h.registry.get(n.type)?.params?.find((p) => p.id === a.param);
+        if (def?.kind === "text" && def.secret) throw new Error("Secrets are never set through chat.");
         if (!def || def.kind === "separator") throw new Error(`${n.type} has no parameter "${a.param}". Allowed: ${paramInfo(h.registry, n.type).map((p) => p.id).join(", ")}.`);
         const v = clamp(def, a.value); if (v === undefined) throw new Error(`"${a.value}" is not valid for ${a.param}: ${JSON.stringify(paramInfo(h.registry, n.type).find((p) => p.id === a.param))}`);
         const was = n.params[a.param]; h.setParam(n.id, a.param, v);

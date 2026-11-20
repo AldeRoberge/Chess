@@ -7,9 +7,9 @@ export const SPLASH_KEY = "chess.splashSeen";
 /** Set just before Vite full-reloads this tab, so the reload itself does not play the splash again. */
 export const HMR_KEY = "chess.hotReload";
 /** Whole splash length in ms: the knight appears, tilts, winks (dink), straightens, then everything fades out. The fade in theme.css starts half a second before this. */
-export const SPLASH_MS = 6400;
-/** Shorter version for subsequent runs. The fast fade in theme.css starts 0.3s before this. */
-export const SPLASH_FAST_MS = 4000;
+export const SPLASH_MS = 3000;
+/** Subsequent runs are the same length. The fast fade in theme.css starts 0.3s before this. */
+export const SPLASH_FAST_MS = 3000;
 
 /** How long ago this bundle was built, as shown on the splash. */
 export function splashAge(time = BUILD.time, now = Date.now()): string {

@@ -6,7 +6,7 @@ Input: 32x32 exposure-normalised crop of one square (src/vision/squareCrops.ts).
 Output: 3 classes - 0 empty, 1 white piece, 2 black piece.
 Batch norm is folded into the convolutions on export, so the TypeScript side is plain conv + relu + pool + dense.
 """
-import base64, json, sys, time
+import base64, copy, json, math, os, sys, time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,7 +14,9 @@ import torch.nn.functional as F
 
 CROP = 32
 EPOCHS = int(sys.argv[1]) if len(sys.argv) > 1 else 24
-OUT = "src/vision/squareCnn.weights.json"
+OUT = os.environ.get("OUT", "src/vision/squareCnn.weights.json")
+CHECK = os.environ.get("CHECK", "src/vision/squareCnn.check.json")
+STATS = os.environ.get("STATS", "ml/data/square-stats.json")
 DEV = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(0)
 np.random.seed(0)
@@ -76,13 +78,20 @@ def pack(t):
     return base64.b64encode(t.detach().cpu().numpy().astype("<f4").tobytes()).decode()
 
 
-xt, yt = load("train")
-xv, yv = load("val")
+parts = [load(name.strip()) for name in os.environ.get("TRAIN", "train").split(",")]
+source_weights = [float(w) for w in os.environ.get("TRAIN_WEIGHTS", "").split(",")] if os.environ.get("TRAIN_WEIGHTS") else None
+if source_weights and (len(source_weights) != len(parts) or min(source_weights) <= 0):
+    raise ValueError("TRAIN_WEIGHTS must give one positive weight per TRAIN dataset")
+sample_weights = torch.cat([torch.full((len(p[0]),),w/len(p[0]),device=DEV) for p,w in zip(parts,source_weights)]) if source_weights else None
+xt, yt = torch.cat([x for x, _ in parts]), torch.cat([y for _, y in parts])
+del parts
+xv, yv = load(os.environ.get("VAL", "val"))
 xr, yr = load("real")
 # Fine-tune on augmented copies of the real frame. "holdout" trains on files a-d only and judges the model
 # on files e-h of the untouched frame; "all" uses every square (the shipped model), so its real score is optimistic.
 REAL = sys.argv[2] if len(sys.argv) > 2 else "none"
 if REAL != "none":
+    if sample_weights is not None: raise ValueError("Include realaug explicitly in TRAIN when using TRAIN_WEIGHTS")
     xa, ya = load("realaug")
     col = torch.arange(len(xa), device=DEV) % 8
     keep = col < 4 if REAL == "holdout" else col >= 0
@@ -92,26 +101,44 @@ if REAL != "none":
         xr, yr = xr[hold], yr[hold]
 print(f"train {len(xt)} val {len(xv)} real {len(xr)}; classes {torch.bincount(yt).tolist()}")
 net = Net().to(DEV)
+if os.environ.get("INIT"):
+    old=json.load(open(os.environ['INIT']))
+    def decoded(value,shape):
+        return torch.from_numpy(np.frombuffer(base64.b64decode(value),dtype='<f4').copy().reshape(shape)).to(DEV)
+    with torch.no_grad():
+        for conv,bn,layer in zip([net.c1,net.c2,net.c3],[net.b1,net.b2,net.b3],old['layers']):
+            conv.weight.copy_(decoded(layer['w'],tuple(conv.weight.shape))); conv.bias.copy_(decoded(layer['b'],tuple(conv.bias.shape)))
+            bn.weight.fill_(math.sqrt(1+bn.eps)); bn.bias.zero_(); bn.running_mean.zero_(); bn.running_var.fill_(1)
+        for dense,layer in zip([net.f1,net.f2],old['layers'][3:]):
+            dense.weight.copy_(decoded(layer['w'],tuple(dense.weight.shape))); dense.bias.copy_(decoded(layer['b'],tuple(dense.bias.shape)))
+    print('Initialized from',os.environ['INIT'],flush=True)
 print("device", DEV)
 opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-4)
-steps = EPOCHS * (len(xt) // 256)
-sched = torch.optim.lr_scheduler.OneCycleLR(opt, 4e-3, total_steps=steps)
+epoch_samples = int(os.environ.get('EPOCH_SAMPLES',len(xt)))
+steps = EPOCHS * (epoch_samples // 256)
+sched = torch.optim.lr_scheduler.OneCycleLR(opt, float(os.environ.get('MAX_LR','0.004')), total_steps=steps)
+best_score=-1; best_state=None; best_epoch=0
 t0 = time.time()
 for ep in range(EPOCHS):
     net.train()
-    perm = torch.randperm(len(xt), device=DEV)
-    for i in range(0, len(xt) - 255, 256):
+    perm = torch.multinomial(sample_weights,epoch_samples,replacement=True) if sample_weights is not None else torch.randperm(len(xt),device=DEV)[:epoch_samples]
+    for i in range(0, len(perm) - 255, 256):
         idx = perm[i:i + 256]
         loss = F.cross_entropy(net(augment(xt[idx])), yt[idx], label_smoothing=0.05)
         opt.zero_grad(); loss.backward(); opt.step(); sched.step()
     va, _ = evaluate(net, xv, yv)
     ra, _ = evaluate(net, xr, yr)
-    print(f"epoch {ep + 1:2d} loss {loss.item():.3f} val {va:.4f} real-start {ra:.3f} ({time.time() - t0:.0f}s)")
+    if va > best_score:
+        best_score=va; best_state=copy.deepcopy(net.state_dict()); best_epoch=ep+1
+    print(f"epoch {ep + 1:2d} loss {loss.item():.3f} val {va:.4f} real-start {ra:.3f} ({time.time() - t0:.0f}s)",flush=True)
 
+net.load_state_dict(best_state)
+print('Selected best validation epoch',best_epoch,flush=True)
 va, conf = evaluate(net, xv, yv)
 ra, rconf = evaluate(net, xr, yr)
 print("val accuracy", va, "\nconfusion (rows truth, cols pred: empty/white/black)\n", conf.tolist())
 print("real start frame accuracy", ra, "\n", rconf.tolist())
+json.dump({'val':va,'real':ra,'bestEpoch':best_epoch,'conf3':conf.tolist(),'realConf3':rconf.tolist()},open(STATS,'w'))
 
 net.eval()
 w1, b1 = fold(net.c1, net.b1); w2, b2 = fold(net.c2, net.b2); w3, b3 = fold(net.c3, net.b3)
@@ -127,5 +154,5 @@ with torch.no_grad():
     logits = net(sample)
 json.dump({"crop": CROP, "layers": layers, "val": va, "real": ra}, open(OUT, "w"))
 # a few crops with the logits PyTorch gives them, so the TypeScript forward pass can be checked against them
-json.dump({"x": sample.flatten().tolist(), "logits": logits.flatten().tolist()}, open("src/vision/squareCnn.check.json", "w"))
+json.dump({"x": sample.flatten().tolist(), "logits": logits.flatten().tolist()}, open(CHECK, "w"))
 print("wrote", OUT)

@@ -1,0 +1,8 @@
+/* Setup wizard components. Keep camera overrides after the shared status table. */
+@import "./setup-wizard/layout.css";
+@import "./setup-wizard/navigation.css";
+@import "./setup-wizard/controls.css";
+@import "./setup-wizard/status-table.css";
+@import "./setup-wizard/strength-chart.css";
+@import "./setup-wizard/cameras.css";
+@import "./setup-wizard/motion.css";

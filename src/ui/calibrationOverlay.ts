@@ -1,36 +1,41 @@
+import { withIcon, setLabel } from "./icons";
 import type { CalibrationView } from "../vision/autoCalibrate";
 
-/**
- * The "Calibration in progress..." window. A board reader that lost the board publishes what it is doing on the bus;
- * this shows it, with a progress bar and a Dismiss button, and goes away when the reader clears it.
- */
+/** Quiet, opt-in calibration notification in the top menu. */
 export class CalibrationOverlay {
   readonly el: HTMLDivElement;
-  private title: HTMLElement; private label: HTMLElement; private fill: HTMLElement; private btn: HTMLButtonElement;
   private last = "";
-  constructor(onDismiss: () => void, parent: HTMLElement = document.body) {
-    const el = this.el = document.createElement("div");
-    el.className = "cal-win"; el.setAttribute("role", "dialog"); el.setAttribute("aria-live", "polite"); el.hidden = true;
-    this.title = document.createElement("strong"); this.title.className = "cal-title";
-    this.label = document.createElement("span"); this.label.className = "cal-label";
-    const bar = document.createElement("div"); bar.className = "cal-bar"; this.fill = document.createElement("i"); bar.append(this.fill);
-    this.btn = document.createElement("button"); this.btn.type = "button"; this.btn.className = "qe-btn"; this.btn.textContent = "Dismiss";
-    this.btn.title = "Stop calibrating. It will not start again on its own until the board reads well.";
-    this.btn.onclick = () => { onDismiss(); this.render(null); };
-    el.append(this.title, this.label, bar, this.btn);
-    parent.append(el);
+  private title = document.createElement("strong");
+  private label = document.createElement("span");
+  private bar = document.createElement("div");
+  private fill = document.createElement("i");
+  private accept = document.createElement("button");
+  private dismiss = document.createElement("button");
+  constructor(onDismiss: () => void, parent: HTMLElement = document.body, onAccept: () => void = () => {}) {
+    this.el = document.createElement("div"); this.el.className = "cal-notification";
+    this.el.setAttribute("role", "status"); this.el.hidden = true;
+    this.title.className = "cal-title"; this.label.className = "cal-label";
+    this.bar.className = "cal-bar"; this.bar.append(this.fill);
+    this.accept.type = this.dismiss.type = "button";
+    this.accept.className = "cal-accept"; this.accept.textContent = "\u{1f4a1}";
+    this.accept.title = "Do you want to auto calibrate";
+    this.accept.setAttribute("aria-label", this.accept.title);
+    this.accept.onclick = () => { this.accept.disabled = true; onAccept(); };
+    this.dismiss.className = "qe-btn"; withIcon(this.dismiss, "x");
+    this.dismiss.onclick = () => { onDismiss(); this.render(null); };
+    this.el.append(this.accept, this.title, this.label, this.bar, this.dismiss); parent.append(this.el);
   }
-  /** Call every frame with the bus value; only touches the DOM when something changed. */
   render(v: CalibrationView | null) {
-    const key = v ? `${v.phase}|${v.label}|${Math.round(v.progress * 100)}|${v.cam}` : "";
+    const key = v ? `${v.cam}|${v.phase}|${v.label}|${Math.round(v.progress * 100)}` : "";
     if (key === this.last) return;
-    this.last = key;
-    this.el.hidden = !v;
+    this.last = key; this.el.hidden = !v;
     if (!v) return;
     this.el.dataset.phase = v.phase;
-    this.title.textContent = v.phase === "running" ? "Calibration in progress..." : v.phase === "done" ? "Calibration finished" : "Calibration failed";
-    this.label.textContent = `Camera ${v.cam}: ${v.label}`;
+    this.accept.hidden = v.phase !== "suggested"; this.accept.disabled = false;
+    this.title.textContent = v.phase === "suggested" ? "Do you want to auto calibrate" : v.phase === "running" ? "Calibration in progress..." : v.phase === "done" ? "Calibration finished" : "Calibration failed";
+    this.label.textContent = `Camera ${v.cam}: ${v.label}`; this.label.hidden = v.phase === "suggested";
+    this.bar.hidden = v.phase !== "running";
     this.fill.style.width = `${Math.round(Math.max(0, Math.min(1, v.progress)) * 100)}%`;
-    this.btn.textContent = v.phase === "running" ? "Dismiss" : "Close";
+    setLabel(this.dismiss, v.phase === "suggested" || v.phase === "running" ? "Dismiss" : "Close");
   }
 }

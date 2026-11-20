@@ -45,7 +45,7 @@ describe("CalibrationWatch", () => {
     expect(attempt()).toBe(true);
     expect(attempt()).toBe(false);
     expect(w.attempts).toBe(3);
-    w.feed(good(t));
+    w.feed(good(t)); w.feed(good(t + 10000)); t += 10000;
     expect(w.attempts).toBe(0);
     expect(attempt()).toBe(true);
   });
@@ -55,8 +55,17 @@ describe("CalibrationWatch", () => {
     w.dismiss(6000);
     expect(w.running).toBe(false);
     expect(w.feed(bad(60000))).toBeNull();
-    w.feed(good(61000));
+    w.feed(good(61000)); w.feed(good(71000));
     expect(w.dismissed).toBe(false);
-    w.feed(bad(62000)); expect(w.feed(bad(68000))).toBe("fit");
+    w.feed(bad(72000)); expect(w.feed(bad(78000))).toBe("fit");
   });
+});
+
+it("does not re-arm dismissed suggestions after a brief healthy flicker", () => {
+  const w = new CalibrationWatch(); w.dismiss(0);
+  w.feed(good(1000)); w.feed(good(9000));
+  expect(w.dismissed).toBe(true);
+  w.feed(bad(10000)); w.feed(good(11000)); w.feed(good(20000));
+  expect(w.dismissed).toBe(true);
+  w.feed(good(21000)); expect(w.dismissed).toBe(false);
 });
