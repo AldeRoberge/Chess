@@ -29,7 +29,7 @@ body.remote #app{display:block;height:auto;padding-bottom:0}
 .rm{font-family:"Chakra Petch",system-ui,sans-serif;font-size:15px;letter-spacing:.01em}
 .rm-head{display:grid;grid-template-columns:auto 1fr auto;gap:12px;padding-block:16px 6px}
 .rm-title{display:flex;align-items:center}.rm-title svg{width:42px;height:42px}
-.rm-conn{justify-self:start;font:500 11px/1.2 "IBM Plex Mono",monospace;white-space:nowrap}
+.rm-conn{justify-self:start;font:500 12px/1.2 "IBM Plex Mono",monospace;white-space:nowrap}
 .rm-head .rm-btn{font-size:13px;border-radius:999px}
 .rm-turn{font-size:clamp(20px,5vw,28px);font-weight:600;letter-spacing:-.03em;line-height:1.25;padding-block:4px}
 .rm-bottom{margin-top:auto;display:flex;justify-content:center;padding-top:20px;border-top:1px solid var(--line)}

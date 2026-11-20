@@ -4,7 +4,7 @@
 .app-search input{width:100%;box-sizing:border-box;padding:10px;font-size:14px}
 .search-results{overflow:auto;min-height:0;max-height:48dvh;display:grid;gap:4px}
 .search-result{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:9px;white-space:normal}
-.search-result small,.search-status,.app-search>small{font-size:11px;opacity:.8}
+.search-result small,.search-status,.app-search>small{font-size:13px;opacity:.8}
 .search-result.active{border-color:var(--signal,#35e0b4);background:var(--ink-3,#243443)}
 .search-match{outline:3px solid var(--signal,#35e0b4)!important;outline-offset:4px;box-shadow:0 0 18px #35e0b440!important}
 @media(max-width:700px){.app-search{top:12px;right:12px;max-height:45dvh}.search-results{max-height:22dvh}}
