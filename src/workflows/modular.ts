@@ -10,7 +10,7 @@ const sourceParams = (c: CameraSetup) => ({ device: c.deviceId || (c.kind === "w
  * Only piece presence and colour are read; the tracker works out which piece is which from the moves.
  */
 export function modularBotGraph(cameras: CameraSetup[], elo: number, color = "b"): GraphJSON {
-  const n = cameras.length, rowH = 330, W = 300, STEP = 322, X0 = 44, col = (i: number) => X0 + i * STEP;
+  const n = cameras.length, rowH = 560, W = 300, STEP = 322, X0 = 44, col = (i: number) => X0 + i * STEP;
   const node = (id: string, type: string, x: number, y: number, params: NodeInstance["params"]): NodeInstance => ({ id, type, x, y, w: W, params });
   const nodes: NodeInstance[] = [], edges: GraphJSON["edges"] = [];
   const wire = (id: string, from: string, fp: string, to: string, tp: string) => edges.push({ id, from: { node: from, port: fp }, to: { node: to, port: tp } });
@@ -32,7 +32,7 @@ export function modularBotGraph(cameras: CameraSetup[], elo: number, color = "b"
     wire(`w6_${k}`, `neural${k}`, "reading", `blend${k}`, "r2");
     wire(`w7_${k}`, `blend${k}`, "reading", `reading${k}`, "reading");
     wire(`w8_${k}`, `reading${k}`, "obs", "fuse", `o${k}`);
-    const top = y - 64, h = 330 - 8;
+    const top = y - 64, h = rowH - 24;
     groups.push({ id: `gp${k}`, title: `Picture${tag}`, color: "#5aa9ff", x: col(0) - 24, y: top, w: STEP * 3 - 20, h });
     groups.push({ id: `gd${k}`, title: `Detectors${tag}`, color: "#5be08a", x: col(3) - 24, y: top, w: STEP * 2 - 20, h });
     groups.push({ id: `gc${k}`, title: `Combine${tag}`, color: "#3fb59a", x: col(5) - 24, y: top, w: STEP * 2 - 20, h });
@@ -48,8 +48,8 @@ export function modularBotGraph(cameras: CameraSetup[], elo: number, color = "b"
   wire("e3", "session", "director", "tracker", "director");
   wire("e4", "tracker", "game", "engine", "game");
   wire("e5", "session", "director", "engine", "director");
-  groups.push({ id: "gb", title: "Board analysis", color: "#ffd35a", x: col(0) - 24, y: by - 64, w: STEP * 2 - 20, h: 322 });
-  groups.push({ id: "gg", title: "Game", color: "#9a78e0", x: col(3) - 24, y: by - 64, w: STEP * 3 - 20, h: 322 });
+  groups.push({ id: "gb", title: "Board analysis", color: "#ffd35a", x: col(0) - 24, y: by - 64, w: STEP * 2 - 20, h: 520 });
+  groups.push({ id: "gg", title: "Game", color: "#9a78e0", x: col(3) - 24, y: by - 64, w: STEP * 3 - 20, h: 520 });
   return { nodes, edges, groups };
 }
 

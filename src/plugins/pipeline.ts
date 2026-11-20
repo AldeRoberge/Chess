@@ -1,4 +1,4 @@
-import type { HoverInfo, NodeSpec, Plugin } from "../core/types";
+import type { HoverInfo, NodeSpec, ParamDef, Plugin } from "../core/types";
 import { bus } from "../core/bus";
 import { boardTheme } from "../ui/boardThemes";
 import type { TipRow } from "../ui/tooltip";
@@ -267,22 +267,30 @@ const brightness: NodeSpec<BrightState> = {
 };
 
 // ---------------------------------------------------------------- Neural Board Reader (ML)
-interface NetState<N, C> { net: N | null; cache: C | null; cacheOf: N | null; loading: boolean; reading: Reading | null; flat: FlatBoard | null; ran: boolean; ms: number }
+interface NetState<N, C> { net: N | null; cache: C | null; cacheOf: N | null; loading: boolean; reading: Reading | null; flat: FlatBoard | null; ran: boolean; ms: number; lastRun: number; shape: string }
+/** Reads per second a network node is allowed: a board changes slowly, so the last reading stands in between. */
+const RATE: ParamDef = { id: "maxRate", kind: "number", label: "Reads per second (at most)", min: 1, max: 30, step: 1, value: 8 };
+/** True when the last reading is still fresh enough to reuse for this picture. */
+const reuse = (st: { reading: Reading | null; lastRun: number; shape: string }, f: FlatBoard, now: number, rate: number) =>
+  !!st.reading && st.shape === JSON.stringify(f.corners) && now - st.lastRun < 1000 / Math.max(1, rate);
 const neuralBoard: NodeSpec<NetState<BoardCnn, BoardCache>> = {
   type: "vision.neuralBoard", title: "Neural Board Reader", category: "Vision",
   desc: "A small trained network that looks at the whole flattened board at once and says, for every square, whether a piece stands there and which colour. Runs on your device; a still board costs almost nothing.",
   inputs: [{ id: "flat", type: "flat" }], outputs: [{ id: "reading", type: "reading" }],
-  params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }],
+  params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }, RATE],
   previewSize: BASE,
-  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0 }),
-  process({ flat }, { params, state, setFidelity }) {
+  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "" }),
+  process({ flat }, { params, state, setFidelity, now }) {
     const f = flat as FlatBoard | null | undefined;
     if (!state.net && !state.loading) { state.loading = true; void loadBoardCnn().then((n) => { state.net = n; }).catch(() => { state.loading = false; }); }
     if (!f || !state.net) { state.reading = null; state.flat = f ?? null; setFidelity(null); return { reading: null }; }
+    state.flat = f;
+    if (reuse(state, f, now, Number(params.maxRate))) { state.ran = false; state.reading = { ...state.reading!, t: f.t }; return { reading: state.reading }; }
     if (state.cacheOf !== state.net) { state.cache = new BoardCache(state.net); state.cacheOf = state.net; }
     const t0 = performance.now(), probs = state.cache!.classify(f.img);
     state.ran = state.cache!.ran; if (state.ran) state.ms = performance.now() - t0;
-    state.flat = f; state.reading = readingFromProbs(f.cam, f.t, "neural board", probs, Number(params.temperature));
+    state.lastRun = now; state.shape = JSON.stringify(f.corners);
+    state.reading = readingFromProbs(f.cam, f.t, "neural board", probs, Number(params.temperature));
     setFidelity(meanConf(state.reading));
     return { reading: state.reading };
   },
@@ -298,17 +306,20 @@ const neuralSquares: NodeSpec<NetState<SquareCnn, SquareCache>> = {
   type: "vision.neuralSquares", title: "Neural Square Reader", category: "Vision",
   desc: "A smaller trained network that looks at one square at a time, with the squares around it. Cheaper than the board reader but blind to context.",
   inputs: [{ id: "flat", type: "flat" }], outputs: [{ id: "reading", type: "reading" }],
-  params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }],
+  params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }, RATE],
   previewSize: BASE,
-  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0 }),
-  process({ flat }, { params, state, setFidelity }) {
+  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "" }),
+  process({ flat }, { params, state, setFidelity, now }) {
     const f = flat as FlatBoard | null | undefined;
     if (!state.net && !state.loading) { state.loading = true; void loadSquareCnn().then((n) => { state.net = n; }).catch(() => { state.loading = false; }); }
     if (!f || !state.net) { state.reading = null; state.flat = f ?? null; setFidelity(null); return { reading: null }; }
+    state.flat = f;
+    if (reuse(state, f, now, Number(params.maxRate))) { state.ran = false; state.reading = { ...state.reading!, t: f.t }; return { reading: state.reading }; }
     if (state.cacheOf !== state.net) { state.cache = new SquareCache(state.net); state.cacheOf = state.net; }
     const t0 = performance.now(), probs = state.cache!.classify(extractCrops(f.frame, f.corners));
     state.ran = state.cache!.ran > 0; if (state.ran) state.ms = performance.now() - t0;
-    state.flat = f; state.reading = readingFromProbs(f.cam, f.t, "neural squares", probs, Number(params.temperature));
+    state.lastRun = now; state.shape = JSON.stringify(f.corners);
+    state.reading = readingFromProbs(f.cam, f.t, "neural squares", probs, Number(params.temperature));
     setFidelity(meanConf(state.reading));
     return { reading: state.reading };
   },

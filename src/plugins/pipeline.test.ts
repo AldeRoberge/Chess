@@ -69,6 +69,19 @@ describe("detection pipeline nodes", () => {
     for (const n of [clean, flat, bright, neural, mix, cam]) n.paint(160, 160, {});
   });
 
+  it("network nodes reuse their last reading between reads, and read again after the interval or when the corners move", async () => {
+    const table = new VirtualTable(), corners = fmtCorners(rigCorners(RIGS.A)), flat = node("vision.flatten", { cam: "A", corners }), neural = node("vision.neuralBoard", { maxRate: 4 });
+    neural.run({ flat: null }, 0); await tick(); await tick();
+    const f1 = flat.run({ frame: shoot(table, "A", 0, 6, 1) })!.flat;
+    neural.run({ flat: f1 }, 0); expect(neural.state.ran).toBe(true);
+    const f2 = flat.run({ frame: shoot(table, "A", 100, 6, 2) })!.flat;
+    const reused = neural.run({ flat: f2 }, 100)!.reading; expect(neural.state.ran).toBe(false); expect(reused.t).toBe(f2.t); // stand-in carries the new time, so fusion never sees it as stale
+    neural.run({ flat: f2 }, 300); expect(neural.state.lastRun).toBe(300);
+    flat.params.corners = fmtCorners(rigCorners(RIGS.B));
+    const f3 = flat.run({ frame: shoot(table, "A", 400, 6, 3) })!.flat;
+    neural.run({ flat: f3 }, 310); expect(neural.state.lastRun).toBe(310); // corners moved: no waiting
+  });
+
   it("flatten gives nothing for bad corners and caches the picture it already cut", () => {
     const table = new VirtualTable(), frame = shoot(table, "A"), flat = node("vision.flatten", { corners: "nonsense" });
     expect(flat.run({ frame })!.flat).toBeNull();

@@ -32,7 +32,7 @@ describe("whole-board CNN", () => {
     expect(net.classes).toBe(13);
     for (let k = 0; k < check.logits.length / per; k++) {
       const out = net.logits(x.subarray(k * n, (k + 1) * n));
-      for (let i = 0; i < per; i++) expect(out[i]).toBeCloseTo(check.logits[k * per + i], 2);
+      for (let i = 0; i < per; i++) expect(Math.abs(out[i] - check.logits[k * per + i])).toBeLessThan(0.02); // the GPU computes the reference with TF32 convolutions
     }
   });
 

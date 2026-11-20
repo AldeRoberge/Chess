@@ -141,6 +141,7 @@ for c, b in zip(net.convs, net.bns):
     layers.append({"k": 3, "in": c.in_channels, "out": c.out_channels, "stride": c.stride[0], "relu": True, "w": pack(w), "b": pack(bias)})
 layers.append({"k": 1, "in": net.head.in_channels, "out": NC, "stride": 1, "relu": False, "w": pack(net.head.weight), "b": pack(net.head.bias)})
 sample = f32(xv[:2])
+torch.backends.cudnn.allow_tf32 = False  # full float32 for the reference logits, so the TypeScript check can be tight
 with torch.no_grad():
     logits = net(sample)  # 2 x 3 x 8 x 8
 json.dump({"side": SIDE, "classes": NC, "layers": layers, "val": vs["square"], "real": rs["square"]}, open(OUT, "w"))
