@@ -4,7 +4,8 @@ import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vis
 import type { GrayFrame, Pt } from "../vision/types";
 import { labelHints } from "../vision/boardLabels";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
-import { squareToQuad } from "./quadMap";
+import { quadToSquare, squareToQuad } from "./quadMap";
+import { pickTurnBase, turnQuadPlane } from "./quadTurn";
 import { AlignmentMeter, alignColor, drawDirection, drawEdgeIcons, drawMatrixGround, iconLevels, readPerspective, scoreAlignment, startOrientation, type Orientation } from "./boardGuide";
 import { BoardSampler } from "../vision/sampler";
 import { loadBoardCnn } from "../vision/boardModel";
@@ -97,7 +98,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const sx = W / fw, sy = H / fh;
   let sel = 0, raf = 0, closed = false, levels: number[] | undefined, levelsAt = 0, ground: ReturnType<typeof readPerspective> = null, groundAt = 0;
   let coach: PieceMove[] = [], coachAt = 0;
-  let turning: { from: number; shown: number } | null = null; // the rotate handle is being dragged: the angle turned so far (radians)
+  let turning: { from: number; shown: number; mode: "3d" | "flat" } | null = null; // the rotate handle is being dragged: the angle turned so far (radians)
   /** Where the rotate handle is on the canvas: outside the middle of the first edge, away from the centre. */
   const rotHandle = () => {
     const c = pts.reduce((a, p) => ({ x: a.x + (p.x * sx) / 4, y: a.y + (p.y * sy) / 4 }), { x: 0, y: 0 });
@@ -194,7 +195,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
       ctx.strokeStyle = "#07090d"; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(h.x, h.y, ROT_R * 0.5, -Math.PI * 0.2, Math.PI * 1.35); ctx.stroke();
       const ax = h.x + Math.cos(-Math.PI * 0.2) * ROT_R * 0.5, ay = h.y + Math.sin(-Math.PI * 0.2) * ROT_R * 0.5;
       ctx.fillStyle = "#07090d"; ctx.beginPath(); ctx.moveTo(ax - 3.5, ay - 1); ctx.lineTo(ax + 3.5, ay - 1); ctx.lineTo(ax + 0.5, ay + 4); ctx.closePath(); ctx.fill();
-      if (turning) { const deg = Math.round((turning.shown * 180) / Math.PI), t = `${deg > 0 ? "+" : ""}${deg}°`; ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(t, h.x + 16, h.y); ctx.fillText(t, h.x + 16, h.y); }
+      if (turning) { const deg = Math.round((turning.shown * 180) / Math.PI), t = `${deg > 0 ? "+" : ""}${deg}° ${turning.mode === "3d" ? "3D" : "flat"}`; ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(t, h.x + 16, h.y); ctx.fillText(t, h.x + 16, h.y); }
       ctx.restore();
     }
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
@@ -218,15 +219,23 @@ export function openQuadEditor(o: QuadEditorOpts) {
       if (Math.hypot(cx - h.x, cy - h.y) <= ROT_R + 5) {
         cv.setPointerCapture(e.pointerId); cv.focus(); e.preventDefault();
         aligner = null; setLabel(auto, "Auto detect"); follower.unlock(); status = "";
-        const base = pts.map((q) => ({ ...q })), a0 = Math.atan2(cy - c.y, cx - c.x);
-        turning = { from: a0, shown: 0 };
+        // Turn the board as it lies on the table when the picture backs up its perspective; otherwise turn the grid flat in the picture.
+        const pick = pickTurnBase(o.frame(), pts), base = pick.base.map((q) => ({ ...q })), inv = pick.mode === "3d" ? quadToSquare(base) : null;
+        const boardAngle = (ev: { clientX: number; clientY: number }) => {
+          const p = inv?.(((ev.clientX - r.left) / r.width) * fw, ((ev.clientY - r.top) / r.height) * fh);
+          return p ? Math.atan2(p.v - 0.5, p.u - 0.5) : null;
+        };
+        const flatAngle = (ev: { clientX: number; clientY: number }) => Math.atan2(((ev.clientY - r.top) / r.height) * H - c.y, ((ev.clientX - r.left) / r.width) * W - c.x);
+        const a3 = boardAngle(e), mode: "3d" | "flat" = a3 === null ? "flat" : "3d", a0 = mode === "3d" ? a3! : flatAngle(e);
+        if (mode === "flat" && pick.mode === "3d") base.splice(0, 4, ...pts.map((q) => ({ ...q })));
+        turning = { from: a0, shown: 0, mode };
         const move = (ev: PointerEvent) => {
-          const mx = ((ev.clientX - r.left) / r.width) * W, my = ((ev.clientY - r.top) / r.height) * H;
-          let d = Math.atan2(my - c.y, mx - c.x) - a0;
+          let d = (mode === "3d" ? boardAngle(ev) ?? a0 : flatAngle(ev)) - a0;
           d = Math.atan2(Math.sin(d), Math.cos(d));
           if (ev.shiftKey) d = Math.round(d / (Math.PI / 12)) * (Math.PI / 12);
-          turning = { from: a0, shown: d };
-          pts = turnQuad(base, { x: c.x / sx, y: c.y / sy }, d, sx, sy); emit();
+          const turned = mode === "3d" ? turnQuadPlane(base, d) : null;
+          turning = { from: a0, shown: d, mode: turned || mode === "flat" ? mode : "flat" };
+          pts = turned ?? turnQuad(base, { x: c.x / sx, y: c.y / sy }, d, sx, sy); emit();
         };
         const up = () => { turning = null; cv.removeEventListener("pointermove", move); cv.removeEventListener("pointerup", up); cv.removeEventListener("pointercancel", up); };
         cv.addEventListener("pointermove", move); cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);

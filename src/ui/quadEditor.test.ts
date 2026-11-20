@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openQuadEditor, squareToQuad, turnQuad } from "./quadEditor";
-import { parseCorners } from "../plugins/shared";
+import { fmtCorners, parseCorners } from "../plugins/shared";
+import { RIGS, rigCorners } from "../sim/rigs";
+import { VirtualTable } from "../sim/virtualTable";
+import { shoot } from "../test/helpers";
 import type { GrayFrame } from "../vision/types";
 
 describe("squareToQuad", () => {
@@ -123,4 +126,26 @@ describe("openQuadEditor", () => {
     cv.dispatchEvent(ptr("pointermove", 400, 100)); // no drag now: nothing changes
     expect(parseCorners(changes[changes.length - 1])![0].x).toBeCloseTo(q[0].x, 3);
   });
+
+  it("turns the board in 3D when the picture backs up the grid's perspective, so the far edge keeps its foreshortening", () => {
+    const pic = shoot(new VirtualTable(), "A"), c = rigCorners(RIGS.A);
+    const { changes, cv } = open({ frame: () => pic, value: fmtCorners(c) } as never);
+    const W = 720, H = Math.round((W * pic.height) / pic.width), k = W / pic.width;
+    cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: W, height: H, right: W, bottom: H, x: 0, y: 0, toJSON() {} });
+    const cx = c.reduce((a, p) => a + p.x, 0) / 4 * k, cy = c.reduce((a, p) => a + p.y, 0) / 4 * k;
+    const mx = ((c[0].x + c[1].x) / 2) * k, my = ((c[0].y + c[1].y) / 2) * k, d = Math.hypot(mx - cx, my - cy);
+    const hx = mx + ((mx - cx) / d) * 40, hy = my + ((my - cy) / d) * 40; // the rotate handle
+    cv.dispatchEvent(ptr("pointerdown", hx, hy));
+    const side = quadSideRatio(c);
+    // drag the handle a quarter of the way round, in the board's own plane
+    const m = squareToQuad(c), to = m(1.4, 0.5); // straight out to the right of the board's middle: a quarter turn clockwise from "up"
+    cv.dispatchEvent(ptr("pointermove", to.x * k, to.y * k));
+    const q = parseCorners(changes[changes.length - 1])!;
+    expect(quadSideRatio(q)).not.toBeCloseTo(side, 2); // a flat turn would keep the shape; a 3D turn re-projects it
+    const centre = squareToQuad(q)(0.5, 0.5), c0 = squareToQuad(c)(0.5, 0.5);
+    expect(Math.abs(centre.x - c0.x)).toBeLessThan(3); expect(Math.abs(centre.y - c0.y)).toBeLessThan(3); // about the board's middle (the grid may have snapped a pixel or two onto the picture's edges first)
+  });
 });
+
+/** Top edge over bottom edge: how much the far side is foreshortened. */
+const quadSideRatio = (q: { x: number; y: number }[]) => Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) / Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y);
