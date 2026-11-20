@@ -11,7 +11,7 @@ import { collectFrame } from "../vision/collect";
 import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
-import { agreement, blendReadings, expectedFromFen, legalLetters, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
+import { agreement, blendReadings, legalLetters, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
 import { AutoAligner } from "../ui/autoAlign";
 import { recallCorners, rememberCorners } from "../vision/cornerMemory";
 import { extractView, VIEW_SIDE, type BoardView } from "../vision/boardView";
@@ -467,9 +467,7 @@ const neuralView: NodeSpec<ViewNetState> = {
 };
 
 // ---------------------------------------------------------------- Blend Readings
-/** The tracked game position, when the tracker is sure of it (a wrong or lost position must never pull the readings). */
-const gamePrior = () => { const g = bus.game; return g && (g.status === "synced" || g.status === "moved") ? expectedFromFen(g.fen) : null; };
-interface BlendState { res: BlendResult | null; prior: boolean; inputs: (Reading | null)[]; ms: number; trust: number[]; eff: number[] }
+interface BlendState { res: BlendResult | null; inputs: (Reading | null)[]; ms: number; trust: number[]; eff: number[] }
 const IN = ["r1", "r2", "r3", "r4"] as const;
 const trustScale = (agree: number) => Math.max(0, Math.min(1, (agree - 0.8) / 0.2)); // 80% agreement or less = no trust, 100% = full
 const blend: NodeSpec<BlendState> = {
@@ -481,12 +479,11 @@ const blend: NodeSpec<BlendState> = {
     { id: "w2", kind: "number", label: "Weight of reading 2", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "w3", kind: "number", label: "Weight of reading 3", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "w4", kind: "number", label: "Weight of reading 4", min: 0, max: 2, step: 0.1, value: 0.6 },
-    { id: "wGame", kind: "number", label: "Weight of the game position", min: 0, max: 1, step: 0.05, value: 0.3 },
     { id: "guard", kind: "bool", label: "Ignore implausible readings", value: true },
     { id: "adapt", kind: "bool", label: "Learn which detector to trust", value: true },
   ],
   previewSize: BASE,
-  init: () => ({ res: null, prior: false, inputs: [null, null, null, null], ms: 0, trust: [1, 1, 1, 1], eff: [0, 0, 0, 0] }),
+  init: () => ({ res: null, inputs: [null, null, null, null], ms: 0, trust: [1, 1, 1, 1], eff: [0, 0, 0, 0] }),
   process(inputs, { params, state, setFidelity }) {
     state.inputs = IN.map((k) => (inputs[k] as Reading | null | undefined) ?? null);
     const t0 = performance.now();
@@ -495,9 +492,7 @@ const blend: NodeSpec<BlendState> = {
     const adapt = !!params.adapt;
     const eff = state.inputs.map((_, i) => Number(params[`w${i + 1}`]) * (adapt ? 0.2 + 0.8 * trustScale(state.trust[i]) : 1));
     state.eff = eff;
-    const prior = Number(params.wGame ?? 0) > 0 ? gamePrior() : null;
-    state.prior = !!prior;
-    state.res = blendReadings(state.inputs.map((reading, i) => ({ reading, weight: eff[i] })), !!params.guard, prior, Number(params.wGame ?? 0));
+    state.res = blendReadings(state.inputs.map((reading, i) => ({ reading, weight: eff[i] })), !!params.guard);
     const res = state.res, used = state.inputs.map((_, i) => i).filter((i) => res.used[i]);
     if (adapt && used.length >= 3) for (const i of used) {
       const rest = blendReadings(used.filter((j) => j !== i).map((j) => ({ reading: state.inputs[j], weight: eff[j] })), false).reading;
@@ -513,13 +508,13 @@ const blend: NodeSpec<BlendState> = {
       const rows: DetailRow[] = [...counts(s.res?.reading)];
       s.inputs.forEach((r, i) => rows.push([`reading ${i + 1}`, !r ? "not connected" : s.res?.used[i] ? `${r.source}: ${pieceCount(r)} pieces, sure ${pct(meanConf(r))}, counts ${pct(s.eff[i] / (s.eff.reduce((a, b) => a + b, 0) || 1))}` : `left out: ${s.res?.why[i] || "not used"}`, !r ? undefined : s.res?.used[i] ? undefined : "#ffb347"]));
       const dis = s.res ? Array.from(s.res.disagree).filter(Boolean).length : 0;
-      rows.push(["game position", s.prior ? "counted (which piece stands where)" : "not used (no synced game yet)"], ["piece types", s.res?.reading?.types ? "mixed from the neural reader and the game" : "none available"]);
+      rows.push(["piece types", s.res?.reading?.types ? "mixed from the neural reader" : "none available"]);
       rows.push(["disagreeing squares", s.res ? String(dis) : "—"], ["detectors agree", s.res?.reading ? pct(1 - dis / 64) : "—"]);
       return rows;
     });
   },
   hover(p, w, h, s) {
-    return squareHover(p, w, h, s.res?.reading, "Blend Readings", "Each connected detector votes with its weight, in log-odds, so none can switch a square on or off alone. The tracked game position adds a gentle vote of its own, and piece types from the neural reader are carried through. An amber frame marks a square where the detectors that took part disagree.", (q) =>
+    return squareHover(p, w, h, s.res?.reading, "Blend Readings", "Each connected detector votes with its weight, in log-odds, so none can switch a square on or off alone. Piece types from the neural reader are carried through. An amber frame marks a square where the detectors that took part disagree.", (q) =>
       s.inputs.flatMap((r, i): TipRow[] => (r ? [{ label: `${r.source}`, value: `${r.occ[q] > 0.5 ? (r.white[q] > 0.5 ? "white" : "black") : "empty"} ${pct(squareConf(r, q))}${s.res?.used[i] ? "" : " (left out)"}`, tone: s.res?.used[i] ? undefined : "warn" }] : [])));
   },
 };

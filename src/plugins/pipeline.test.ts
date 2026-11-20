@@ -3,7 +3,7 @@ import { Chess } from "chess.js";
 import { VirtualTable } from "../sim/virtualTable";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { node, shoot, tick } from "../test/helpers";
-import { agreement, blendReadings, expectedFromFen, pieceCount, type Reading } from "../vision/readings";
+import { agreement, blendReadings, pieceCount, type Reading } from "../vision/readings";
 import { fmtCorners } from "./shared";
 import { pieceLetter } from "./pipeline";
 import { legalLetters } from "../vision/readings";
@@ -40,30 +40,18 @@ describe("blendReadings", () => {
   });
 });
 
-describe("blend with piece types and the game position", () => {
+describe("blend with piece types", () => {
   const start = [...range(0, 16), ...range(48, 64)];
-  it("reads a FEN as which piece stands where", () => {
-    const e = expectedFromFen(new Chess().fen())!;
-    expect(e[0]).toBe(1 + 3 + 6); expect(e[4]).toBe(1 + 5 + 6); expect(e[8]).toBe(1 + 6); expect(e[16]).toBe(0); expect(e[60]).toBe(1 + 5);
-    expect(expectedFromFen("nonsense")).toBeNull();
-  });
-  it("carries the neural reader's piece types and lets the game fill in a detector that has none", () => {
-    const t = new Float32Array(64 * 13); t[4 * 13 + 1 + 10] = 0.2; t[4 * 13 + 1 + 7] = 0.6; // the net thinks a black knight on e8 (it is the king)
+  it("carries the neural reader's piece types and never invents them from the game", () => {
+    const t = new Float32Array(64 * 13); t[4 * 13 + 1 + 10] = 0.2; t[4 * 13 + 1 + 7] = 0.6; // the net thinks a black knight on e8
     const a = { ...reading(start), types: t }, b = reading(start);
-    const noGame = blendReadings([{ reading: a, weight: 1 }, { reading: b, weight: 1 }]).reading!;
-    expect(noGame.types![4 * 13 + 1 + 7]).toBeGreaterThan(noGame.types![4 * 13 + 1 + 11]);
-    const withGame = blendReadings([{ reading: a, weight: 1 }, { reading: b, weight: 1 }], true, expectedFromFen(new Chess().fen()), 1).reading!;
-    expect(withGame.types![4 * 13 + 1 + 11]).toBeGreaterThan(0.2); // the king the game knows about shows up
+    const r = blendReadings([{ reading: a, weight: 1 }, { reading: b, weight: 1 }]).reading!;
+    expect(r.types![4 * 13 + 1 + 7]).toBeGreaterThan(r.types![4 * 13 + 1 + 11]); // the reader's opinion stands, right or wrong
     expect(blendReadings([{ reading: b, weight: 1 }]).reading!.types).toBeUndefined();
   });
-  it("the game position nudges a doubtful square but cannot hide a real move", () => {
-    const g = expectedFromFen(new Chess().fen());
-    const doubt = reading(start); doubt.occ[20] = 0.55; // maybe a piece on e3 where the game says empty
-    const quiet = blendReadings([{ reading: doubt, weight: 1 }], true, g, 0.5).reading!;
-    expect(quiet.occ[20]).toBeLessThan(0.55);
-    const moved = reading([...range(0, 12), 20, ...range(13, 16), ...range(48, 64)]); // e2-e3 really played, clearly seen
-    const r = blendReadings([{ reading: moved, weight: 1 }], true, g, 0.3).reading!;
-    expect(r.occ[20]).toBeGreaterThan(0.5); expect(r.occ[12]).toBeLessThan(0.5);
+  it("a doubtful square stays doubtful: no game position pulls it", () => {
+    const doubt = reading(start); doubt.occ[20] = 0.55;
+    expect(blendReadings([{ reading: doubt, weight: 1 }], true).reading!.occ[20]).toBeCloseTo(0.55, 2);
   });
 });
 
@@ -192,7 +180,7 @@ describe("masked view nodes", () => {
     const flat = node("vision.flatten", { cam: "A", corners }), mask = node("vision.mask"), reader = node("vision.neuralView", { maxRate: 30 });
     const view = mask.run({ flat: flat.run({ frame })!.flat })!.view;
     expect(view.img.length).toBe(160 * 160);
-    reader.run({ view }, 0); for (let i = 0; i < 20 && !reader.run({ view }, i * 100)?.reading; i++) await tick();
+    reader.run({ view }, 0); for (let i = 0; i < 400 && !reader.run({ view }, i * 100)?.reading; i++) await new Promise((r) => setTimeout(r, 25)); // the 3 MB model can take a while to load when the whole suite runs at once
     const r = reader.run({ view }, 5000)!.reading;
     expect(r).toBeTruthy(); expect(r.source).toBe("neural view");
     expect(mask.run({ flat: null })!.view).toBeNull();
