@@ -543,7 +543,7 @@ const observe: NodeSpec<ObserveState> = {
     return { obs: state.obs };
   },
   preview(ctx, w, h, s) {
-    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { note: "no reading yet" }), () => [
+    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { types: s.reading?.types, note: "no reading yet" }), () => [
       ["camera", s.obs?.cam ?? "—"], ...counts(s.reading), ["quality", s.obs ? brief(s.obs.quality) : "—"], ["motion", s.obs ? brief(s.obs.motion) : "—"], ["trust", s.obs ? brief(s.obs.weight) : "—"]]);
   },
   hover(p, w, h, s) { return squareHover(p, w, h, s.reading, "Camera Reading", "This camera's final answer, as it goes into Multi-Camera Fusion: where it sees a piece, and which colour."); },
