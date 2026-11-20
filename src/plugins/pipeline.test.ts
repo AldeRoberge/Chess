@@ -3,11 +3,12 @@ import { Chess } from "chess.js";
 import { VirtualTable } from "../sim/virtualTable";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { node, shoot, tick } from "../test/helpers";
-import { blendReadings, pieceCount, type Reading } from "../vision/readings";
+import { agreement, blendReadings, pieceCount, type Reading } from "../vision/readings";
 import { fmtCorners } from "./shared";
 import { NetPool } from "../vision/netPool";
 import { handle, type NetReq } from "../vision/netWorker";
 import { extractBoard } from "../vision/boardImage";
+import { bus } from "../core/bus";
 
 const truthOf = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : p.color === "w" ? 1 : 2));
 const reading = (pieces: number[], source = "x", white = 1): Reading => ({ cam: "A", t: 0, source, occ: Float32Array.from({ length: 64 }, (_, i) => (pieces.includes(i) ? 0.95 : 0.05)), white: new Float32Array(64).fill(white ? 0.9 : 0.1) });
@@ -104,5 +105,27 @@ describe("detection pipeline nodes", () => {
     flat.params.corners = fmtCorners(rigCorners(RIGS.A));
     const a = flat.run({ frame })!.flat, b = flat.run({ frame })!.flat;
     expect(a).toBeTruthy(); expect(b).toBe(a);
+  });
+
+  it("agreement counts the squares two readings call the same", () => {
+    const a = reading(range(0, 16)), b = reading([...range(0, 15)]);
+    expect(agreement(a, a)).toBe(1); expect(agreement(a, b)).toBeCloseTo(63 / 64);
+    expect(agreement(a, reading(range(0, 16), "x", 0))).toBeCloseTo(48 / 64); // same squares, wrong colour
+  });
+  it("blend learns to trust the detector that keeps agreeing with the other two", () => {
+    const good = reading([...range(0, 16), ...range(48, 64)]), good2 = reading([...range(0, 16), ...range(48, 64)]), bad = reading([...range(0, 12), ...range(40, 60)]);
+    const mix = node("vision.blend", { w1: 1, w2: 1, w3: 1 });
+    for (let i = 0; i < 80; i++) mix.run({ r1: good, r2: good2, r3: bad });
+    const eff = (mix.state as { eff: number[] }).eff;
+    expect(eff[2]).toBeLessThan(eff[0] * 0.5); expect(eff[0]).toBeGreaterThan(0.9);
+    mix.params.adapt = false; mix.run({ r1: good, r2: good2, r3: bad });
+    expect((mix.state as { eff: number[] }).eff).toEqual([1, 1, 1]);
+  });
+  it("flatten can suggest auto-calibration when the camera reading stays poor", () => {
+    const table = new VirtualTable(), frame = shoot(table, "A"), flat = node("vision.flatten", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
+    bus.calibration = null; bus.cameras = [{ id: "A", online: true, quality: 0.05, reliability: 0.8 }];
+    expect(() => { for (let i = 0; i < 40; i++) flat.run({ frame: { ...frame, t: i * 600 } }, i * 600); }).not.toThrow();
+    flat.params.autoFind = false; flat.run({ frame }, 99999); expect(bus.calibration).toBeNull();
+    bus.cameras = [];
   });
 });

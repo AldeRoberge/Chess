@@ -47,8 +47,10 @@ const READER_BASE: [number, number] = [160, 280];
 const readerSplit = (w: number, h: number) => { const fh = Math.min(w * 0.75, h * (120 / 280)); return { fh, bh: h - fh }; };
 
 let readerSeq = 0;
+/** What the auto-calibration watch needs from a node: the Board Reader and the pipeline's Flatten Board both provide it. */
+export interface CalState { sampler: { cam: string }; obs: SquareObs | null; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number; follower?: { unlock(): void } }
 /** Drops this reader's calibration (no camera, node removed) and its window. */
-function stopCalibration(state: ReaderState, now: number) {
+export function stopCalibration(state: CalState, now: number) {
   if (state.aligner) { state.aligner = null; state.watch.ended(now); }
   if (bus.calibration?.cam === state.sampler.cam) { bus.calibration = null; bus.calibrationAccept = bus.calibrationDismiss = false; state.watch.dismiss(now); }
 }
@@ -60,7 +62,7 @@ const storage = () => (typeof localStorage === "undefined" ? undefined : localSt
  * offer calibration in the top menu. Only explicit approval starts the search.
  * Dismissal and completed attempts stay quiet until sustained recovery.
  */
-function autoCalibrate(state: ReaderState, params: Record<string, number | string | boolean>, f: GrayFrame, now: number, fresh: boolean) {
+export function autoCalibrate(state: CalState, params: Record<string, number | string | boolean>, f: GrayFrame, now: number, fresh: boolean) {
   const cam = state.sampler.cam, view = bus.calibration, mine = view?.cam === cam;
   if (mine && bus.calibrationDismiss) { bus.calibrationDismiss = bus.calibrationAccept = false; state.aligner = null; state.watch.dismiss(now); bus.calibration = null; return; }
   if (mine && view.phase !== "suggested" && view.phase !== "running" && now >= (view.hideAt ?? 0)) bus.calibration = null;
@@ -73,7 +75,7 @@ function autoCalibrate(state: ReaderState, params: Record<string, number | strin
     const store = storage();
     state.aligner = new AutoAligner(f, seed ?? corners, 60, undefined, store ? rememberedLayouts(f.width, f.height, store) : []);
     state.aligner.expectLabels(labelHints(f));
-    state.follower.unlock();
+    state.follower?.unlock();
     bus.calibration = { cam, phase: "running", label: "Looking for the board...", progress: 0 };
   }
   // Judge the board twice a second: how well the grid fits, how much of it reads, and whether the start position shows.

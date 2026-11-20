@@ -36,6 +36,16 @@ export function squareConf(r: { occ: ArrayLike<number>; white: ArrayLike<number>
   return o > 0.5 ? Math.min(o, w > 0.5 ? w : 1 - w) : 1 - o;
 }
 
+/** How much two readings agree: the share of squares where both say the same thing (empty, white piece or black piece). */
+export function agreement(a: Reading, b: Reading): number {
+  let same = 0;
+  for (let i = 0; i < 64; i++) {
+    const sa = a.occ[i] > 0.5 ? (a.white[i] > 0.5 ? 1 : 2) : 0, sb = b.occ[i] > 0.5 ? (b.white[i] > 0.5 ? 1 : 2) : 0;
+    if (sa === sb) same++;
+  }
+  return same / 64;
+}
+
 export interface BlendInput { reading: Reading | null | undefined; weight: number }
 export interface BlendResult {
   reading: Reading | null;

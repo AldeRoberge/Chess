@@ -8,7 +8,7 @@ import { drawFrame, withDetail } from "./shared";
 import { frameHover } from "./hover";
 import { openStream } from "../setup/devices";
 
-interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string; status: string; debug: string; frames: number; dev?: string }
+interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string; status: string; debug: string; frames: number; dev?: string; wantDev?: string }
 const webcamStatus = (s: WebcamState) => s.err ? "Error" : s.starting || (s.stream && !s.frame) ? "Loading" : s.frame ? "Live" : "Offline";
 /** Capture sizes. The picture is kept at this size (or the camera's own size when that is smaller). The board reader averages it down to 480×360 to sample the squares. */
 const RESOLUTIONS: Record<string, [number, number]> = { "640x480": [640, 480], "960x720": [960, 720], "1280x960": [1280, 960] };
@@ -58,7 +58,7 @@ const webcam: NodeSpec<WebcamState> = {
     if (!params.online) { if (state.stream) stop(); state.status = "Camera disabled"; state.debug = "Online is off; no frames requested"; setFidelity(null); return { frame: null }; }
     if (!navigator.mediaDevices) { state.err = "Camera API unavailable (requires HTTPS or localhost)"; state.status = "Cannot open camera"; state.debug = state.err; }
     const [capW, capH] = RESOLUTIONS[String(params.resolution)] ?? RESOLUTIONS["640x480"];
-    if (state.stream && state.res !== String(params.resolution)) stop(); // a new capture size reopens the camera
+    if (state.stream && (state.res !== String(params.resolution) || state.wantDev !== String(params.device))) stop(); // a new capture size or device reopens the camera
     if (!state.stream && !state.starting && navigator.mediaDevices) {
       state.starting = true;
       state.status = "Enumerating video devices";
@@ -68,6 +68,8 @@ const webcam: NodeSpec<WebcamState> = {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const want = String(params.device);
           const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
+          if (want && !dev) throw new Error(`Camera "${want}" not found; not falling back to another camera`);
+          state.wantDev = want;
           state.dev = dev?.label || (want && !/^[0-9a-f]{20,}$/i.test(want) ? want : "") || "default camera";
           state.status = "Requesting camera stream";
           state.debug = `${devices.filter(d => d.kind === "videoinput").length} cameras; ${dev?.label || dev?.deviceId || "default device"}; ${capW}×${capH}. Awaiting getUserMedia (permission/device open; 6s timeout)`;

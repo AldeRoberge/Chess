@@ -10,10 +10,13 @@ import { collectFrame } from "../vision/collect";
 import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
-import { blendReadings, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
+import { agreement, blendReadings, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
+import { AutoAligner } from "../ui/autoAlign";
 import { SquareCache, type SquareCnn } from "../vision/squareCnn";
 import { extractCrops } from "../vision/squareCrops";
 import { loadSquareCnn } from "../vision/squareModel";
+import { CalibrationWatch } from "../vision/autoCalibrate";
+import { autoCalibrate, stopCalibration } from "./vision";
 import { sqName, type GrayFrame, type SquareObs } from "../vision/types";
 import { FRAME_H, FRAME_W, RIGS, rigCorners } from "../sim/rigs";
 import { brief, confColor, drawFrame, fmtCorners, frameScale, looksLikeStart, parseCorners, withDetail, type DetailRow } from "./shared";
@@ -164,7 +167,7 @@ const clean: NodeSpec<CleanState> = {
 };
 
 // ---------------------------------------------------------------- Flatten Board
-interface FlatState { frame: GrayFrame | null; of: GrayFrame | null; key: string; flat: FlatBoard | null; ms: number; why: string }
+interface FlatState { frame: GrayFrame | null; of: GrayFrame | null; key: string; flat: FlatBoard | null; ms: number; why: string; sampler: { cam: string }; obs: SquareObs | null; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number }
 const flatten: NodeSpec<FlatState> = {
   type: "vision.flatten", title: "Flatten Board", category: "Vision",
   desc: "Uses the four board corners to cut the board out of the camera picture and straighten it into one square image, with a square of margin all round. Every detector after it reads this same image.",
@@ -172,14 +175,15 @@ const flatten: NodeSpec<FlatState> = {
   params: [
     { id: "cam", kind: "text", label: "Camera id", value: "A" },
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(rigCorners(RIGS.A)), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
+    { id: "autoFind", kind: "bool", label: "Suggest auto-calibration when lost", value: true },
     { id: "collect", kind: "bool", label: "Save training frames (dev server only)", value: false },
   ],
   previewSize: BASE,
   frameOf: (s) => s.frame,
-  init: () => ({ frame: null, of: null, key: "", flat: null, ms: 0, why: "no picture" }),
-  process({ frame }, { params, state, setFidelity }) {
-    state.frame = frame ?? null;
-    if (!frame) { state.flat = state.of = null; state.why = "no picture"; setFidelity(null); return { flat: null }; }
+  init: () => ({ frame: null, of: null, key: "", flat: null, ms: 0, why: "no picture", sampler: { cam: "A" }, obs: null, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1 }),
+  process({ frame }, { params, state, now, setFidelity }) {
+    state.frame = frame ?? null; state.sampler.cam = String(params.cam);
+    if (!frame) { stopCalibration(state, now); state.flat = state.of = null; state.why = "no picture"; setFidelity(null); return { flat: null }; }
     const c = parseCorners(String(params.corners));
     if (!c) { state.flat = null; state.why = "corners are not valid"; setFidelity(null); return { flat: null }; }
     const key = `${params.corners}|${params.cam}`;
@@ -189,6 +193,10 @@ const flatten: NodeSpec<FlatState> = {
       state.of = frame; state.key = key; state.ms = performance.now() - t0; state.why = "";
       if (params.collect) collectFrame({ cam: String(params.cam), frame, corners, fen: bus.game?.fen, board: bus.board });
     }
+    // The watch needs a picture-quality figure; the camera reading that follows publishes one on the bus.
+    const q = bus.cameras.find((c) => c.id === state.sampler.cam)?.quality;
+    state.obs = q === undefined ? null : ({ cam: state.sampler.cam, t: frame.t, quality: q, weight: 1, occ: new Float32Array(64), white: new Float32Array(64), motion: 0, handSquares: new Uint8Array(64) } as SquareObs);
+    autoCalibrate(state, params, frame, now, state.of === frame);
     setFidelity(1);
     return { flat: state.flat };
   },
@@ -355,8 +363,9 @@ const neuralSquares: NodeSpec<NetState<SquareCnn, SquareCache>> = {
 };
 
 // ---------------------------------------------------------------- Blend Readings
-interface BlendState { res: BlendResult | null; inputs: (Reading | null)[]; ms: number }
+interface BlendState { res: BlendResult | null; inputs: (Reading | null)[]; ms: number; trust: number[]; eff: number[] }
 const IN = ["r1", "r2", "r3"] as const;
+const trustScale = (agree: number) => Math.max(0, Math.min(1, (agree - 0.8) / 0.2)); // 80% agreement or less = no trust, 100% = full
 const blend: NodeSpec<BlendState> = {
   type: "vision.blend", title: "Blend Readings", category: "Vision",
   desc: "Mixes up to three detectors, square by square, each counted by its weight. The first connected reading is the anchor: a reading whose piece count is implausible next to it is thrown out. Amber squares are where the detectors disagree.",
@@ -366,23 +375,35 @@ const blend: NodeSpec<BlendState> = {
     { id: "w2", kind: "number", label: "Weight of reading 2", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "w3", kind: "number", label: "Weight of reading 3", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "guard", kind: "bool", label: "Ignore implausible readings", value: true },
+    { id: "adapt", kind: "bool", label: "Learn which detector to trust", value: true },
   ],
   previewSize: BASE,
-  init: () => ({ res: null, inputs: [null, null, null], ms: 0 }),
+  init: () => ({ res: null, inputs: [null, null, null], ms: 0, trust: [1, 1, 1], eff: [0, 0, 0] }),
   process(inputs, { params, state, setFidelity }) {
     state.inputs = IN.map((k) => (inputs[k] as Reading | null | undefined) ?? null);
     const t0 = performance.now();
-    state.res = blendReadings(state.inputs.map((reading, i) => ({ reading, weight: Number(params[`w${i + 1}`]) })), !!params.guard);
+    // A detector that keeps disagreeing with what the others agree on counts for less; one that agrees counts fully.
+    // With only two detectors there is no way to tell which one is wrong, so the weights stay as set.
+    const adapt = !!params.adapt;
+    const eff = state.inputs.map((_, i) => Number(params[`w${i + 1}`]) * (adapt ? 0.2 + 0.8 * trustScale(state.trust[i]) : 1));
+    state.eff = eff;
+    state.res = blendReadings(state.inputs.map((reading, i) => ({ reading, weight: eff[i] })), !!params.guard);
+    const res = state.res, used = state.inputs.map((_, i) => i).filter((i) => res.used[i]);
+    if (adapt && used.length >= 3) for (const i of used) {
+      const rest = blendReadings(used.filter((j) => j !== i).map((j) => ({ reading: state.inputs[j], weight: eff[j] })), false).reading;
+      if (rest) state.trust[i] += 0.05 * (agreement(state.inputs[i]!, rest) - state.trust[i]);
+    }
     state.ms = performance.now() - t0;
     const r = state.res.reading;
-    setFidelity(r ? meanConf(r) : null);
+    setFidelity(r ? meanConf(r) * (1 - 0.5 * (Array.from(state.res.disagree).filter(Boolean).length / 64)) : null);
     return { reading: r };
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.res?.reading, { rings: s.res?.disagree, note: "connect at least one detector" }), () => {
       const rows: DetailRow[] = [...counts(s.res?.reading)];
-      s.inputs.forEach((r, i) => rows.push([`reading ${i + 1}`, !r ? "not connected" : s.res?.used[i] ? `${r.source}, ${pieceCount(r)} pieces` : `left out: ${s.res?.why[i] || "not used"}`, !r ? undefined : s.res?.used[i] ? undefined : "#ffb347"]));
-      rows.push(["disagreeing squares", s.res ? String(Array.from(s.res.disagree).filter(Boolean).length) : "—"]);
+      s.inputs.forEach((r, i) => rows.push([`reading ${i + 1}`, !r ? "not connected" : s.res?.used[i] ? `${r.source}: ${pieceCount(r)} pieces, sure ${pct(meanConf(r))}, counts ${pct(s.eff[i] / (s.eff.reduce((a, b) => a + b, 0) || 1))}` : `left out: ${s.res?.why[i] || "not used"}`, !r ? undefined : s.res?.used[i] ? undefined : "#ffb347"]));
+      const dis = s.res ? Array.from(s.res.disagree).filter(Boolean).length : 0;
+      rows.push(["disagreeing squares", s.res ? String(dis) : "—"], ["detectors agree", s.res?.reading ? pct(1 - dis / 64) : "—"]);
       return rows;
     });
   },

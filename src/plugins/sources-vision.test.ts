@@ -189,9 +189,10 @@ describe("source.webcam", () => {
     rnd.mockReturnValue(0.99); n.params.freeze = false;
     expect(n.run({}, 2300)!.frame).not.toBe(a); // freeze over: a new picture
   });
-  it("selects a device by exact id or label substring, otherwise the default", async () => {
+  it("selects a device by exact id or label substring; empty means default; unknown is an error, never another camera", async () => {
     const devices = [{ kind: "videoinput", deviceId: "id-1", label: "Logitech C920" }, { kind: "audioinput", deviceId: "m", label: "Mic" }];
-    for (const [want, exact] of [["id-1", "id-1"], ["c920", "id-1"], ["nothing", undefined], ["", undefined]] as const) {
+    { const { gum } = setup({ devices }); const n = node("source.webcam", { device: "nothing" }); n.run({}, 0); await tick(); expect(gum).not.toHaveBeenCalled(); expect((n.state as any).err).toContain("not found"); cleanup(); }
+    for (const [want, exact] of [["id-1", "id-1"], ["c920", "id-1"], ["", undefined]] as const) {
       const { gum } = setup({ devices }); const n = node("source.webcam", { device: want }); n.run({}, 0); await tick();
       expect(gum.mock.calls[0][0].video.deviceId?.exact).toBe(exact); cleanup(); // one spy layer per iteration
     }

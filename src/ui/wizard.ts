@@ -302,7 +302,7 @@ export class SetupWizard {
   frame(now: number) {
     for (const a of this.pad.poll(now)) this.handle(a);
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0.016; this.lastFrame = now;
-    const id = STEPS[this.step].id, ctx = this.canvas.getContext("2d")!;
+    const id = STEPS[this.step].id, ctx = this.canvas.getContext("2d", { willReadFrequently: true })!;
     if (id === "scenes") this.scr.draw(ctx, this.canvas.width, this.canvas.height, this.state.scenePreview, now, dt);
     else if (id === "board" && this.cfg.cameras.length) {
       // a failed or timed-out open (camera briefly busy) is retried instead of leaving "No signal" forever
