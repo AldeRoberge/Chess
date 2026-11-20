@@ -491,7 +491,7 @@ export class NodeEditor {
     this.dirty = true; // re-evaluate which wires are highlighted
     this.onSelect([...this.selected]);
   }
-  /** Called whenever the selection changes; the top ribbon uses it to offer the matching actions. */
+  /** Called whenever the selection changes; the Edit menu uses it to offer the matching actions. */
   onSelect: (ids: string[]) => void = () => {};
   selection(): string[] { return [...this.selected]; }
   /** Copy a node next to itself (same type and settings). */

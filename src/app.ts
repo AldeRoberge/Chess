@@ -3,7 +3,6 @@ import "./style.css";
 import { chipIcons, chipTone } from "./ui/chipIcons";
 import { installContextMenus, registerContextMenu } from "./ui/contextMenu";
 import { appMenu } from "./ui/menus/appMenu";
-import { installMenuBar } from "./ui/menus/menuBar";
 import "./ui/setup-wizard.css";
 import "./ui/theme.css";
 import "./ui/tooltip.css";
@@ -65,7 +64,8 @@ import type { GraphJSON } from "./core/types";
 import { STEPS } from "./ui/wizardSteps";
 import { icon, withIcon, setPressed } from "./ui/icons";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
-import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
+import { appMode, appTheme, onAppTheme, setAppMode, setAppTheme, type ModePref } from "./ui/appTheme";
+import { initMenuBar, menuBarHtml, setChecked } from "./ui/menubar";
 import { installJoinBadge } from "./ui/joinBadge";
 import { PAGES, formatRoute, parseRoute, routeTitle, sameRoute, type Route } from "./ui/route";
 
@@ -146,10 +146,8 @@ export function boot(root: HTMLElement): Boot {
   app.innerHTML = `
     <header>
       <a class="brand" id="home" href="#/table" aria-label="Chess XP home" data-tip="Chess XP" data-tip-body="Back to the start page.">${KNIGHT_SVG}<span>Chess XP</span></a>
-      <nav class="rtabs" role="tablist" aria-label="Ribbon">
-        <button role="tab" class="on" data-rtab="home" aria-selected="true">${icon("home", 16)}<span>Home</span></button>
-        <button role="tab" data-rtab="view" aria-selected="false">${icon("eye", 16)}<span>View</span></button>
-        <button role="tab" data-rtab="tools" aria-selected="false">${icon("tools", 16)}<span>Tools</span></button>
+      ${menuBarHtml()}
+      <div class="hbar">
         <div class="spacer"></div>
         <div class="chips" id="hud"></div>
         <div class="chips" id="buildchips"></div>
@@ -162,58 +160,6 @@ export function boot(root: HTMLElement): Boot {
         <div class="rdrop hud-more">
           <button id="hudmore" class="chip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="More stats" data-tip="More stats" data-tip-body="Healthy readings (green) are kept here. Anything that needs attention stays on the bar."><span>⋯</span></button>
           <div class="rmenu hud-menu" id="hudmenu" role="menu" hidden></div>
-        </div>
-      </nav>
-      <div class="ribbon" role="tabpanel">
-        <div class="rpane on" data-rpane="home">
-          <div class="rgroup"><div class="rbtns">
-            <button id="openfile" class="rb" data-tip="Open" data-tip-keys="Ctrl,O" data-tip-body="Load a workflow file you saved earlier. The current one is backed up first.">${icon("open", 22)}<span>Open</span></button>
-            <button id="export" class="rb" data-tip="Save" data-tip-keys="Ctrl,S" data-tip-body="Download the workflow as a JSON file you can keep or share. Lights up when there are changes since the last backup.">${icon("save", 22)}<span>Save</span></button>
-          </div><div class="rlabel">File</div></div>
-          <div class="rgroup"><div class="rbtns">
-            <button id="playnow" class="rb" data-tip="Play now against bot" data-tip-body="Start a game against Stockfish right away. Choose who starts, and whether you are simulated (mouse) or real (webcams).">${icon("film", 22)}<span>Play bot</span></button>
-            <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
-            <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
-            <button id="settings" class="rb" data-tip="Settings" data-tip-body="Cameras, projector, narration, and players.">${icon("setup", 22)}<span>Settings</span></button>
-            <button id="calibrate" class="rb">${icon("target", 22)}<span>Calibrate</span></button>
-            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8).">${icon("board", 22)}<span>Align boards</span></button>
-            <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
-          </div><div class="rlabel">Start</div></div>
-          <div class="rgroup"><div class="rbtns">
-            <button id="undo" class="rb" disabled aria-label="Undo" data-tip="Undo" data-tip-keys="Ctrl,Z" data-tip-body="Step back through your edits to the workflow.">${icon("undo", 22)}<span>Undo</span></button>
-            <button id="redo" class="rb" disabled aria-label="Redo" data-tip="Redo" data-tip-keys="Ctrl,Y" data-tip-body="Bring back an edit you undid.">${icon("redo", 22)}<span>Redo</span></button>
-            <button id="organize" class="rb" data-tip="Organize" data-tip-body="Lay the workflow out in bands: input, analysis, game, output. Undo with Ctrl+Z.">${icon("grid", 22)}<span>Organize</span></button>
-            <button id="addsec" class="rb" data-tip="New section" data-tip-body="Wrap the selected nodes (or the middle of the view) in a titled, coloured frame.">${icon("frame", 22)}<span>Section</span></button>
-          </div><div class="rlabel">Edit</div></div>
-          <div class="rgroup rgroup-sel" id="selgroup"><div class="rbtns">
-            <button id="seldup" class="rb" disabled data-tip="Duplicate" data-tip-body="Copy the selected nodes next to themselves, with the same settings.">${icon("duplicate", 22)}<span>Duplicate</span></button>
-            <button id="selbypass" class="rb" disabled data-tip="Bypass" data-tip-body="Skip the selected nodes without deleting them. Click again to turn them back on.">${icon("bypass", 22)}<span>Bypass</span></button>
-            <button id="seldel" class="rb" disabled data-tip="Delete" data-tip-tag="destructive" data-tip-color="#ff7070" data-tip-body="Remove the selected nodes and their wires.">${icon("trash", 22)}<span>Delete</span></button>
-          </div><div class="rlabel" id="sellabel">Select nodes</div></div>
-          <div class="rgroup"><div class="rbtns">
-            <button id="backups" class="rb" data-tip="Restore points" data-tip-body="Earlier versions of your workflow, crash recovery, import and export.">${icon("layers", 22)}<span>Restore</span></button>
-            <button id="backupnow" class="rb" data-tip="Backup now" data-tip-body="Keep a restore point of the workflow as it is right now.">${icon("plus", 22)}<span>Backup now</span></button>
-            <div class="rdrop"><button id="more" class="rb" aria-haspopup="menu" aria-expanded="false" data-tip="More" data-tip-body="Reset the workflow to the default."><span class="ic-slot"></span><span>More ▾</span></button>
-              <div class="rmenu" role="menu" hidden>
-                <button id="reset" role="menuitem" data-tip="Reset workflow" data-tip-tag="destructive" data-tip-color="#ff7070" data-tip-body="Discards your saved node layout and settings, then reloads the page."><span class="ic-slot"></span>Reset workflow</button>
-              </div></div>
-          </div><div class="rlabel">Backups</div></div>
-        </div>
-        <div class="rpane" data-rpane="view">
-          <div class="rgroup"><div class="rbtns">
-            <button id="nodesview" class="rb" data-tip="Show nodes" data-tip-body="Show the node editor next to the table. Off (the default) is the simple view: just the board, the log and the assistant, and the editor is not drawn, which keeps the app light.">${icon("grid", 22)}<span>Show nodes</span></button>
-            <button id="heat" class="rb" data-tip="Node timings" data-tip-body="Show each node's cost on the workflow: a share bar, a sparkline of recent ticks, and avg / p95 / max milliseconds.">${icon("gauge", 22)}<span>Timings</span></button>
-          </div><div class="rlabel">Graph</div></div>
-          <div class="rgroup"><div class="rbtns">
-            <select id="theme" aria-label="Theme" data-tip="Theme" data-tip-body="Pick the look of the whole app.">${APP_THEMES.map((t) => `<option value="${t.id}">${t.name}</option>`).join("")}</select>
-            <button id="mode" class="rb" data-tip="Light / dark" data-tip-body="Cycle dark, light, or follow the system.">${icon("contrast", 22)}<span class="lbl"></span></button>
-          </div><div class="rlabel">Theme</div></div>
-        </div>
-        <div class="rpane" data-rpane="tools">
-          <div class="rgroup"><div class="rbtns">
-            <button id="audio" class="rb" data-tip="Sound" data-tip-body="Browsers keep audio locked until you click. The first click starts the engine; after that it mutes and unmutes."><span class="ic-slot"></span><span class="lbl">Enable sound</span></button>
-            <button id="mixer" class="rb" data-tip="Mixer" data-tip-body="Levels for master, ambience, sound effects, music and narrators, plus mute."><span class="ic-slot"></span><span class="lbl">Mixer</span></button>
-          </div><div class="rlabel">Experience</div></div>
         </div>
       </div>
     </header>
@@ -228,22 +174,8 @@ export function boot(root: HTMLElement): Boot {
     <footer id="sub"></footer>`;
 
   const tips = installTooltips().add(editorTips(graph));
-  // ---- ribbon: tab headers switch panes; "File" dropdown closes on outside click / Escape
-  // Clicking the tab that is already open folds the ribbon away (Office-style); any tab click brings it back. Remembered between visits.
-  const headerEl = app.querySelector("header")!;
-  installMenuBar(app.querySelector<HTMLElement>(".rtabs")!);
-  const setRibbonCollapsed = (c: boolean, save = true) => {
-    headerEl.classList.toggle("ribbon-collapsed", c);
-    for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) o.setAttribute("aria-expanded", String(!c));
-    if (save) patchPrefs({ ribbonCollapsed: c || undefined });
-  };
-  setRibbonCollapsed(!!loadPrefs().ribbonCollapsed, false);
-  for (const t of app.querySelectorAll<HTMLElement>("[data-rtab]")) t.onclick = () => {
-    if (t.classList.contains("on")) { setRibbonCollapsed(!headerEl.classList.contains("ribbon-collapsed")); return; }
-    if (headerEl.classList.contains("ribbon-collapsed")) setRibbonCollapsed(false);
-    for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) { const on = o === t; o.classList.toggle("on", on); o.setAttribute("aria-selected", String(on)); }
-    for (const p of app.querySelectorAll<HTMLElement>("[data-rpane]")) p.classList.toggle("on", p.dataset.rpane === t.dataset.rtab);
-  };
+  // ---- menu bar: File / Edit / View / Tools (click to open, hover to switch, arrows, Escape, outside click)
+  initMenuBar(app.querySelector<HTMLElement>(".mb")!);
   const moreBtn = document.getElementById("more")!, moreMenu = moreBtn.parentElement!.querySelector<HTMLElement>(".rmenu")!;
   const setMenu = (open: boolean) => { moreMenu.hidden = !open; moreBtn.setAttribute("aria-expanded", String(open)); };
   moreBtn.onclick = (e) => { e.stopPropagation(); setMenu(moreMenu.hidden === true); };
@@ -325,17 +257,19 @@ export function boot(root: HTMLElement): Boot {
   });
   const assistant = new AssistantPanel(assistantHost, { speak: speakAssistant });
   const panels: [string, { root: HTMLElement }][] = [["Game", table], ["World", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
-  const setHeat = (on: boolean) => { editor.setHeat(on); setPressed(document.getElementById("heat")!, on); patchPrefs({ heat: on }); };
+  const setHeat = (on: boolean) => { editor.setHeat(on); setChecked(document.getElementById("heat"), on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);
-  const themeSel = document.getElementById("theme") as HTMLSelectElement, modeBtn = document.getElementById("mode")!;
-  const syncTheme = () => { themeSel.value = appTheme().id; modeBtn.querySelector(".lbl")!.textContent = appMode()[0].toUpperCase() + appMode().slice(1); };
-  themeSel.onchange = () => setAppTheme(themeSel.value);
-  modeBtn.onclick = () => setAppMode(nextMode(appMode()));
+  const syncTheme = () => {
+    for (const b of app.querySelectorAll<HTMLElement>("[data-pick-theme]")) setChecked(b, b.dataset.pickTheme === appTheme().id);
+    for (const b of app.querySelectorAll<HTMLElement>("[data-pick-mode]")) setChecked(b, b.dataset.pickMode === appMode());
+  };
+  for (const b of app.querySelectorAll<HTMLElement>("[data-pick-theme]")) b.onclick = () => setAppTheme(b.dataset.pickTheme!);
+  for (const b of app.querySelectorAll<HTMLElement>("[data-pick-mode]")) b.onclick = () => setAppMode(b.dataset.pickMode as ModePref);
   onAppTheme(syncTheme); syncTheme();
   if (prefs.heat) setHeat(true);
   // Simple view is the default: the node editor is hidden (and so not painted), leaving the table, log and assistant at full width.
   const nodesBtn = document.getElementById("nodesview")!;
-  const setSimple = (simple: boolean, save = true) => { document.body.classList.toggle("simple", simple); nodesBtn.classList.toggle("on", !simple); nodesBtn.setAttribute("aria-pressed", String(!simple)); if (save) patchPrefs({ simple }); };
+  const setSimple = (simple: boolean, save = true) => { document.body.classList.toggle("simple", simple); setChecked(nodesBtn, !simple); if (save) patchPrefs({ simple }); };
   setSimple(prefs.simple !== false, false);
   nodesBtn.onclick = () => setSimple(!document.body.classList.contains("simple"));
   const tabs = document.getElementById("tabs")!, dock = document.getElementById("dock")!;
@@ -378,7 +312,7 @@ export function boot(root: HTMLElement): Boot {
   mixer.subscribe(syncMix); syncMix(mixer.get());
   mixBtn.onclick = () => {
     mixPanel.hidden = !mixPanel.hidden;
-    const r = mixBtn.getBoundingClientRect(); mixPanel.style.left = `${r.left}px`; mixPanel.style.top = `${r.bottom + 6}px`;
+    const r = (document.getElementById("menu-tools") ?? mixBtn).getBoundingClientRect(); mixPanel.style.left = `${r.left}px`; mixPanel.style.top = `${r.bottom + 6}px`;
   };
   document.addEventListener("pointerdown", (e) => { if (!mixPanel.hidden && !mixPanel.contains(e.target as Node) && e.target !== mixBtn) mixPanel.hidden = true; });
   // top-right build chips: how old this build is, its commit, and the latest CI run on main (links to it)
@@ -397,7 +331,6 @@ export function boot(root: HTMLElement): Boot {
   const askCi = () => { void latestCi().then((r) => { ci = r; drawBuild(); }); };
   drawBuild(); askCi();
   setInterval(drawBuild, 30_000); setInterval(askCi, 300_000);
-  for (const [id, name] of [["audio", "sound"], ["mixer", "wave"], ["more", "sliders"], ["reset", "refresh"]]) document.querySelector(`#${id} .ic-slot`)!.outerHTML = icon(name, 22);
   document.getElementById("reset")!.onclick = () => notify("This clears the saved workflow, setup and preferences, then reloads the page.", [{ label: "Reset workflow", run: () => { addBackup("Before reset", graph.toJSON(), loadSetup(), false); localStorage.removeItem(KEY); clearSetup(); clearPrefs(); location.reload(); } }], "warn", { title: "Reset this workflow?" });
   const doExport = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([serializeCe(graph.toJSON(), loadSetup())], { type: "application/json" })); a.download = ceFileName(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
   document.getElementById("export")!.onclick = doExport;
@@ -441,14 +374,13 @@ export function boot(root: HTMLElement): Boot {
   });
   document.getElementById("backups")!.onclick = panel;
   installContextMenus(); registerContextMenu(document.body, appMenu);
-  // ---- ribbon actions: File, Start, Edit, Selection, Backups. Their state follows the editor's selection.
+  // ---- menu actions: File, Edit, View, Tools. The Edit menu follows the editor's selection.
   const wfApi = { registry, current: () => graph.toJSON(), apply: restore, openFile: importFile };
   const openInput = document.createElement("input"); openInput.type = "file"; openInput.accept = `${CE_EXTENSION},application/json,.json`; openInput.hidden = true;
   openInput.onchange = () => { const f = openInput.files?.[0]; openInput.value = ""; if (f) importFile(f); };
   document.body.append(openInput);
   document.getElementById("openfile")!.onclick = () => openInput.click();
-  document.getElementById("workflows")!.onclick = () => openWorkflowPanel(wfApi);
-  document.getElementById("playnow")!.onclick = () => openPlayNow(wfApi, () => go({ page: "table" }));
+  document.getElementById("workflows")!.onclick = () => openWorkflowPanel({ ...wfApi, playBot: () => openPlayNow(wfApi, () => go({ page: "table" })) });
   document.getElementById("aiwiz")!.onclick = () => openAiWizard(wfApi);
   document.getElementById("backupnow")!.onclick = () => { addBackup("Manual backup", graph.toJSON(), loadSetup(), false); };
   document.getElementById("addsec")!.onclick = () => editor.addGroup();
@@ -456,14 +388,12 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("seldup")!.onclick = () => { for (const id of editor.selection()) editor.duplicate(id); };
   document.getElementById("selbypass")!.onclick = () => { for (const id of editor.selection()) editor.toggleBypass(id); syncRibbon(); };
   document.getElementById("seldel")!.onclick = () => { for (const id of editor.selection()) editor.removeNode(id); };
-  /** Enable and label the selection actions for what is selected; light the Save dot while there are unsaved changes. */
+  /** Show the selection actions only while nodes are selected; check Bypass when all of them are bypassed; dot the File menu while there are unsaved changes. */
   function syncRibbon() {
-    const sel = editor.selection(), n = sel.length, btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
-    for (const id of ["seldup", "selbypass", "seldel"]) btn(id).disabled = n === 0;
-    setPressed(btn("selbypass"), n > 0 && sel.every((id) => !!graph.nodes.get(id)?.bypass));
-    document.getElementById("sellabel")!.textContent = n ? `${n} selected` : "Select nodes";
-    document.getElementById("selgroup")!.classList.toggle("idle", n === 0);
-    btn("export").classList.toggle("attn", dirty);
+    const sel = editor.selection(), n = sel.length;
+    for (const el of app.querySelectorAll<HTMLElement>('[data-group="sel"]')) el.hidden = n === 0;
+    setChecked(document.getElementById("selbypass"), n > 0 && sel.every((id) => !!graph.nodes.get(id)?.bypass));
+    for (const id of ["menu-file", "export"]) document.getElementById(id)!.classList.toggle("attn", dirty);
   }
   editor.onSelect = () => syncRibbon();
   editor.onChange = () => { persist(); syncRibbon(); };
@@ -591,8 +521,8 @@ export function boot(root: HTMLElement): Boot {
   });
   document.getElementById("alignall")!.onclick = async (e) => {
     const btn = e.currentTarget as HTMLButtonElement; if (btn.disabled) return;
-    const label = btn.querySelector("span")!, was = label.textContent; btn.disabled = true;
-    const panel = new AlignProgressPanel(btn); panel.start();
+    const label = btn.querySelector(".lbl")!, was = label.textContent; btn.disabled = true;
+    const panel = new AlignProgressPanel(document.getElementById("menu-tools") ?? btn); panel.start();
     try {
       const r = await alignAllBoards(graph, (d, t, info) => { label.textContent = `Aligning ${d}/${t}`; panel.update(d, t, info); });
       if (r.aligned) { editor.rebuild(); persist(); }
@@ -769,7 +699,7 @@ export function boot(root: HTMLElement): Boot {
       const revealEditor = () => { if (wiz) closeWizard(); setSimple(false); };
       if (!wiz || everywhere) {
         const header = root.querySelector<HTMLElement>("header")!;
-        hits.push(...domSearchEntries(header, "Top menu", () => setRibbonCollapsed(false)));
+        hits.push(...domSearchEntries(header, "Top menu"));
         for (let i = 0; i < panels.length; i++) {
           if (!everywhere && i !== active) continue;
           hits.push(...domSearchEntries(panels[i][1].root, panels[i][0], () => go({ page: PAGES[i] })));

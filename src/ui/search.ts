@@ -1,4 +1,5 @@
 import "./search.css";
+import { revealInMenu } from "./menubar";
 
 export type SearchScope = "window" | "everywhere";
 export interface SearchHit {
@@ -138,11 +139,7 @@ export function domSearchEntries(root: HTMLElement, location: string, beforeReve
       const label = (el.dataset.searchLabel || el.getAttribute("aria-label") || copy.textContent || "").trim().replace(/\s+/g, " ");
       return { id: `${location}:${i}`, label, location, text: `${el.dataset.tip ?? ""} ${el.dataset.tipBody ?? ""}`, reveal: () => {
         beforeReveal();
-        const pane = el.closest<HTMLElement>("[data-rpane]");
-        if (pane && !pane.classList.contains("on")) {
-          const tab = [...root.querySelectorAll<HTMLButtonElement>("[data-rtab]")].find(tab => tab.dataset.rtab === pane.dataset.rpane);
-          tab?.click();
-        }
+        revealInMenu(el);
         const dropdown = el.closest(".rdrop");
         const toggle = dropdown?.querySelector<HTMLButtonElement>("button[aria-expanded=false]");
         if (toggle && toggle !== el) toggle.click();

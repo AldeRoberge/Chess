@@ -16,6 +16,7 @@ vi.mock("./plugins/narration", async (orig) => ({ ...(await orig<typeof import("
 import { boot } from "./app";
 import { addBackup, listBackups } from "./setup/backups";
 import { patchPrefs } from "./setup/prefs";
+import { coachSettings, setCoachSettings } from "./narrator/coachSettings";
 
 class FakeAC { static made: FakeAC[] = []; currentTime = 0; state = "running"; sampleRate = 100; destination = {}; constructor() { FakeAC.made.push(this); } resume() { return Promise.resolve(); } createBuffer(_c: number, n: number) { const d = new Float32Array(n); return { getChannelData: () => d }; }
   createBufferSource() { return mk(); } createBiquadFilter() { return mk(); } createOscillator() { return mk(); } createGain() { return mk(); } }
@@ -307,23 +308,55 @@ describe("workflows", () => {
   });
 });
 
-describe("collapsible ribbon", () => {
-  const hdr = () => document.querySelector("#app>header, header") as HTMLElement;
-  const tab = (n: string) => document.querySelector<HTMLElement>(`[data-rtab="${n}"]`)!;
-  it("clicking the open tab folds the ribbon, clicking again or another tab reopens it, and it is remembered", () => {
+describe("menu bar", () => {
+  const title = (m: string) => document.querySelector<HTMLButtonElement>(`.mb-title[id="menu-${m}"]`)!;
+  const menu = (m: string) => document.querySelector<HTMLElement>(`.mb-top[data-menu="${m}"] > .mb-menu`)!;
+  it("has File, Edit, View and Tools, and no ribbon", () => {
     finishSetup(); boot(root);
-    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
-    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
-    expect(tab("view").getAttribute("aria-expanded")).toBe("false");
-    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBe(true);
-    tab("home").click(); expect(hdr().classList.contains("ribbon-collapsed")).toBe(false);
-    expect(JSON.parse(localStorage.getItem("cx.prefs.v1")!).ribbonCollapsed).toBeUndefined();
-    tab("home").click(); tab("view").click();
-    expect(hdr().classList.contains("ribbon-collapsed")).toBe(false); expect(tab("view").classList.contains("on")).toBe(true);
+    expect([...document.querySelectorAll(".mb-title")].map((b) => b.textContent)).toEqual(["File", "Edit", "View", "Tools"]);
+    expect(document.querySelector(".ribbon, [data-rtab], #playnow")).toBeNull();
   });
-  it("restores the folded ribbon on launch", () => {
-    finishSetup(); localStorage.setItem("cx.prefs.v1", JSON.stringify({ ribbonCollapsed: true })); boot(root);
-    expect(hdr().classList.contains("ribbon-collapsed")).toBe(true);
+  it("opens on click, switches on hover while open, and closes on Escape or an outside click", () => {
+    finishSetup(); boot(root);
+    expect(menu("file").hidden).toBe(true);
+    title("file").click(); expect(menu("file").hidden).toBe(false); expect(title("file").getAttribute("aria-expanded")).toBe("true");
+    title("edit").dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    expect(menu("file").hidden).toBe(true); expect(menu("edit").hidden).toBe(false);
+    title("edit").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); expect(menu("edit").hidden).toBe(true);
+    title("view").click(); expect(menu("view").hidden).toBe(false);
+    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })); expect(menu("view").hidden).toBe(true);
+  });
+  it("closes after a command runs, and Open holds the file, ready-made and restore entries", () => {
+    finishSetup(); boot(root);
+    title("file").click();
+    const sub = menu("file").querySelector<HTMLElement>(".mb-sub > .mb-item")!; sub.click();
+    expect(sub.getAttribute("aria-expanded")).toBe("true");
+    expect([...sub.nextElementSibling!.querySelectorAll(".lbl")].map((l) => l.textContent)).toEqual(["File…", "Ready-made workflow…", "Restore point…"]);
+    (document.getElementById("backups") as HTMLButtonElement).click();
+    expect(menu("file").hidden).toBe(true);
+  });
+  it("only lists Duplicate, Bypass and Delete while nodes are selected", () => {
+    finishSetup(); const app = boot(root);
+    const group = () => [...document.querySelectorAll<HTMLElement>('[data-group="sel"]')];
+    expect(group().length).toBeGreaterThan(0); expect(group().every((e) => e.hidden)).toBe(true);
+    const ed = app.editor as any, id = [...app.graph.nodes.keys()][0]; ed.selected.add(id); ed.refreshSel();
+    expect(group().every((e) => !e.hidden)).toBe(true);
+  });
+  it("View shows the commentary level and cycles it on click", () => {
+    setCoachSettings({ level: "expert", opponentTalks: true });
+    finishSetup(); boot(root);
+    title("view").click();
+    const row = document.getElementById("coachlevel")!;
+    expect(row.textContent).toContain("Commentary: Expert");
+    row.click(); expect(coachSettings().level).toBe("off");
+    title("view").click(); expect(row.textContent).toContain("Commentary: Off");
+    expect(document.getElementById("opptalks")!.textContent).toContain("AI opponent talks: on");
+    setCoachSettings({ level: "intermediate" });
+  });
+  it("puts a dot on File while there are unsaved changes", () => {
+    finishSetup(); const app = boot(root);
+    expect(title("file").classList.contains("attn")).toBe(false);
+    (app.editor as any).removeNode([...app.graph.nodes.keys()][0]); expect(title("file").classList.contains("attn")).toBe(true);
   });
 });
 

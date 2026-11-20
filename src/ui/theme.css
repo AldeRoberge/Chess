@@ -79,7 +79,6 @@ select{appearance:none;-webkit-appearance:none;background-color:var(--ink-2);col
   background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px;background-repeat:no-repeat;transition:border-color .12s,background-color .12s}
 select:hover{border-color:var(--line-hi);background-color:var(--ink-3)}
 select option{background:var(--ink-1);color:var(--text)}
-#theme{align-self:center;min-width:104px}
 
 /* Splash screen. Total 3s (SPLASH_MS): the whole splash, blur included, fades over the last 0.6s. */
 .splash { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: color-mix(in srgb, var(--ink-0, #0b0d10) 40%, transparent); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); color: var(--text, #e8e8e8); animation: splash-out .6s ease-in 2.4s forwards; }

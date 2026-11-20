@@ -18,7 +18,6 @@
 .perf button:hover{border-color:var(--line-hi);background:var(--ink-3)}
 .perf button:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
 .perf-actions button.on{color:var(--signal);border-color:color-mix(in srgb,var(--signal) 55%,transparent);background:color-mix(in srgb,var(--signal) 12%,var(--ink-2))}
-button#heat.on{border-color:var(--signal);color:var(--signal)}
 .perf .seg{display:inline-flex;gap:2px;padding:3px;border-radius:var(--pr-md);background:var(--ink-0);border:1px solid var(--line)}
 .perf .seg button{border:0;background:transparent;color:var(--text-dim);padding:7px 12px;border-radius:calc(var(--pr-md) - 3px)}
 .perf .seg button:hover{color:var(--text);background:transparent}

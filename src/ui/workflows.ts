@@ -18,6 +18,8 @@ export interface WorkflowApi {
   apply(graph: GraphJSON, setup: SetupConfig | null, why: string): void;
   openFile(file: File): void;
   fetchImpl?: typeof fetch;
+  /** Starts a quick game against the bot; shown first in the ready-made list as a suggestion. */
+  playBot?: () => void;
 }
 
 /** Opens a modal shell (same look as Backups). Esc or the backdrop closes it. */
@@ -33,14 +35,21 @@ export function modal(title: string, label: string) {
   return { close, body, head: head.querySelector("h3")! };
 }
 
-/** Demo workflows, "build with AI", and open-from-file. */
+/** Ready-made workflows, each made for a purpose, plus "new with AI" and open-from-file. */
 export function openWorkflowPanel(api: WorkflowApi) {
-  const m = modal("Workflow", "Workflow");
+  const m = modal("Ready-made workflows", "Ready-made workflows");
   const file = el("input"); file.type = "file"; file.accept = ".ce.json,application/json,.json"; file.hidden = true;
   file.onchange = () => { const f = file.files?.[0]; if (f) { api.openFile(f); m.close(); } };
   const ai = el("div", "wf-ai");
-  const aiText = el("div"); aiText.append(el("b", "", "Build your own with AI"), el("span", "", "Describe what you want and a model drafts the workflow. You review it before anything changes."));
+  const aiText = el("div"); aiText.append(el("b", "", "Create a new workflow with AI"), el("span", "", "Describe what you want and a model drafts the workflow. You review it before anything changes."));
   ai.append(aiText, btn("Start", () => { m.close(); openAiWizard(api); }, "primary"));
+  const suggested: HTMLElement[] = [];
+  if (api.playBot) {
+    const row = el("div", "bk-row wf-suggest"), info = el("div", "bk-info");
+    info.append(el("b", "", "Play against a bot"), el("span", "wf-desc", "Start a game against Stockfish right away. Choose who starts, and whether you play on screen (mouse) or on a real board (webcams)."), el("span", "", "Suggested to start"));
+    row.append(info, btn("Play", () => { m.close(); api.playBot!(); }, "primary"));
+    suggested.push(row);
+  }
   // the modular detection demo is the one used most: it goes first
   const rows = [...WORKFLOWS].sort((a, b) => Number(b.id === "modular-vision") - Number(a.id === "modular-vision")).map((w) => {
     const row = el("div", "bk-row wf-row"), info = el("div", "bk-info");
@@ -49,7 +58,7 @@ export function openWorkflowPanel(api: WorkflowApi) {
     return row;
   });
   const foot = el("div", "bk-bar"); foot.append(btn("Open workflow file…", () => file.click()), file);
-  m.body.append(el("p", "bk-note", "Loading a demo replaces the current workflow. It is backed up first, and Ctrl+Z brings it back."), ...rows, ai, foot);
+  m.body.append(el("p", "bk-note", "Each workflow is set up for a purpose. Loading one replaces the current workflow. It is backed up first, and Ctrl+Z brings it back."), ...suggested, ...rows, ai, foot);
   return m;
 }
 

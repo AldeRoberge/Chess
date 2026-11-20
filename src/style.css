@@ -204,32 +204,36 @@ body.output .hint{position:fixed;left:8px;bottom:8px;color:#fff4;font-size:var(-
 #tabs kbd{font:500 var(--t-xs)/1 var(--font-ui);padding:2px 4px;border:1px solid var(--line);border-radius:3px;color:var(--text-dim)}
 #tabs button.on kbd{border-color:var(--signal);color:var(--signal-hi)}
 header button{display:inline-flex;align-items:center;gap:7px}
-/* ribbon (Office-style): tab headers over a pane of labelled groups, left-aligned */
+/* top bar: brand, then the File / Edit / View / Tools menu bar, then the live readouts on the right */
 #app{grid-template-rows:auto 1fr 36px}
-#app>header{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;gap:0;padding:0}
-#app>header .brand{grid-row:1;grid-column:1;align-self:center;margin:0 10px 0 12px;padding:4px 12px 4px 6px;border-right:1px solid var(--line);border-radius:var(--radius) 0 0 var(--radius);font-size:var(--t-lg,16px);letter-spacing:.2px}
-.rtabs{grid-row:1;grid-column:2;display:flex;align-items:flex-end;gap:4px;padding:6px 12px 0 0;min-width:0}
-.rtabs>button{border:1px solid transparent;border-bottom:0;border-radius:6px 6px 0 0;background:transparent;color:var(--text-dim);padding:6px 18px;font-weight:500;position:relative}
-.rtabs>button:hover{background:var(--ink-2);border-color:transparent;color:var(--text)}
-.rtabs>button.on{background:var(--ink-2);border-color:var(--line);color:var(--text);font-weight:600;margin-bottom:-1px;padding-bottom:7px}
-.rtabs>button.on::before{content:"";position:absolute;left:8px;right:8px;top:-1px;height:2px;border-radius:2px;background:var(--signal)}
-.rtabs>button:focus{outline:none;box-shadow:none}
-.rtabs>button:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
-.rtabs .chips{margin:0 0 4px 12px}
-.ribbon{grid-row:2;grid-column:1/-1;background:var(--ink-2);border-top:1px solid var(--line);padding:6px 12px;min-height:78px}
-#app>header{position:relative;z-index:40}
-#app>header.ribbon-collapsed .ribbon{display:none}
-#app>header.ribbon-collapsed .rtabs>button.on{margin-bottom:0;padding-bottom:6px;background:transparent;border-color:transparent}
-.rpane{display:none;gap:0;align-items:stretch}.rpane.on{display:flex}
-.rgroup{display:flex;flex-direction:column;justify-content:space-between;padding:0 12px;border-right:1px solid var(--line)}.rgroup:first-child{padding-left:0}
-.rbtns{display:flex;gap:2px;align-items:flex-start}
-.rlabel{text-align:center;color:var(--text-dim);font:400 var(--t-xs)/1.6 var(--font-ui);padding-top:2px}
-.ribbon .rb{flex-direction:column;justify-content:center;gap:3px;min-width:58px;height:54px;padding:4px 8px;background:transparent;border-color:transparent;font-size:var(--t-xs)}
-.ribbon .rb:hover:not(:disabled){background:var(--ink-3);border-color:var(--line-hi)}
-.ribbon .rb:disabled{opacity:.4;cursor:default}
-.ribbon .rb.on{background:var(--ink-3);border-color:var(--signal)}
-.ribbon .rb>b{font:400 20px/1 var(--font-ui)}
-.ribbon .rb .ic{width:20px;height:20px}
+#app>header{display:flex;align-items:center;gap:0;padding:0 10px 0 0;min-height:46px;position:relative;z-index:40}
+#app>header .brand{margin:0 8px 0 12px;padding:4px 12px 4px 6px;border-right:1px solid var(--line);border-radius:var(--radius) 0 0 var(--radius);font-size:var(--t-lg,16px);letter-spacing:.2px}
+.hbar{flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding:4px 0}
+.hbar .chips{margin:0 0 0 12px}
+.hbar>.scen-pause{margin-bottom:0}
+.mb{display:flex;align-items:center;gap:2px;flex:none}
+.mb-top{position:relative}
+.mb-title{background:transparent;border:1px solid transparent;border-radius:var(--radius);color:var(--text-dim);padding:7px 13px;font-weight:500;position:relative}
+.mb-title:hover,.mb-top.open>.mb-title{background:var(--ink-3);border-color:transparent;color:var(--text)}
+.mb-title:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+.mb-title.attn::after{content:"";position:absolute;top:6px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--amber)}
+.mb-menu{position:absolute;top:100%;left:0;z-index:50;min-width:250px;margin-top:3px;padding:6px;display:flex;flex-direction:column;gap:1px;background:var(--ink-1);border:1px solid var(--line-hi);border-radius:10px;box-shadow:0 14px 36px var(--shadow)}
+.mb-menu[hidden],.mb-item[hidden],.mb-sep[hidden]{display:none}
+.mb-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px 8px 10px;background:transparent;border:0;border-radius:6px;color:var(--text);text-align:left;white-space:nowrap}
+.mb-item:hover:not(:disabled),.mb-item:focus-visible{background:var(--ink-3);border-color:transparent}
+.mb-item:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+.mb-item:disabled{opacity:.45;cursor:default}
+.mb-item .ic,.mb-ic,.mb-ck{flex:none;width:16px;height:16px;opacity:.85}
+.mb-item .lbl{flex:1;min-width:0}
+.mb-item kbd{margin-left:22px;font:500 var(--t-xs)/1 var(--font-ui);color:var(--text-dim)}
+.mb-item.danger,.mb-item.danger .ic{color:var(--bad)}
+.mb-ck{display:inline-grid;place-items:center;color:var(--signal);opacity:1;font-size:14px;line-height:1}
+.mb-item.on .mb-ck::before{content:"✓"}
+.mb-item.on:not(:hover){background:color-mix(in srgb,var(--signal) 10%,transparent)}
+.mb-arrow{color:var(--text-dim);font-size:11px}
+.mb-sep{height:1px;margin:5px 6px;background:var(--line)}
+.mb-sub{position:relative}
+.mb-flyout{top:-7px;left:100%;margin:0 0 0 2px}
 .rdrop{position:relative}
 .rmenu{position:absolute;top:100%;left:0;z-index:30;min-width:190px;margin-top:2px;padding:4px;background:var(--ink-1);border:1px solid var(--line-hi);border-radius:var(--radius);box-shadow:0 8px 24px var(--shadow);display:flex;flex-direction:column}
 .rmenu[hidden]{display:none}
@@ -276,7 +280,7 @@ button.chip:disabled{opacity:.4;cursor:default}
 .hud-menu:empty{display:none}
 .hud-menu .chip{white-space:nowrap}
 /* top-right cluster: fixed-size controls on the right, the changing readings on its left edge, so nothing jumps when chips come and go */
-.rtabs>.chips{flex-wrap:nowrap;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hbar>.chips{flex-wrap:nowrap;white-space:nowrap;font-variant-numeric:tabular-nums}
 #hist .chip{min-width:44px;justify-content:center}
 #buildchips .chip{min-width:9ch;text-align:center}
 .scen-pause{min-width:88px;text-align:center;align-self:center;margin:0 6px 4px 12px;padding:3px 10px;font:500 var(--t-xs)/1.6 var(--font-ui);color:var(--text-dim)}
@@ -287,6 +291,7 @@ button.chip:disabled{opacity:.4;cursor:default}
 /* workflows + AI wizard */
 .wf{width:min(640px,94vw)}.wf-body{display:flex;flex-direction:column;gap:10px;overflow:auto;min-height:0}
 .wf-row{align-items:center;gap:14px}.wf-row .bk-info{flex:1;min-width:0}.wf-icon{flex:none;width:84px;height:84px;display:grid;place-items:center;border-radius:12px;border:1px solid var(--line);background:var(--ink-0);color:var(--signal)}.wf-icon-svg{width:64px;height:64px}.wf-row button{margin-top:2px;align-self:center}.wf-desc{color:var(--text-dim);font:400 var(--t-xs)/1.5 var(--font-ui)!important;white-space:normal}
+.wf-suggest{align-items:center;gap:14px;box-shadow:inset 3px 0 var(--signal)}.wf-suggest .bk-info{flex:1;min-width:0}.wf-suggest button{margin-top:0}
 .wf-ai{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px dashed var(--line-hi);border-radius:6px}.wf-ai>div{flex:1;display:flex;flex-direction:column}.wf-ai span{color:var(--text-dim);font-size:var(--t-xs)}
 button.primary{background:var(--signal);border-color:var(--signal);color:var(--ink-0);font-weight:600}button.primary:hover{background:var(--signal-hi);border-color:var(--signal-hi)}button.primary:disabled{opacity:.5;cursor:default}
 .wf-field{display:flex;flex-direction:column;gap:4px;color:var(--text-dim);font-size:var(--t-xs)}
@@ -362,17 +367,15 @@ body.resizing{cursor:col-resize;user-select:none}
 /* Very short windows (landscape phones): drop the hint line and tighten the buttons so every control stays on screen. */
 @media (max-height:480px){.qe .qe-hint{display:none}.qe .qe-btn{padding:3px 8px;font-size:12px}.qe .qe-auto,.qe .qe-meter{gap:2px 8px}}
 
-/* portrait / phone: stack the graph over the inspector, ribbon scrolls sideways, view tabs become a bottom bar */
+/* portrait / phone: stack the graph over the inspector, menus open as a sheet, view tabs become a bottom bar */
 @media (max-aspect-ratio:1/1) and (max-width:900px){
   #app{grid-template-rows:auto minmax(0,1fr) 30px;padding-bottom:calc(56px + env(safe-area-inset-bottom))}
   #app>header .brand span{display:none}
   #app>header .brand{margin:0 6px 0 8px;padding:4px 8px 4px 4px}
-  .rtabs{overflow-x:auto;scrollbar-width:none}
-  .rtabs::-webkit-scrollbar{display:none}
-  .rtabs>button{padding:6px 12px;flex:none}
-  .rtabs .chips{display:none}
-  .ribbon{min-height:0;overflow-x:auto;overflow-y:hidden;padding:4px 8px;-webkit-overflow-scrolling:touch}
-  .rpane.on{width:max-content}
+  .hbar{overflow-x:auto;scrollbar-width:none}
+  .hbar::-webkit-scrollbar{display:none}
+  .hbar .chips{display:none}
+  .mb-title{padding:6px 10px}
   main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
   aside{display:flex;border-left:0;border-top:1px solid var(--line)}
   .resize{display:none}
@@ -384,25 +387,18 @@ body.resizing{cursor:col-resize;user-select:none}
   button,.btn{min-height:36px}
 }
 
-/* short / small desktop screens (e.g. 1366x768, 1280x720): compact ribbon so the graph keeps room */
+/* short / small desktop screens (e.g. 1366x768, 1280x720): tighter top bar so the graph keeps room */
 @media (max-height:800px) and (min-aspect-ratio:1/1){
-  .ribbon{min-height:0;padding:3px 10px}
-  .ribbon .rb{height:46px;min-width:50px;padding:3px 6px}
-  .rtabs>button{padding:4px 14px}
-  .rlabel{padding-top:0;line-height:1.3}
+  .mb-title{padding:5px 11px}
   #app>header .brand{font-size:var(--t-md)}
   .panel{padding:8px;gap:8px}
 }
 @media (max-width:1280px) and (min-aspect-ratio:1/1){
   main{grid-template-columns:minmax(0,1fr) var(--aside-w,minmax(320px,30vw))}
-  .ribbon{overflow-x:auto;overflow-y:hidden}
-  .rpane.on{width:max-content}
 }
-/* big / UHD screens: let the graph and ribbon breathe with the scaled type */
+/* big / UHD screens: let the graph and menus breathe with the scaled type */
 @media (min-width:2000px){
   #app{grid-template-rows:auto 1fr calc(36px*var(--u))}
-  .ribbon .rb{height:calc(54px*var(--u));min-width:calc(58px*var(--u))}
-  .ribbon .rb .ic{width:calc(20px*var(--u));height:calc(20px*var(--u))}
   .brand-knight{width:calc(26px*var(--u));height:calc(26px*var(--u))}
   main{grid-template-columns:minmax(0,1fr) var(--aside-w,minmax(calc(380px*var(--u)),30vw))}
 }
@@ -414,22 +410,19 @@ aside{container-type:inline-size}
 .lines:empty::before{content:"No commentary yet. Lines appear here once a game starts.";color:var(--text-dim);font-size:var(--t-xs)}
 .events:empty::before{content:"No events yet. Moves, phase changes and seat changes are listed here.";color:var(--text-dim);font-size:var(--t-xs)}
 
-/* portrait and narrow windows: the dock becomes a bottom sheet under the graph; ribbon, top bar and next-steps swipe sideways */
+/* portrait and narrow windows: the dock becomes a bottom sheet under the graph; the top bar and next-steps swipe sideways */
 @media (max-width:900px){
   main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,48%)}
   aside{border-left:0;border-top:1px solid var(--line)}
   .resize{display:none}
-  .ribbon{overflow-x:auto;scrollbar-width:none}.ribbon::-webkit-scrollbar{display:none}
-  .rtabs{overflow-x:auto;scrollbar-width:none}.rtabs::-webkit-scrollbar{display:none}.rtabs>button{flex:none}
+  .hbar{overflow-x:auto;scrollbar-width:none}.hbar::-webkit-scrollbar{display:none}
   #tabs button{padding:11px 6px}
   #app{height:100vh;height:100dvh}
 }
 
-/* buttons and tabs with an icon: 16px beside 13px text (14px in the dense performance panel), 22px above the ribbon's labels */
+/* buttons and tabs with an icon: 16px beside 13px text (14px in the dense performance panel) */
 .has-ic{display:inline-flex;align-items:center;justify-content:center;gap:7px}
 .has-ic .ic{flex:none}
-.rtabs>button{display:inline-flex;align-items:center;gap:7px}
-.rtabs>button .ic{flex:none;opacity:.85}.rtabs>button.on .ic{opacity:1;color:var(--signal)}
 .ne-tools button{display:inline-flex;align-items:center;gap:6px}
 .scen-pause{display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .notice-actions button,.bk-bar button,.bk-head button,.bk-row button{display:inline-flex;align-items:center;gap:7px}
@@ -504,40 +497,28 @@ body.simple aside{border-left:0!important;border-top:0!important}
 
 /* Tabs carry a long label for wide screens and a one-word one for the phone bar. */
 #tabs .ts{display:none}
-/* Simple view has no graph, so the graph-only ribbon tools go too. */
-body.simple #organize,body.simple #addsec{display:none!important}
+/* Simple view has no graph, so the graph-only Edit actions (and their divider) go too. */
+body.simple [data-group="graph"]{display:none!important}
 
 /*
  * Portrait (phones, tablets held upright): one thing per screen, icons first, menus swipe sideways.
- * Top: knight + icon tabs + the few live controls. Under it, one swipeable row of icon buttons with
- * short captions (no group titles, no dividers). Bottom: an icon tab bar. Every target is at least 44px.
+ * Top: knight + menu titles + the few live controls. Menus open as a sheet under the bar.
+ * Bottom: an icon tab bar. Every target is at least 44px.
  */
 @media (max-aspect-ratio:1/1) and (max-width:900px){
   #app{grid-template-rows:auto minmax(0,1fr) auto}
-  #app>header{grid-template-columns:auto minmax(0,1fr)}
   #app>header .brand{margin:0 2px 0 6px;padding:4px;border-right:0}
-  .rtabs{align-items:center;gap:2px;padding:4px 6px 4px 0}
-  .rtabs>button[data-rtab]{min-width:44px;min-height:40px;padding:0 10px;border-radius:999px;border:0;margin:0;justify-content:center}
-  .rtabs>button[data-rtab] span{display:none}
-  .rtabs>button[data-rtab].on{background:var(--ink-3);padding:0 14px 0 12px}
-  .rtabs>button[data-rtab].on span{display:inline}
-  .rtabs>button[data-rtab].on::before{display:none}
-  .rtabs>button[data-rtab] .ic{width:18px;height:18px}
+  .hbar{align-items:center;gap:2px;padding:4px 6px 4px 0}
   #hist{display:none}
   .scen-pause{min-width:44px;min-height:40px;padding:0 10px}.scen-pause .lbl{display:none}.scen-pause:disabled{display:none}
   .hud-more>.chip{min-width:44px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px}
 
-  .ribbon{padding:6px 0;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;scroll-padding-inline:8px;overscroll-behavior-x:contain;scrollbar-width:none;
-    -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
-  .ribbon::-webkit-scrollbar{display:none}
-  .rpane.on{width:max-content;padding:0 28px 0 8px;gap:4px}
-  .rgroup,.rgroup:first-child{padding:0;border-right:0;justify-content:flex-start}
-  .rlabel{display:none}
-  .rbtns{gap:4px;align-items:center}
-  .ribbon .rb{width:auto;min-width:60px;height:56px;padding:4px 8px;gap:4px;border-radius:12px;scroll-snap-align:start;font-size:12px;line-height:1.1;white-space:nowrap}
-  .ribbon .rb .ic{width:22px;height:22px}
-  .ribbon .rb:disabled{display:none}
-  .ribbon select{min-height:44px;border-radius:12px;scroll-snap-align:start}
+  .mb-title{min-height:40px;padding:0 10px}
+  .mb-top{position:static}
+  .mb-menu{position:fixed;left:8px;right:8px;top:var(--mb-y,52px);min-width:0;max-height:calc(100dvh - var(--mb-y,52px) - 72px);overflow-y:auto}
+  .mb-flyout{position:static;margin:0 0 0 14px;padding:0;min-width:0;background:transparent;border:0;box-shadow:none}
+  .mb-item{min-height:44px}
+  .mb-item kbd{display:none}
   .rdrop{display:flex;align-items:center}
 
   /* bottom bar: icon over a one-word label; swipes if a future tab does not fit */
@@ -612,18 +593,3 @@ body.simple .simple-input{display:block;flex:none;border:1px solid var(--border,
 .ribbon .rb[aria-pressed]::after{width:22px;height:11px;border-radius:6px;background-size:auto}
 .ribbon .rb[aria-pressed="true"]::after{background:radial-gradient(circle at 16px 50%,#06110e 0 3px,transparent 3.5px),var(--signal,#35e0b4)}
 .ribbon .rb[aria-pressed="false"]::after{background:radial-gradient(circle at 6px 50%,currentColor 0 3px,transparent 3.5px),transparent}
-
-/* Windows-style menu bar replaces the ribbon tabs and panes (their buttons stay in the DOM; the menus click them). */
-.rtabs>button[data-rtab],.ribbon{display:none!important}
-.menubar{display:flex;align-items:stretch;gap:2px;align-self:center;padding:2px 0}
-.mb-item{position:relative}
-.mb-title{border:1px solid transparent;border-radius:4px;background:transparent;color:var(--text);padding:5px 12px;font-weight:500}
-.mb-title:hover,.mb-item.open>.mb-title{background:var(--ink-3);border-color:var(--line-hi)}
-.mb-drop{position:absolute;top:100%;left:0;z-index:60;min-width:240px;padding:4px;background:var(--ink-2);border:1px solid var(--line-hi);border-radius:6px;box-shadow:0 8px 24px #0008}
-.mb-drop[hidden]{display:none}
-.mb-drop button{display:flex;width:100%;justify-content:space-between;gap:24px;border:0;border-radius:4px;background:transparent;color:var(--text);padding:6px 10px;text-align:left}
-.mb-drop button:hover:not(:disabled){background:var(--ink-3)}
-.mb-drop button:disabled{opacity:.4;cursor:default}
-.mb-drop button.danger{color:#ff7070}
-.mb-drop kbd{color:var(--text-dim);font:inherit;font-size:var(--t-xs)}
-.mb-sep{height:1px;margin:4px 6px;background:var(--line)}

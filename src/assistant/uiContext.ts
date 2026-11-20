@@ -42,7 +42,7 @@ export function readUI(doc: Document, roots: ParentNode[] = []): UIContext {
   const controls = query("button, select, input, textarea, [role=button], [role=menuitem], .halo-item, a[href]").filter(e => !excluded(e)).map(e => {
     const field = e instanceof HTMLInputElement || e instanceof HTMLSelectElement || e instanceof HTMLTextAreaElement;
     const secret = /key|token|secret|password/i.test(`${e.id} ${e.getAttribute("name")} ${label(e)}`) || e.getAttribute("type") === "password";
-    const section = e.closest<HTMLElement>(".halo-pane, .rpane, .panel, [role=dialog], .rmenu, .ne-node");
+    const section = e.closest<HTMLElement>(".halo-pane, .rpane, .panel, [role=dialog], .rmenu, .mb-menu, .ne-node");
     return {
       id: e.id || null, kind: e.getAttribute("role") || (e instanceof HTMLInputElement ? e.type : e.tagName.toLowerCase()), label: label(e),
       section: clean(section?.querySelector("h2, h3, .ne-title")?.textContent || section?.dataset.rpane || section?.className || "App"),
