@@ -6,6 +6,7 @@ import { WORKFLOWS, withLiveCameras } from "../workflows";
 import { loadSetup } from "../setup/config";
 import { withSpinner } from "./spinner";
 import { BUTTON_ICON, withIcon } from "./icons";
+import { workflowIcon } from "./workflowIcons";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 const btn = (label: string, fn: () => void, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; return BUTTON_ICON[label] ? withIcon(b, BUTTON_ICON[label]) : b; };
@@ -43,7 +44,7 @@ export function openWorkflowPanel(api: WorkflowApi) {
   const rows = WORKFLOWS.map((w) => {
     const row = el("div", "bk-row wf-row"), info = el("div", "bk-info");
     info.append(el("b", "", w.name), el("span", "wf-desc", w.description), el("span", "", `${w.graph.nodes.length} nodes · ${w.graph.edges.length} wires`));
-    row.append(info, btn("Load", () => { const l = withLiveCameras(w, loadSetup()); api.apply(l.graph, l.setup, `Before workflow: ${w.name}`); m.close(); }));
+    row.append(workflowIcon(w.id), info, btn("Load", () => { const l = withLiveCameras(w, loadSetup()); api.apply(l.graph, l.setup, `Before workflow: ${w.name}`); m.close(); }));
     return row;
   });
   const foot = el("div", "bk-bar"); foot.append(btn("Open workflow file…", () => file.click()), file);
