@@ -20,8 +20,23 @@ async function refreshDevices() {
     const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput" && d.deviceId);
     deviceOptions.length = 0; deviceLabels.length = 0;
     deviceOptions.push(""); deviceLabels.push("Default camera");
-    cams.forEach((d, i) => { deviceOptions.push(d.deviceId); deviceLabels.push(d.label || `Camera ${i + 1}`); });
+    const seen = new Map<string, number>();
+    cams.forEach((d, i) => { // two webcams of one model share a name: number them so the list can tell them apart
+      const base = d.label || `Camera ${i + 1}`, n = (seen.get(base) ?? 0) + 1; seen.set(base, n);
+      deviceOptions.push(d.deviceId); deviceLabels.push(cams.filter((c) => (c.label || "") === d.label).length > 1 ? `${base} (${n})` : base);
+    });
   } catch { /* no camera API: only the default stays */ }
+}
+/** The device each running webcam node has open, so a name that two cameras share never lands both nodes on the same one. */
+const claimed = new Map<object, string>();
+function pickDevice(owner: object, devices: MediaDeviceInfo[], want: string): MediaDeviceInfo | undefined {
+  const cams = devices.filter((d) => d.kind === "videoinput");
+  if (!want) return undefined;
+  const exact = cams.find((d) => d.deviceId === want);
+  if (exact) return exact;
+  const byName = cams.filter((d) => d.label.toLowerCase().includes(want.toLowerCase()));
+  const taken = new Set([...claimed].filter(([o]) => o !== owner).map(([, id]) => id));
+  return byName.find((d) => !taken.has(d.deviceId)) ?? byName[0];
 }
 if (typeof navigator !== "undefined" && typeof navigator.mediaDevices?.enumerateDevices === "function") {
   void refreshDevices();
@@ -54,7 +69,7 @@ const webcam: NodeSpec<WebcamState> = {
   previewSize: [240, 240],
   init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "", frozenUntil: 0, res: "", status: "Waiting for first tick", debug: "Camera has not been requested yet", frames: 0 }),
   process(_i, { params, state, now, setFidelity, span }) {
-    const stop = () => { state.stream?.getTracks().forEach((t) => t.stop()); state.stream = null; state.video = null; state.frame = null; };
+    const stop = () => { claimed.delete(state); state.stream?.getTracks().forEach((t) => t.stop()); state.stream = null; state.video = null; state.frame = null; };
     if (!params.online) { if (state.stream) stop(); state.status = "Camera disabled"; state.debug = "Online is off; no frames requested"; setFidelity(null); return { frame: null }; }
     if (!navigator.mediaDevices) { state.err = "Camera API unavailable (requires HTTPS or localhost)"; state.status = "Cannot open camera"; state.debug = state.err; }
     const [capW, capH] = RESOLUTIONS[String(params.resolution)] ?? RESOLUTIONS["640x480"];
@@ -67,8 +82,9 @@ const webcam: NodeSpec<WebcamState> = {
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const want = String(params.device);
-          const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
+          const dev = pickDevice(state, devices, want);
           if (want && !dev) throw new Error(`Camera "${want}" not found; not falling back to another camera`);
+          if (dev) claimed.set(state, dev.deviceId); else claimed.delete(state);
           state.wantDev = want;
           state.dev = dev?.label || (want && !/^[0-9a-f]{20,}$/i.test(want) ? want : "") || "default camera";
           state.status = "Requesting camera stream";
@@ -123,7 +139,7 @@ const webcam: NodeSpec<WebcamState> = {
     setFidelity(state.frame ? 1 : 0);
     return { frame: state.frame };
   },
-  dispose(s) { s.stream?.getTracks().forEach((t) => t.stop()); },
+  dispose(s) { claimed.delete(s); s.stream?.getTracks().forEach((t) => t.stop()); },
   hover: (p, w, h, s) => frameHover(p, w, h, [240, 240], s.frame, "Webcam", [
     { label: "Status", value: webcamStatus(s), tone: s.err ? "bad" : s.frame ? "ok" : "warn" },
     { label: "Operation", value: s.status }, { label: "Debug", value: s.debug },
