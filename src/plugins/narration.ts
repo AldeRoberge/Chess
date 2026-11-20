@@ -191,7 +191,7 @@ const speak: NodeSpec<SpeakState> = {
     { id: "apiKey", kind: "text", label: "API key", value: "", secret: true },
     voiceParamA,
     voiceParamB,
-    { id: "model", kind: "text", label: "Model", value: ELEVENLABS_DEFAULTS.model },
+    { id: "model", kind: "select", label: "Model", options: ["eleven_multilingual_v2", "eleven_turbo_v2_5", "eleven_flash_v2_5"], labels: ["Multilingual v2 (best quality)", "Turbo v2.5 (faster)", "Flash v2.5 (fastest)"], value: ELEVENLABS_DEFAULTS.model },
     langParam,
   ],
   init: () => ({ enabled: true, keyFetched: "" }),

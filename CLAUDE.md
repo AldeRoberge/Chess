@@ -32,3 +32,26 @@ Commit your changes directly to `main`. Do not open feature branches or pull req
 ## Tell the user
 
 Uncommitted work is unprotected. Suggest committing often, and keep GitHub Desktop's pull, discard and stash actions away from this folder while sessions are active.
+
+## Request log (one file per prompt)
+
+Every agent (Claude, ChatGPT, anything else) logs each user request so we can see what is happening. One file per prompt, never a shared file, so sessions never hit merge conflicts.
+
+- Folder: `docs/requests/`. File name: `YYYY-MM-DD-HHMM-<agent>-<short-slug>.md` (e.g. `2026-11-19-1930-claude-fix-camera-preview.md`). The timestamp keeps names unique; if the file exists, add a `-2` suffix.
+- Create the file at the start of the turn, before the work. Never edit another session's file.
+- Format:
+
+```markdown
+# <short title>
+- Agent: Claude | ChatGPT | <other>
+- Time: 2026-11-19 19:30 (local)
+- Ask: <one or two sentence summary of what the user asked, in your own words>
+
+## Tasks
+- [ ] step one
+- [ ] step two
+```
+
+- Tick each box (`- [x]`) as soon as that step is done, and add steps if the plan changes. Before ending the turn, make sure every box is ticked or says why it was skipped.
+- A follow-up that continues the same ask goes in the same file; a new, unrelated ask gets a new file.
+- Commit the log file together with the work it describes (stage it by name, as usual).

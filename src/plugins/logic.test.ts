@@ -164,8 +164,9 @@ describe("narration nodes", () => {
   it("narrator merges three event inputs, honours voice settings, logs to the bus, and previews recent lines", () => {
     const n = node("narration.narrator", { voices: "1", nameA: "Hugo", nameB: "Léa" });
     expect(n.run({})).toEqual({ lines: [] });
-    const out = n.run({ events: [{ type: "seat", t: 1000 }], events2: [{ type: "mode", t: 20000, data: { mode: "engine", elo: 500 } }], events3: [{ type: "engine-move", t: 40000, data: { san: "e5" } }] })!;
-    expect(out.lines.length).toBeGreaterThanOrEqual(3); expect(out.lines[0].name).toBe("Hugo"); expect(out.lines.every((l: any) => l.speaker === "A")).toBe(true);
+    expect(n.run({ events: [{ type: "seat", t: 500 }], events2: [{ type: "mode", t: 600, data: { mode: "engine", elo: 500 } }] })).toEqual({ lines: [] }); // silent at start-up, before any move
+    const out = n.run({ events3: [{ type: "engine-move", t: 40000, data: { san: "e5" } }] })!;
+    expect(out.lines.length).toBeGreaterThanOrEqual(1); expect(out.lines[0].name).toBe("Hugo"); expect(out.lines.every((l: any) => l.speaker === "A")).toBe(true);
     expect(bus.lines.length).toBe(out.lines.length); n.paint(200, 70);
     n.params.voices = "2"; n.paint(); n.run({ events: [{ type: "check", t: 90000, data: {} }] }); n.paint(); // both voices in colour
     for (let i = 0; i < 10; i++) n.run({ events: [{ type: "seat", t: 100000 + i * 5000 }] }); // preview keeps a longer history for expanded nodes
