@@ -373,11 +373,13 @@ const stabilize: NodeSpec<StabState> = {
     { id: "hysteresis", kind: "number", label: "Hysteresis", min: 1, max: 6, step: 0.5, value: 3 },
     { id: "settleMs", kind: "number", label: "Settle time (ms)", min: 100, max: 3000, step: 50, value: 700 },
     { id: "holdOnHand", kind: "bool", label: "Freeze while hand present", value: true },
+    { id: "bypass", kind: "bool", label: "Bypass (pass the fused board straight through)", value: false },
   ],
   previewSize: [120, 120],
   init: () => ({ stab: new Stabilizer(), out: null, inp: null }),
   process({ board }, { params, state, setFidelity, span }) {
     if (!board) return { board: null };
+    if (params.bypass) { state.inp = board; state.out = board; bus.board = board; setFidelity(board.fidelity); return { board }; }
     const c = state.stab.cfg;
     c.decay = Number(params.memory); c.on = Number(params.hysteresis); c.off = -Number(params.hysteresis); c.settleMs = Number(params.settleMs); c.holdOnHand = !!params.holdOnHand;
     state.inp = board;

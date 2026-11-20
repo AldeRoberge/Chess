@@ -29,7 +29,7 @@ Requires a recent Node.js LTS and a browser with WebGL (Chromium or Edge recomme
 ```bash
 npm install
 npm run setup:stockfish   # copies the single-thread WASM into public/ (otherwise a weak fallback engine plays)
-npm run dev               # http://localhost:24377  -> the guided setup opens by itself
+npm run dev               # http://localhost:5555  -> the guided setup opens by itself
 npm test                  # the whole suite, including full-game end-to-end runs
 npm run coverage          # same, enforcing 100% lines / branches / functions / statements
 npm run check             # full local suite, coverage and production build
@@ -70,7 +70,7 @@ and hover the mouse over the menu buttons to test dwell selection.
 
 ## Phone remote: watch and play from a phone
 
-Run the app on the computer that has the webcam (`npm run dev`, or `start-chess.bat`), open it there as `http://localhost:24377`, and click **Phone** in the ribbon (Home, Start). The window shows an address and a four-digit join code. On a phone on the **same Wi-Fi**, open the address (the code is already in it).
+Run the app on the computer that has the webcam (`npm run dev`, or `start-chess.bat`), open it there as `http://localhost:5555`, and click **Phone** in the ribbon (Home, Start). The window shows an address and a four-digit join code. On a phone on the **same Wi-Fi**, open the address (the code is already in it).
 
 The phone page shows:
 

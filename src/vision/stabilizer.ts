@@ -20,6 +20,7 @@ export class Stabilizer {
   white = new Uint8Array(64).fill(1);
   lastChange = 0;
   private started = false;
+  private seeded = false;
   private occDirection = new Int8Array(64);
   private whiteDirection = new Int8Array(64);
   private occSince = new Float64Array(64);
@@ -28,7 +29,7 @@ export class Stabilizer {
   /** Weak evidence needs time, rather than an amplitude it can never reach. */
   private sustained(value: number, sq: number, t: number, direction: Int8Array, since: Float64Array): number {
     // Keep a dead band: an unreadable square (0.5) must never become a vote.
-    const next = value >= 0.56 ? 1 : value <= 0.44 ? -1 : 0;
+    const next = value >= 0.53 ? 1 : value <= 0.47 ? -1 : 0;
     if (!next || direction[sq] !== next) { direction[sq] = next; since[sq] = t; return 0; }
     return t - since[sq] >= Math.max(300, this.cfg.settleMs) ? next : 0;
   }
@@ -40,6 +41,12 @@ export class Stabilizer {
     const frozen = this.cfg.holdOnHand && b.handOver;
     if (!this.started) { this.lastChange = b.t; this.started = true; }
     if (!frozen && b.cams > 0) {
+      if (!this.seeded) { // first look at the board: believe what is already clearly there instead of rebuilding it from nothing
+        this.seeded = true;
+        for (let sq = 0; sq < 64; sq++) {
+          if (b.occ[sq] >= 0.65) { this.occ[sq] = 1; this.accOcc[sq] = this.cfg.on; this.white[sq] = b.white[sq] >= 0.5 ? 1 : 0; this.accWhite[sq] = (this.white[sq] ? 1 : -1) * this.cfg.on * 0.5; }
+        }
+      }
       for (let sq = 0; sq < 64; sq++) {
         this.accOcc[sq] = clamp(this.accOcc[sq] * decay + logit(b.occ[sq]) * (1 - decay) * 5, -8, 8);
         this.accWhite[sq] = clamp(this.accWhite[sq] * decay + logit(b.white[sq]) * (1 - decay) * 3, -8, 8);

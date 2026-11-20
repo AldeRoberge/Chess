@@ -225,7 +225,7 @@ export class NodeEditor {
         else if (/^(autoCal|autoFind|learn)$/.test(p.id)) group = section("learning", "Teach it the board", "board");
         else if (/^(follow|cam1|cam2|cam3|seat)$/.test(p.id)) group = section("placement", "Set camera & seat placement", "camera");
         else if (/^(cnn|board|collect)$/.test(p.id) && spec.category === "Vision") group = section("reader", "Choose neural readers & training", "frame");
-        else if (/^(memory|hysteresis|average|settleMs|holdOnHand|clean)$/.test(p.id)) group = section("stability", "Steady the readings", "setup");
+        else if (/^(memory|hysteresis|average|settleMs|holdOnHand|bypass|clean)$/.test(p.id)) group = section("stability", "Steady the readings", "setup");
         else if (/^(staleMs|handMotion)$/.test(p.id)) group = section("feeds", "Tune feed freshness & hand movement", "camera");
         else if (/^(margin|confirm|maxCost|minConf)$/.test(p.id)) group = section("confidence", "Tune when a reading is accepted", "setup");
         else if (/threshold|weight|softness|patch|grid/i.test(p.id)) group = section("detection", "Tune piece detection", "search");
@@ -886,7 +886,8 @@ export class NodeEditor {
       const costs = new Map<string, number>();
       for (const id of visible) { const c = this.views.get(id)?.cost; if (c) costs.set(id, c); }
       for (const [id, v] of this.views) if (previewPoint(id)) v.holdUntil = now + PREVIEW_HOLD_MS; // hovering brings a preview back and keeps it for a while after the pointer leaves
-      const hide = chooseHidden(costs, (id) => (this.views.get(id)?.holdUntil ?? 0) > now, this.lite ? PREVIEW_BUDGET_MS / 2 : PREVIEW_BUDGET_MS);
+      // A camera picture on screen is never hidden or faded to save time; it only stops painting once scrolled out of view (`visible`).
+      const hide = chooseHidden(costs, (id) => (this.views.get(id)?.holdUntil ?? 0) > now || this.graph.nodes.get(id)?.type === "source.webcam",this.lite ? PREVIEW_BUDGET_MS / 2 : PREVIEW_BUDGET_MS);
       if (hide.size && now - this.lastProbe > PREVIEW_PROBE_MS) { this.lastProbe = now; const ids = [...hide]; this.probe = (this.probe + 1) % ids.length; hide.delete(ids[this.probe]); }
       for (const [id, v] of this.views) { v.hidden = hide.has(id); if (!v.hidden) v.fadeAt = undefined; }
     }
