@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { type LabelHit, labelHints, quadsFromLabels, setOcrEngine } from "./boardLabels";
+import { type LabelHit, labelHints, ocrReportOf, quadsFromLabels, setOcrEngine } from "./boardLabels";
 import type { GrayFrame, Pt } from "./types";
 
 // A board turned by `ang`, a square `sq` pixels wide, its a8 corner at `o`. Labels sit 0.5 square outside the edges.
@@ -61,6 +61,16 @@ describe("labelHints", () => {
   it("resolves empty, and never rejects, when the reader fails", async () => {
     setOcrEngine(async () => { throw new Error("no ocr"); });
     expect(await labelHints(frame())).toEqual([]);
+  });
+  it("reports what it read, so the screen can show it", async () => {
+    const { hits } = labels({ x: 200, y: 100 }, 40, 0);
+    setOcrEngine(async () => hits);
+    const a = frame(); await labelHints(a);
+    expect(ocrReportOf(a)).toMatchObject({ state: "found" }); expect(ocrReportOf(a)!.hits.length).toBe(hits.length); expect(ocrReportOf(a)!.guesses).toBeGreaterThan(0);
+    setOcrEngine(async () => []);
+    const b = frame(); await labelHints(b);
+    expect(ocrReportOf(b)).toMatchObject({ state: "none", hits: [] });
+    expect(ocrReportOf(frame())).toBeNull();
   });
   it("reads a picture once", async () => {
     let n = 0; setOcrEngine(async () => { n++; return []; });

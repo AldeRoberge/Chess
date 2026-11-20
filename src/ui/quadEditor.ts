@@ -2,7 +2,7 @@ import { withIcon, setLabel, setPressed } from "./icons";
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
-import { labelHints } from "../vision/boardLabels";
+import { labelHints, ocrReportOf } from "../vision/boardLabels";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { quadToSquare, squareToQuad } from "./quadMap";
 import { pickTurnBase, turnQuad, turnQuadPlane } from "./quadTurn";
@@ -89,6 +89,8 @@ export function openQuadEditor(o: QuadEditorOpts) {
   opts.append(followBtn, matrixBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1;
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
+  /** What auto-detect has found so far, shown blinking so it can be seen working: the crossing of the empty middle, and the letters and digits the OCR read. */
+  const scan: { frame: GrayFrame | null; centre: { x: number; y: number; quad: Pt[] } | null; centreAt: number; ocrState: string; ocrAt: number } = { frame: null, centre: null, centreAt: 0, ocrState: "", ocrAt: 0 };
   // Shown when the grid fits but white pieces stand where black ones should: one click turns the corner order half way.
   const turnBtn = btn("White is on the other side: flip the corners"); turnBtn.hidden = true; setLabel(turnBtn, "White is on the other side: flip the corners");
   turnBtn.title = "Read with the corners turned half way, the board is exactly the start position; read as they are, it is not. Turn the corners half way (a8↔h1, h8↔a1).";
@@ -110,6 +112,36 @@ export function openQuadEditor(o: QuadEditorOpts) {
     return { c, h: { x: W / 2, y: H - ROT_R - 12 } };
   };
   const emit = () => o.change(fmtCorners(pts));
+  /** Blinks what the search has found (the middle's crossing, the OCR's letters and digits) and says in words what the OCR is doing. */
+  const drawFinds = (now: number) => {
+    const pulse = (t0: number) => 0.3 + 0.7 * Math.abs(Math.sin(((now - t0) / 1000) * Math.PI * 3)), live4 = (t0: number) => now - t0 < 4000;
+    ctx.save(); ctx.lineJoin = "round"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    const tag = (t: string, x: number, y: number, col: string) => { ctx.font = '700 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.lineWidth = 3; ctx.strokeStyle = "#07090d"; ctx.strokeText(t, x, y); ctx.fillStyle = col; ctx.fillText(t, x, y); };
+    if (scan.centre && live4(scan.centreAt)) {
+      const a = pulse(scan.centreAt), c = scan.centre, x = c.x * sx, y = c.y * sy;
+      ctx.globalAlpha = a; ctx.strokeStyle = "#2de2e6"; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); c.quad.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy))); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.moveTo(x - 26, y); ctx.lineTo(x + 26, y); ctx.moveTo(x, y - 26); ctx.lineTo(x, y + 26); ctx.stroke();
+      ctx.globalAlpha = 1; tag("CENTRE FOUND", x + 22, y - 22, "#2de2e6");
+    }
+    const rep = scan.frame ? ocrReportOf(scan.frame) : null;
+    if (rep) {
+      if (rep.state !== scan.ocrState) { scan.ocrState = rep.state; scan.ocrAt = now; }
+      if (rep.hits.length && live4(Math.max(scan.ocrAt, rep.t))) {
+        ctx.globalAlpha = pulse(scan.ocrAt); ctx.strokeStyle = "#ff4fd8"; ctx.lineWidth = 2;
+        for (const h of rep.hits) { const x = h.x * sx, y = h.y * sy; ctx.strokeRect(x - 11, y - 11, 22, 22); ctx.globalAlpha = 1; tag(h.ch, x - 4, y - 18, "#ff4fd8"); ctx.globalAlpha = pulse(scan.ocrAt); }
+        ctx.globalAlpha = 1;
+      }
+      if (aligner || live4(scan.ocrAt) || rep.state === "unavailable") {
+        const msg = rep.state === "reading" ? `OCR: reading the letters and digits${rep.hits.length ? ` (${rep.hits.length} so far)` : ""}…`
+          : rep.state === "found" ? `OCR: read ${rep.hits.length} letters/digits, ${rep.guesses} board guess${rep.guesses === 1 ? "" : "es"}`
+          : rep.state === "none" ? "OCR: no letters or digits could be read"
+          : `OCR unavailable${rep.reason ? `: ${rep.reason.slice(0, 60)}` : ""}`;
+        tag(msg, 10, 16, rep.state === "found" ? "#ff4fd8" : rep.state === "reading" ? "#fff" : "#ffb347");
+      }
+    }
+    ctx.restore();
+  };
   const paint = () => {
     if (closed) return;
     drawFrame(ctx, W, H, o.frame(), "no camera frame yet — connect a camera to this node");
@@ -145,6 +177,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
         else if (follower.status === "lost") { follower.unlock(); startAuto(); }
       }
     }
+    if (aligner?.found.centre && !scan.centre) { const c = aligner.found.centre; scan.centre = { x: c.center.x, y: c.center.y, quad: c.corners }; scan.centreAt = performance.now(); }
     const live = o.grid > 1 && !!fr;
     if (!autoBox.hidden) {
       const running = !!aligner, conf = running ? doneConf : live ? Math.min(meter.q, doneConf || 1) : 0;
@@ -205,6 +238,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
       if (turning) { const deg = Math.round((turning.shown * 180) / Math.PI), t = `${deg > 0 ? "+" : ""}${deg}° ${turning.mode === "3d" ? "3D" : "flat"}`; ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(t, h.x, h.y - ROT_R - 10); ctx.fillText(t, h.x, h.y - ROT_R - 10); }
       ctx.restore();
     }
+    drawFinds(performance.now());
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
     // Green once the grid fits (or the camera follower has it locked), orange while it still needs work, grey with no picture.
     const cornerCol = !live ? CORNER_IDLE : meter.good || follower.locked ? CORNER_GOOD : CORNER_WARN;
@@ -289,6 +323,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
       follower.unlock(); progress = 0; doneConf = 0;
       rememberLayout(pts, fr.width, fr.height);
       aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); aligner.expectLabels(labelHints(fr)); setLabel(auto, "Stop");
+      scan.frame = fr; scan.centre = null; scan.ocrState = ""; scan.ocrAt = 0;
       return;
     }
     legacyAuto();

@@ -103,16 +103,23 @@ export function setOcrEngine(e: OcrEngine | null) { engine = e; }
 
 interface TessWorker { recognize(image: unknown, options?: object, output?: object): Promise<{ data: { blocks?: { paragraphs: { lines: { words: { symbols: { text: string; confidence: number; bbox: { x0: number; y0: number; x1: number; y1: number } }[] }[] }[] }[] }[] | null } }>; setParameters(p: object): Promise<unknown> }
 let worker: Promise<TessWorker | null> | null = null;
+/** Why the built-in reader could not start (no network for its language data, no document), or "" while it works. Shown to the user. */
+let workerError = "";
+
+/** What the label reader is doing for one picture, so the screen can show it: still reading, found letters and digits, found none, or could not run at all. */
+export interface OcrReport { state: "reading" | "found" | "none" | "unavailable"; hits: LabelHit[]; guesses: number; reason: string; t: number }
+const reports = new WeakMap<GrayFrame, OcrReport>();
+export const ocrReportOf = (f: GrayFrame): OcrReport | null => reports.get(f) ?? null;
 
 function loadWorker(): Promise<TessWorker | null> {
   worker ??= (async () => {
     try {
-      if (typeof document === "undefined") return null;
+      if (typeof document === "undefined") { workerError = "no browser page"; return null; }
       const T = await import("tesseract.js");
       const w = await T.createWorker("eng");
       await w.setParameters({ tessedit_char_whitelist: FILES + RANKS, tessedit_pageseg_mode: "11" as never });
       return w as unknown as TessWorker;
-    } catch { return null; }
+    } catch (e) { workerError = e instanceof Error ? e.message : String(e); return null; }
   })();
   return worker;
 }
@@ -164,14 +171,20 @@ export function labelHints(f: GrayFrame, budgetMs = 20000): Promise<Pt[][]> {
   const run = (async () => {
     const read = engine ?? builtIn, end = Date.now() + budgetMs;
     let all: LabelHit[] = [];
+    const report = (state: OcrReport["state"], guesses = 0) => reports.set(f, { state, hits: all, guesses, reason: state === "unavailable" ? workerError : "", t: Date.now() });
+    report("reading");
     for (const rot of [0, 180, 90, 270]) {
       if (Date.now() > end) break;
       try { all = all.concat(await read(f, rot)); } catch { /* this turn could not be read */ }
+      if (!engine && !(await worker)) { report("unavailable"); return []; }
+      report("reading");
       const q = quadsFromLabels(all);
-      if (q.length && all.length >= 8) return q;
+      if (q.length && all.length >= 8) { report("found", q.length); return q; }
     }
-    return quadsFromLabels(all);
-  })().catch(() => [] as Pt[][]);
+    const q = quadsFromLabels(all);
+    report(all.length ? "found" : "none", q.length);
+    return q;
+  })().catch(() => { reports.set(f, { state: "unavailable", hits: [], guesses: 0, reason: workerError || "the reader crashed", t: Date.now() }); return [] as Pt[][]; });
   cache.set(f, run);
   return run;
 }
