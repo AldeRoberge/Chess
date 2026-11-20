@@ -28,7 +28,7 @@ export interface QuadEditorOpts {
 }
 
 /** The rotate handle sits this far (canvas pixels) outside the middle of the a8-h8 edge, like the one on an image in Canva. */
-const ROT_OFF = 40, ROT_R = 11;
+const ROT_OFF = 40, ROT_R = 16, ROT_COL = "#ffd23f";
 
 /** Corner marker colours: one scheme for all four corners (their labels tell them apart). */
 const CORNER_GOOD = "#35e07a", CORNER_WARN = "#ff9a3c", CORNER_IDLE = "#cfd8e3";
@@ -190,12 +190,18 @@ export function openQuadEditor(o: QuadEditorOpts) {
     }
     if (o.grid > 1) { // rotate handle
       const { m, h } = rotHandle();
-      ctx.save(); ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(h.x, h.y); ctx.stroke();
-      ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(h.x, h.y, ROT_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = "#07090d"; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(h.x, h.y, ROT_R * 0.5, -Math.PI * 0.2, Math.PI * 1.35); ctx.stroke();
-      const ax = h.x + Math.cos(-Math.PI * 0.2) * ROT_R * 0.5, ay = h.y + Math.sin(-Math.PI * 0.2) * ROT_R * 0.5;
-      ctx.fillStyle = "#07090d"; ctx.beginPath(); ctx.moveTo(ax - 3.5, ay - 1); ctx.lineTo(ax + 3.5, ay - 1); ctx.lineTo(ax + 0.5, ay + 4); ctx.closePath(); ctx.fill();
-      if (turning) { const deg = Math.round((turning.shown * 180) / Math.PI), t = `${deg > 0 ? "+" : ""}${deg}° ${turning.mode === "3d" ? "3D" : "flat"}`; ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(t, h.x + 16, h.y); ctx.fillText(t, h.x + 16, h.y); }
+      ctx.save(); ctx.lineCap = "round";
+      ctx.strokeStyle = "#07090d"; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(h.x, h.y); ctx.stroke(); // dark outline so the stem reads on any picture
+      ctx.strokeStyle = ROT_COL; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(h.x, h.y); ctx.stroke();
+      ctx.shadowColor = ROT_COL; ctx.shadowBlur = turning ? 18 : 12;
+      ctx.fillStyle = ROT_COL; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(h.x, h.y, ROT_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.shadowBlur = 0;
+      const ir = ROT_R * 0.55, a0 = -Math.PI * 0.2;
+      ctx.strokeStyle = "#07090d"; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.arc(h.x, h.y, ir, a0, Math.PI * 1.35); ctx.stroke();
+      const ax = h.x + Math.cos(a0) * ir, ay = h.y + Math.sin(a0) * ir;
+      ctx.fillStyle = "#07090d"; ctx.beginPath(); ctx.moveTo(ax - 5, ay - 1); ctx.lineTo(ax + 5, ay - 1); ctx.lineTo(ax + 0.5, ay + 6); ctx.closePath(); ctx.fill();
+      if (!turning) { ctx.font = '700 11px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = ROT_COL; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.strokeText("ROTATE", h.x, h.y - ROT_R - 9); ctx.fillText("ROTATE", h.x, h.y - ROT_R - 9); }
+      if (turning) { const deg = Math.round((turning.shown * 180) / Math.PI), t = `${deg > 0 ? "+" : ""}${deg}° ${turning.mode === "3d" ? "3D" : "flat"}`; ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(t, h.x + ROT_R + 8, h.y); ctx.fillText(t, h.x + ROT_R + 8, h.y); }
       ctx.restore();
     }
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
