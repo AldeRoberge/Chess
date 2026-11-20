@@ -1,6 +1,6 @@
 /**
- * The bot's face: the app's cream knight (same artwork as the logo, KNIGHT_SVG) made cute. Big shiny eye, rosy cheek, a
- * little smile, and a few small flowers tucked on its ear. Static markup, safe for innerHTML.
+ * The bot's face: the app's cream knight (same artwork as the logo, KNIGHT_SVG) made cute. A calm eye and a few small
+ * flowers tucked on its ear. Static markup, safe for innerHTML.
  */
 
 /** The knight itself, in the logo's 64x64 box, facing right (the artwork is drawn facing left and mirrored). */
@@ -13,7 +13,7 @@ const flower = (x: number, y: number, r: number, petal: string, rot = 0) => {
 };
 
 /** Eye, cheek, smile and the ear's flowers: drawn over the knight in its own coordinates. */
-const FACE = `<path d="M33.2 9.2c1.4-1.3 3.4-1.8 5.4-1.4" fill="none" stroke="#5aa86a" stroke-width="1.1" stroke-linecap="round"/><ellipse cx="29.5" cy="11.4" rx="2.2" ry="1" transform="rotate(-35 29.5 11.4)" fill="#6fc283"/><ellipse cx="36.6" cy="15.6" rx="2.1" ry=".95" transform="rotate(30 36.6 15.6)" fill="#6fc283"/>${flower(31.4, 8.6, 3.6, "#ff9ec0", 10)}${flower(26.6, 13.2, 3, "#c9a6ff", 30)}${flower(36.2, 11.6, 2.8, "#ffffff", 0)}${flower(33.4, 15.2, 2.3, "#ffb98a", 50)}<circle cx="29.2" cy="26.8" r="4.1" fill="#1a1a1a"/><circle cx="30.7" cy="25.2" r="1.55" fill="#fff"/><circle cx="28.2" cy="28.4" r=".8" fill="#fff"/><ellipse cx="25.1" cy="33.9" rx="3" ry="1.9" fill="#ff8fab" opacity=".62"/><path d="M17.7 34.4c1.3 1.7 3.1 1.9 4.3.5" fill="none" stroke="#1a1a1a" stroke-width="1.1" stroke-linecap="round"/><circle cx="17.2" cy="31.4" r=".6" fill="#1a1a1a"/>`;
+const FACE = `<path d="M33.2 9.2c1.4-1.3 3.4-1.8 5.4-1.4" fill="none" stroke="#5aa86a" stroke-width="1.1" stroke-linecap="round"/><ellipse cx="29.5" cy="11.4" rx="2.2" ry="1" transform="rotate(-35 29.5 11.4)" fill="#6fc283"/><ellipse cx="36.6" cy="15.6" rx="2.1" ry=".95" transform="rotate(30 36.6 15.6)" fill="#6fc283"/>${flower(31.4, 8.6, 3.6, "#ff9ec0", 10)}${flower(26.6, 13.2, 3, "#c9a6ff", 30)}${flower(36.2, 11.6, 2.8, "#ffffff", 0)}${flower(33.4, 15.2, 2.3, "#ffb98a", 50)}<ellipse cx="29.4" cy="26.6" rx="2.5" ry="2.9" fill="#1a1a1a"/><circle cx="30.2" cy="25.6" r=".85" fill="#fff"/>`;
 
 const knight = () => KNIGHT.replace("__FACE__", FACE);
 
