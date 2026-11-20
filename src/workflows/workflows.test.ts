@@ -60,8 +60,8 @@ describe("draftToGraph", () => {
   });
   it("lays the result out in titled sections by role, and copes with junk and feedback loops", () => {
     const b = draftToGraph(reg, { nodes: [{ id: "a", type: "source.synthetic" }, { id: "b", type: "vision.boardReader" }, { id: "c", type: "vision.fuse" }], edges: [{ from: "a.frame", to: "b.frame" }, { from: "b.obs", to: "c.o1" }] });
-    expect(b.graph.groups!.map((g) => g.title)).toEqual(["Demo & input", "Analysis"]);
-    const [src, rd, fuse] = b.graph.nodes; expect(src.y).toBeLessThan(rd.y); expect(rd.x).toBeLessThan(fuse.x);
+    expect(b.graph.groups!.map((g) => g.title)).toEqual(["Camera", "Merge into game state"]); // the layout is one row per camera, then the merge
+    const [src, rd, fuse] = b.graph.nodes; expect(src.x).toBeLessThan(rd.x); expect(rd.x).toBeLessThan(fuse.x); // left to right along the camera row
     expect(draftToGraph(reg, {}).graph.nodes).toEqual([]);
     expect(draftToGraph(reg, { nodes: "x" as any, edges: "y" as any }).name).toBe("AI workflow");
     const loop = draftToGraph(reg, { nodes: [{ id: "t", type: "game.tracker" }, { id: "d", type: "experience.director" }], edges: [{ from: "d.director", to: "t.director" }, { from: "t.events", to: "d.events" }] });
