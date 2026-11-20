@@ -1,91 +1,94 @@
 /* Performance tab + node timing overlay */
 
 /* ---- page ---- */
-.perf{display:flex;flex-direction:column;gap:14px;padding:4px 2px 28px;font-family:var(--font-ui)}
-.perf-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+/* Radius scale for the whole panel: cards 14, controls and canvases 10, small inner pieces 8. Specificity (.panel.perf) beats the global .panel padding and media-query overrides. */
+.panel.perf{--pr-lg:14px;--pr-md:10px;--pr-sm:8px;display:flex;flex-direction:column;gap:16px;padding:16px 16px 32px;font-family:var(--font-ui)}
+.perf-head{display:flex;align-items:center;gap:14px 16px;flex-wrap:wrap;padding:0 2px}
 .perf-title{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
-.perf-title h2{margin:0;font:600 18px/1.2 var(--font-ui);color:var(--text);letter-spacing:.01em}
-.perf-status{display:inline-flex;align-items:center;gap:7px;padding:3px 10px;border-radius:999px;background:var(--ink-2);border:1px solid var(--line);font:500 12px/1.4 var(--font-ui);color:var(--text-dim);white-space:nowrap}
+.perf-title h2{margin:0;font:600 20px/1.2 var(--font-ui);color:var(--text);letter-spacing:.01em}
+.perf-status{display:inline-flex;align-items:center;gap:8px;padding:4px 12px;border-radius:999px;background:var(--ink-2);border:1px solid var(--line);font:500 13px/1.4 var(--font-ui);color:var(--text-dim);white-space:nowrap}
 .perf-status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--text-dim)}
 .perf-status.live{color:var(--text)}
 .perf-status.live::before{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
 .perf-status.paused::before{background:var(--amber)}
 
 /* ---- buttons, segmented controls, toggles ---- */
-.perf-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.perf button{font:500 12px/1 var(--font-ui);color:var(--text);background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.perf-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.perf button{display:inline-flex;align-items:center;gap:7px;font:500 13px/1 var(--font-ui);color:var(--text);background:var(--ink-2);border:1px solid var(--line);border-radius:var(--pr-sm);padding:9px 13px;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
 .perf button:hover{border-color:var(--line-hi);background:var(--ink-3)}
 .perf button:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
 .perf-actions button.on{color:var(--signal);border-color:color-mix(in srgb,var(--signal) 55%,transparent);background:color-mix(in srgb,var(--signal) 12%,var(--ink-2))}
 button#heat.on{border-color:var(--signal);color:var(--signal)}
-.perf .seg{display:inline-flex;gap:2px;padding:2px;border-radius:9px;background:var(--ink-0);border:1px solid var(--line)}
-.perf .seg button{border:0;background:transparent;color:var(--text-dim);padding:5px 10px;border-radius:7px}
+.perf .seg{display:inline-flex;gap:2px;padding:3px;border-radius:var(--pr-md);background:var(--ink-0);border:1px solid var(--line)}
+.perf .seg button{border:0;background:transparent;color:var(--text-dim);padding:7px 12px;border-radius:calc(var(--pr-md) - 3px)}
 .perf .seg button:hover{color:var(--text);background:transparent}
 .perf .seg button.on{background:var(--ink-3);color:var(--text);box-shadow:0 1px 2px #0008}
-.perf .chk{display:inline-flex;align-items:center;gap:6px;font:400 12px var(--font-ui);color:var(--text-dim);cursor:pointer;user-select:none}
+.perf .chk{display:inline-flex;align-items:center;gap:8px;padding:0 4px;font:400 13px var(--font-ui);color:var(--text-dim);cursor:pointer;user-select:none}
 .perf .chk input{accent-color:var(--signal)}
-.perf-budget{display:inline-flex;align-items:center;gap:6px;font:400 12px var(--font-ui);color:var(--text-dim)}
-.perf-budget input{width:56px;background:var(--ink-0);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit}
+.perf-budget{display:inline-flex;align-items:center;gap:8px;padding:0 4px;font:400 13px var(--font-ui);color:var(--text-dim)}
+.perf-budget input{width:64px;background:var(--ink-0);color:var(--text);border:1px solid var(--line);border-radius:var(--pr-sm);padding:8px 10px;font:inherit}
 
 /* ---- cards ---- */
-.perf-card{display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 16px;border-radius:14px;background:var(--ink-2);border:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
-.perf-card-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:28px}
-.perf-card-h h3{margin:0;font:600 14px/1.2 var(--font-ui);color:var(--text)}
-.perf-card-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.perf-card{display:flex;flex-direction:column;gap:14px;min-width:0;padding:18px 20px;border-radius:var(--pr-lg);background:var(--ink-2);border:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.perf-card-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:34px}
+.perf-card-h h3{margin:0;font:600 16px/1.2 var(--font-ui);color:var(--text)}
+.perf-card-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
 
 /* ---- KPIs ---- */
-.perf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.kpi{display:flex;flex-direction:column;gap:5px;min-width:0;padding:13px 14px;border-radius:14px;background:var(--ink-2);border:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
-.kpi small{font:500 12px/1.3 var(--font-ui);color:var(--text-dim)}
-.kpi b{font:600 22px/1.1 var(--font-mono);color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
-.kpi span{font:400 12px/1.4 var(--font-ui);color:var(--text-dim)}
+.perf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{display:flex;flex-direction:column;gap:6px;min-width:0;padding:16px 18px;border-radius:var(--pr-lg);background:var(--ink-2);border:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.kpi small{font:500 13px/1.3 var(--font-ui);color:var(--text-dim)}
+.kpi b{font:600 26px/1.1 var(--font-mono);color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi span{font:400 13px/1.4 var(--font-ui);color:var(--text-dim)}
 .kpi.warn{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--amber) 45%,transparent)}
 .kpi.bad{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bad) 55%,transparent)}
 .kpi.warn b{color:var(--amber)}
 .kpi.bad b{color:var(--bad)}
 
 /* ---- timeline + flamegraph canvases ---- */
-.perf canvas.perf-timeline{display:block;width:100%;cursor:pointer;border-radius:10px;background:var(--ink-1)}
-.perf-flame-wrap{position:relative;display:flex;flex-direction:column;gap:8px}
-.perf canvas.perf-flame{display:block;width:100%;cursor:grab;touch-action:none;outline:none;border-radius:10px;background:var(--ink-1)}
+/* reset the global `.panel canvas` border, radius and background, then style each canvas */
+.panel.perf canvas{border:0;border-radius:var(--pr-md);background:var(--ink-1)}
+.perf canvas.perf-timeline{display:block;width:100%;cursor:pointer}
+.perf-flame-wrap{position:relative;display:flex;flex-direction:column;gap:12px}
+.perf canvas.perf-flame{display:block;width:100%;cursor:grab;touch-action:none;outline:none}
 .perf canvas.perf-flame.drag{cursor:grabbing}
 .perf canvas.perf-flame:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--signal) 60%,transparent)}
-.perf canvas.perf-mini{display:block;width:100%;border-radius:6px;background:var(--ink-1);border:1px solid color-mix(in srgb,var(--line) 60%,transparent);cursor:grab;touch-action:none}
+.panel.perf canvas.perf-mini{display:block;width:100%;border-radius:var(--pr-sm);border:1px solid color-mix(in srgb,var(--line) 60%,transparent);cursor:grab;touch-action:none}
 .perf canvas.perf-mini:active{cursor:grabbing}
-.perf-frow{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}
+.perf-frow{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:wrap}
 .perf-frow .perf-crumb{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.perf-crumb{font:400 12px/1.4 var(--font-ui);color:var(--text-dim)}
+.perf-crumb{font:400 13px/1.4 var(--font-ui);color:var(--text-dim)}
 .perf-crumb-path{color:var(--text);font-weight:500}
-.perf-zbar{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:9px;background:var(--ink-0);border:1px solid var(--line)}
-.perf-zbar button{display:inline-grid;place-items:center;width:28px;height:26px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--text-dim)}
-.perf-zbar button:hover{background:var(--ink-3);color:var(--text)}
+.perf-zbar{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:var(--pr-md);background:var(--ink-0);border:1px solid var(--line)}
+.perf .perf-zbar button{display:inline-grid;place-items:center;width:32px;height:30px;padding:0;border:0;border-radius:calc(var(--pr-md) - 3px);background:transparent;color:var(--text-dim)}
+.perf .perf-zbar button:hover{background:var(--ink-3);color:var(--text)}
 
 /* hover card */
-.perf-tip{position:absolute;z-index:5;min-width:170px;max-width:280px;pointer-events:none;display:flex;flex-direction:column;gap:2px;padding:9px 11px;border:1px solid var(--line-hi);border-radius:10px;background:color-mix(in srgb,var(--ink-1) 94%,transparent);backdrop-filter:blur(8px);box-shadow:0 14px 36px #000a;font:400 12px/1.45 var(--font-ui)}
-.perf-tip b{font:600 13px/1.3 var(--font-ui);color:var(--text);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.perf-tip{position:absolute;z-index:5;min-width:190px;max-width:320px;pointer-events:none;display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line-hi);border-radius:var(--pr-md);background:color-mix(in srgb,var(--ink-1) 94%,transparent);backdrop-filter:blur(8px);box-shadow:0 14px 36px #000a;font:400 13px/1.45 var(--font-ui)}
+.perf-tip b{font:600 14px/1.3 var(--font-ui);color:var(--text);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .perf-tip span{color:var(--text-dim);font-variant-numeric:tabular-nums}
 .perf-tip .perf-hint{color:var(--signal);margin-top:4px;font-size:var(--t-xs)}
 
 /* ---- node table ---- */
-.perf-search{background:var(--ink-0);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:400 12px var(--font-ui);width:190px;outline:none}
+.perf-search{background:var(--ink-0);color:var(--text);border:1px solid var(--line);border-radius:var(--pr-sm);padding:9px 12px;font:400 13px var(--font-ui);width:220px;outline:none}
 .perf-search:focus{border-color:var(--signal)}
-.perf-table{overflow:auto;max-height:360px;border-radius:10px;border:1px solid color-mix(in srgb,var(--line) 50%,transparent)}
-.perf-table table{width:100%;border-collapse:collapse;font:400 12px/1.3 var(--font-mono);font-variant-numeric:tabular-nums}
-.perf-table th{position:sticky;top:0;z-index:1;background:var(--ink-2);text-align:right;font:500 var(--t-xs) var(--font-ui);letter-spacing:.02em;padding:9px 10px;color:var(--text-dim);cursor:pointer;white-space:nowrap;border-bottom:1px solid var(--line)}
+.perf-table{overflow:auto;max-height:420px;border-radius:var(--pr-md);border:1px solid color-mix(in srgb,var(--line) 50%,transparent)}
+.perf-table table{width:100%;border-collapse:collapse;font:400 13px/1.3 var(--font-mono);font-variant-numeric:tabular-nums}
+.perf-table th{position:sticky;top:0;z-index:1;background:var(--ink-2);text-align:right;font:500 var(--t-xs) var(--font-ui);letter-spacing:.02em;padding:11px 14px;color:var(--text-dim);cursor:pointer;white-space:nowrap;border-bottom:1px solid var(--line)}
 .perf-table th:first-child{text-align:left}
 .perf-table th:hover{color:var(--text)}
 .perf-table th.on{color:var(--text)}
-.perf-table td{text-align:right;padding:8px 10px;border-top:1px solid color-mix(in srgb,var(--line) 35%,transparent);white-space:nowrap;color:var(--text)}
-.perf-table td.n{text-align:left;font:500 13px/1.3 var(--font-ui);display:flex;align-items:center;gap:8px;min-width:0}
-.perf-table td.n i{width:8px;height:8px;border-radius:50%;flex:none}
+.perf-table td{text-align:right;padding:10px 14px;border-top:1px solid color-mix(in srgb,var(--line) 35%,transparent);white-space:nowrap;color:var(--text)}
+.perf-table td.n{text-align:left;font:500 14px/1.3 var(--font-ui);display:flex;align-items:center;gap:10px;min-width:0}
+.perf-table td.n i{width:10px;height:10px;border-radius:50%;flex:none}
 .perf-table td.n small{margin-left:4px;color:var(--text-dim);font:400 var(--t-xs) var(--font-mono);overflow:hidden;text-overflow:ellipsis}
 .perf-table tbody tr[data-id]{cursor:pointer;transition:background .12s}
 .perf-table tbody tr[data-id]:hover{background:var(--ink-3)}
 .perf-table tr.byp{opacity:.45}
 .perf-x{padding:0 3px;border:0;background:none;color:var(--text-dim);line-height:1;font-size:var(--t-xs)}
 .perf-table td.sh{display:flex;align-items:center;gap:8px;justify-content:flex-end}
-.perf-table .bar{display:inline-block;width:72px;height:6px;border-radius:3px;background:var(--ink-0);overflow:hidden}
-.perf-table .bar i{display:block;height:100%;width:0;border-radius:3px}
+.perf-table .bar{display:inline-block;width:80px;height:8px;border-radius:4px;background:var(--ink-0);overflow:hidden}
+.perf-table .bar i{display:block;height:100%;width:0;border-radius:4px}
 .perf-table td.sp{width:100px;color:var(--signal)}
 .perf-table td.sp svg{display:block;width:100px;height:20px}
 .perf-table tr.lines td{background:var(--ink-1);color:var(--text-dim)}
