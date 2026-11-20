@@ -3,6 +3,7 @@ import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
 import { Fusion } from "../vision/fusion";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
+import { collectFrame } from "../vision/collect";
 import { loadSquareCnn } from "../vision/squareModel";
 import { Stabilizer } from "../vision/stabilizer";
 import type { BoardBelief, GrayFrame, SquareObs } from "../vision/types";
@@ -115,6 +116,7 @@ const reader: NodeSpec<ReaderState> = {
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
     { id: "follow", kind: "bool", label: "Follow camera moves", value: true },
     { id: "cnn", kind: "bool", label: "Neural square reader (beta)", value: false },
+    { id: "collect", kind: "bool", label: "Save training frames (dev server only)", value: true },
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.15, max: 0.6, step: 0.01, value: 0.22 },
     { id: "shapeWeight", kind: "number", label: "Shape / texture evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
     { id: "colorWeight", kind: "number", label: "Color / brightness evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
@@ -205,6 +207,7 @@ const reader: NodeSpec<ReaderState> = {
     if (state.analysis && !calibrationRuntime.active) { const f = state.analysis; span("auto-calibrate", () => autoCalibrate(state, params, f, now, !!ready)); }
     setFidelity(state.obs.quality * (1 - Math.min(1, state.obs.motion * 4)));
     return { obs: state.obs };
+    if (params.collect && !calibrationRuntime.active) collectFrame({ cam: s.cam, frame: img, corners: s.cfg.corners, fen: bus.game?.fen, board: bus.board }); // dev server only: keeps real frames labelled by the tracker's confirmed position
   },
   dispose(s) { cleanPool().forget(s.key); },
   hover(p, w, h, s) {

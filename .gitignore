@@ -5,3 +5,4 @@ public/stockfish/
 .DS_Store
 ml/data/
 ml/__pycache__/
+ml/real/
