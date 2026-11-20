@@ -24,6 +24,9 @@ export interface QuadEditorOpts {
   done: () => void;
 }
 
+/** The rotate handle sits this far (canvas pixels) outside the middle of the a8-h8 edge, like the one on an image in Canva. */
+const ROT_OFF = 40, ROT_R = 11;
+
 /** Corner marker colours: one scheme for all four corners (their labels tell them apart). */
 const CORNER_GOOD = "#35e07a", CORNER_WARN = "#ff9a3c", CORNER_IDLE = "#cfd8e3";
 
@@ -37,7 +40,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const back = document.createElement("div"); back.className = "qe-back";
   const box = document.createElement("div"); box.className = "qe";
   const head = document.createElement("div"); head.className = "qe-head"; head.textContent = o.title;
-  const hint = document.createElement("div"); hint.className = "qe-hint"; hint.textContent = "Drag the four handles onto the corners. Arrow keys nudge the selected one (Shift = 10 px).";
+  const hint = document.createElement("div"); hint.className = "qe-hint"; hint.textContent = "Drag the four handles onto the corners, or turn the whole grid with the round handle above it (Shift = 15° steps). Arrow keys nudge the selected corner (Shift = 10 px).";
   const cv = document.createElement("canvas"); cv.className = "qe-cv"; cv.tabIndex = 0;
   const W = 720, H = Math.round((W * fh) / fw); cv.width = W; cv.height = H; cv.style.aspectRatio = `${fw} / ${fh}`;
   // The picture sits in a stage that shrinks to whatever height is left, so the dialog fits short and odd-shaped screens without scrolling.
@@ -86,6 +89,14 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const sx = W / fw, sy = H / fh;
   let sel = 0, raf = 0, closed = false, levels: number[] | undefined, levelsAt = 0, ground: ReturnType<typeof readPerspective> = null, groundAt = 0;
   let coach: PieceMove[] = [], coachAt = 0;
+  let turning: { from: number; shown: number } | null = null; // the rotate handle is being dragged: the angle turned so far (radians)
+  /** Where the rotate handle is on the canvas: outside the middle of the first edge, away from the centre. */
+  const rotHandle = () => {
+    const c = pts.reduce((a, p) => ({ x: a.x + (p.x * sx) / 4, y: a.y + (p.y * sy) / 4 }), { x: 0, y: 0 });
+    const m = { x: ((pts[0].x + pts[1].x) / 2) * sx, y: ((pts[0].y + pts[1].y) / 2) * sy };
+    const dx = m.x - c.x, dy = m.y - c.y, d = Math.hypot(dx, dy) || 1;
+    return { c, m, h: { x: m.x + (dx / d) * ROT_OFF, y: m.y + (dy / d) * ROT_OFF } };
+  };
   const emit = () => o.change(fmtCorners(pts));
   const paint = () => {
     if (closed) return;
@@ -156,6 +167,16 @@ export function openQuadEditor(o: QuadEditorOpts) {
       drawEdgeIcons(ctx, P, color, fr ? levels : undefined);
       if (coach.length) drawPlacementMoves(ctx, P, coach, now);
     }
+    if (o.grid > 1) { // rotate handle
+      const { m, h } = rotHandle();
+      ctx.save(); ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(h.x, h.y); ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(h.x, h.y, ROT_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = "#07090d"; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(h.x, h.y, ROT_R * 0.5, -Math.PI * 0.2, Math.PI * 1.35); ctx.stroke();
+      const ax = h.x + Math.cos(-Math.PI * 0.2) * ROT_R * 0.5, ay = h.y + Math.sin(-Math.PI * 0.2) * ROT_R * 0.5;
+      ctx.fillStyle = "#07090d"; ctx.beginPath(); ctx.moveTo(ax - 3.5, ay - 1); ctx.lineTo(ax + 3.5, ay - 1); ctx.lineTo(ax + 0.5, ay + 4); ctx.closePath(); ctx.fill();
+      if (turning) { const deg = Math.round((turning.shown * 180) / Math.PI), t = `${deg > 0 ? "+" : ""}${deg}°`; ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(t, h.x + 16, h.y); ctx.fillText(t, h.x + 16, h.y); }
+      ctx.restore();
+    }
     ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textBaseline = "middle";
     // Green once the grid fits (or the camera follower has it locked), orange while it still needs work, grey with no picture.
     const cornerCol = !live ? CORNER_IDLE : meter.good || follower.locked ? CORNER_GOOD : CORNER_WARN;
@@ -172,6 +193,26 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const at = (e: PointerEvent) => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * fw, y: ((e.clientY - r.top) / r.height) * fh }; };
   const clamp = (p: Pt): Pt => ({ x: Math.min(fw, Math.max(0, p.x)), y: Math.min(fh, Math.max(0, p.y)) });
   cv.addEventListener("pointerdown", (e) => {
+    if (o.grid > 1) { // the rotate handle turns the whole grid about its centre
+      const r = cv.getBoundingClientRect(), cx = ((e.clientX - r.left) / r.width) * W, cy = ((e.clientY - r.top) / r.height) * H, { c, h } = rotHandle();
+      if (Math.hypot(cx - h.x, cy - h.y) <= ROT_R + 5) {
+        cv.setPointerCapture(e.pointerId); cv.focus(); e.preventDefault();
+        aligner = null; setLabel(auto, "Auto detect"); follower.unlock(); status = "";
+        const base = pts.map((q) => ({ ...q })), a0 = Math.atan2(cy - c.y, cx - c.x);
+        turning = { from: a0, shown: 0 };
+        const move = (ev: PointerEvent) => {
+          const mx = ((ev.clientX - r.left) / r.width) * W, my = ((ev.clientY - r.top) / r.height) * H;
+          let d = Math.atan2(my - c.y, mx - c.x) - a0;
+          d = Math.atan2(Math.sin(d), Math.cos(d));
+          if (ev.shiftKey) d = Math.round(d / (Math.PI / 12)) * (Math.PI / 12);
+          turning = { from: a0, shown: d };
+          pts = turnQuad(base, { x: c.x / sx, y: c.y / sy }, d, sx, sy); emit();
+        };
+        const up = () => { turning = null; cv.removeEventListener("pointermove", move); cv.removeEventListener("pointerup", up); cv.removeEventListener("pointercancel", up); };
+        cv.addEventListener("pointermove", move); cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+        return;
+      }
+    }
     const p = at(e); let best = 0, bd = Infinity;
     pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = i; } });
     sel = best; cv.setPointerCapture(e.pointerId); cv.focus();
@@ -223,4 +264,10 @@ export function openQuadEditor(o: QuadEditorOpts) {
   };
   reset.onclick = () => { pts = parseCorners(start) ?? pts; emit(); };
   paint(); cv.focus();
+}
+
+/** The quad turned by `angle` (radians, clockwise on screen) about `c` (frame pixels). The turn is done in canvas pixels (`sx`, `sy` per frame pixel) so the grid does not shear. */
+export function turnQuad(q: Pt[], c: Pt, angle: number, sx = 1, sy = 1): Pt[] {
+  const cs = Math.cos(angle), sn = Math.sin(angle);
+  return q.map((p) => { const dx = (p.x - c.x) * sx, dy = (p.y - c.y) * sy; return { x: c.x + (dx * cs - dy * sn) / sx, y: c.y + (dx * sn + dy * cs) / sy }; });
 }
