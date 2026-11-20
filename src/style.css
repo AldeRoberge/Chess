@@ -1,7 +1,7 @@
 /*
  * Design tokens. Six named colours do all the work: ink (3 depths), line, text (2), signal, amber, state.
  * Signal blue is the only accent; amber is reserved for hints and warnings. Boldness is spent in one place:
- * the focused menu row in the setup wizard (halo.css). Everything else stays quiet.
+ * the focused menu row in the setup wizard (setup-wizard.css). Everything else stays quiet.
  */
 :root{
   --ink-0:#02060d;--ink-1:#060f1a;--ink-2:#0a1827;--ink-3:#102237;
@@ -468,13 +468,16 @@ body.simple main{grid-template-columns:minmax(0,1fr)!important;grid-template-row
 body.simple #graph,body.simple #resize,body.simple #selgroup{display:none!important}
 body.simple aside{border-left:0!important;border-top:0!important}
 /* "Calibration in progress..." window: a board reader that lost the board is finding the corners again by itself */
-.cal-win{position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:9998;display:grid;gap:8px;min-width:min(340px,90vw);max-width:90vw;padding:14px 16px;border-radius:8px;background:var(--ink-2,#0e141f);border:1px solid var(--signal,#35e0b4);box-shadow:0 10px 40px rgba(0,0,0,.55);color:var(--text,#e6edf7)}
-.cal-win[hidden]{display:none}
-.cal-win[data-phase=failed]{border-color:#ff8a5a}
-.cal-win .cal-label{font-size:13px;opacity:.85}
-.cal-win .cal-bar{height:8px;border-radius:4px;background:var(--ink-3,#1a2433);overflow:hidden;border:1px solid var(--line,#2a3a52)}
-.cal-win .cal-bar i{display:block;height:100%;width:0;background:var(--signal,#35e0b4);transition:width .15s}
-.cal-win .qe-btn{justify-self:end}
+.cal-notification{display:flex;align-items:center;gap:6px;max-width:360px;font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:6px}
+.cal-notification[hidden],.cal-notification [hidden]{display:none}
+.cal-notification .cal-accept{font-size:17px;padding:2px 4px;background:transparent;border:0;cursor:pointer}
+.cal-notification .cal-title{font-size:11px;font-weight:500}
+.cal-notification .cal-label{max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cal-notification .cal-bar{width:35px;height:3px;background:var(--ink-3)}
+.cal-notification .cal-bar i{display:block;height:100%;background:var(--signal)}
+.cal-notification .qe-btn{font-size:10px;padding:2px 4px}
+@media(max-width:700px){.cal-notification .cal-title{display:none}}
+
 
 /* Tabs carry a long label for wide screens and a one-word one for the phone bar. */
 #tabs .ts{display:none}

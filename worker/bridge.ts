@@ -14,6 +14,7 @@ export interface BridgeNamespace {
 interface SqlCursor<T> { toArray(): T[] }
 interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): SqlCursor<T> }
 export interface BridgeState {
+  acceptWebSocket?(socket: WebSocket): void;
   storage: { sql: Sql };
   blockConcurrencyWhile(fn: () => Promise<void>): Promise<void>;
 }
@@ -48,6 +49,7 @@ export class GameBridge {
   private frames = new Map<string, { jpeg: Uint8Array; rev: number }>();
   private seen = new Map<string, number>();
   private ready: Promise<void>;
+  private savedAt = 0;
 
   constructor(private ctx: BridgeState, _env: unknown) {
     this.ready = ctx.blockConcurrencyWhile(async () => {
@@ -72,7 +74,33 @@ export class GameBridge {
       "INSERT OR REPLACE INTO room (id, token, code, rev, state, queue, touched) VALUES (1, ?, ?, ?, ?, ?, ?)",
       this.token, this.code, this.rev, this.state, JSON.stringify(this.queue), this.touched,
     );
+    this.savedAt = Date.now();
   }
+
+  async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    if (typeof message !== "string" || message.length > FRAME_LIMIT * 2) { socket.close(1009, "Message too large"); return; }
+    let id: number | undefined;
+    try {
+      const m = JSON.parse(message); id = m.id;
+      // The connection fixes the room code; messages cannot address another room.
+      const attachment = (socket as WebSocket & { deserializeAttachment(): { code: string } }).deserializeAttachment();
+      if (typeof m.path !== "string" || !/^(host\/(state|frame)|api\/(state|cmd|frame\/[\w-]+\.jpg))(\?|$)/.test(m.path)) throw new Error("Invalid route");
+      const url = new URL(`/chess/remote/${m.path}`, "https://relay.internal"); url.searchParams.set("code", attachment.code);
+      const body = m.binary ? Uint8Array.from(atob(m.body), (c) => c.charCodeAt(0)) : m.body;
+      const response = await this.fetch(new Request(url, { method: m.method, headers: { Authorization: `Bearer ${m.token ?? ""}` }, ...(m.method === "POST" ? { body } : {}) }));
+      const binary = response.headers.get("Content-Type") === "image/jpeg";
+      const bytes = binary ? new Uint8Array(await response.arrayBuffer()) : null;
+      let encoded = "";
+      if (bytes) for (let i = 0; i < bytes.length; i += 8192) encoded += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      socket.send(JSON.stringify({ id, status: response.status, headers: Object.fromEntries(response.headers), binary, body: binary ? btoa(encoded) : await response.text() }));
+    } catch { socket.send(JSON.stringify({ id, status: 400, body: JSON.stringify({ error: "Invalid relay message" }) })); }
+  }
+
+  webSocketClose(socket: WebSocket, code: number, reason: string) {
+    if ([1005, 1006, 1015].includes(code)) socket.close();
+    else socket.close(code, reason);
+  }
+  webSocketError(socket: WebSocket) { socket.close(1011, "Relay error"); }
 
   private clients(now: number) {
     for (const [id, at] of this.seen) if (now - at > SEEN_MS) this.seen.delete(id);
@@ -87,6 +115,14 @@ export class GameBridge {
     const route = url.pathname.replace(/^.*\/remote\//, "");
     const code = url.searchParams.get("code") ?? "";
     const now = Date.now();
+
+    if (route === "socket" && req.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+      if (!this.token || code !== this.code) return json({ error: "Wrong join code" }, 401);
+      const Pair = (globalThis as unknown as { WebSocketPair: new () => { 0: WebSocket; 1: WebSocket & { serializeAttachment(v: unknown): void } } }).WebSocketPair;
+      const pair = new Pair();
+      this.ctx.acceptWebSocket!(pair[1]); pair[1].serializeAttachment({ code });
+      return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit);
+    }
 
     if (route.startsWith("host/")) {
       const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
@@ -106,7 +142,8 @@ export class GameBridge {
         if (!parsed || parsed.v !== 1) return json({ error: "Send the game as a version 1 state." }, 400);
         if (!mine) { this.rev = 0; this.queue = []; this.frames.clear(); }
         this.token = token; this.code = code; this.state = raw; this.rev++; this.touched = now;
-        const commands = this.queue; this.queue = []; this.save();
+        const commands = this.queue; this.queue = [];
+        if (!mine || commands.length || now - this.savedAt >= 30_000) this.save();
         return json({ ok: true, commands, clients: this.clients(now), code });
       }
       if (route === "host/frame" && req.method === "POST") {

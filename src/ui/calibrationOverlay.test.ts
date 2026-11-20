@@ -23,9 +23,19 @@ describe("CalibrationOverlay", () => {
   it("Dismiss tells the reader to stop and hides the window", () => {
     const onDismiss = vi.fn(), o = new CalibrationOverlay(onDismiss);
     o.render({ cam: "B", phase: "running", label: "Looking for the board…", progress: 0 });
-    o.el.querySelector("button")!.click();
+    o.el.querySelector<HTMLButtonElement>(".qe-btn")!.click();
     expect(onDismiss).toHaveBeenCalledOnce();
     expect(o.el.hidden).toBe(true);
     o.el.remove();
   });
+});
+
+it("requires an explicit light bulb click and deduplicates unchanged suggestions", () => {
+  const accept = vi.fn(), dismiss = vi.fn(), o = new CalibrationOverlay(dismiss, document.body, accept);
+  const v = { cam: "A", phase: "suggested" as const, label: "Do you want to auto calibrate", progress: 0 };
+  o.render(v); o.render(v); expect(accept).not.toHaveBeenCalled();
+  const bulb = o.el.querySelector<HTMLButtonElement>(".cal-accept")!;
+  bulb.click(); o.render(v); bulb.click(); expect(accept).toHaveBeenCalledOnce();
+  o.el.querySelector<HTMLButtonElement>(".qe-btn")!.click(); expect(dismiss).toHaveBeenCalledOnce();
+  o.el.remove();
 });

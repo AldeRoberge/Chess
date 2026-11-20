@@ -161,6 +161,14 @@ export class PositionTracker {
   observe(b: BoardBelief): TrackResult {
     const events: ExperienceEvent[] = [];
     const obsGrid = Array.from({ length: 64 }, (_, i) => (b.occ[i] > 0.5 ? (b.white[i] > 0.5 ? "w" : "b") : ""));
+    // A square the cameras firmly see occupied but cannot colour (a black piece on a dark square, a hand's shadow) is not
+    // evidence of a colour: whichever side the move under test puts there, it agrees. Without this the first-guess colour
+    // (white[] hovering near 0.5) contradicted the very move that was made, and it stayed pending.
+    const wild = new Set<number>();
+    for (let i = 0; i < 64; i++) {
+      if (b.occ[i] > 0.5 && Math.abs(b.occ[i] * 2 - 1) >= this.cfg.minConf && Math.abs(b.white[i] * 2 - 1) < this.cfg.minConf) wild.add(i);
+    }
+    const resolve = (g: string[]) => (wild.size ? g.map((v, i) => (v && wild.has(i) ? v : obsGrid[i])) : obsGrid);
     // A provisional guess can be replaced by a repeatedly observed exact legal alternative,
     // only until another move has been played.
     const pending = this.provisional;
@@ -170,7 +178,7 @@ export class PositionTracker {
       let replacement: Move | null = null;
       for (const m of before.moves({ verbose: true })) {
         before.move(m);
-        if (m.san !== pending.san && gridOf(before).every((v, i) => v === obsGrid[i]) && b.conf.every((v) => v >= this.cfg.minConf)) replacement = m;
+        if (m.san !== pending.san && resolve(gridOf(before)).every((v, i) => v === gridOf(before)[i]) &&b.conf.every((v) => v >= this.cfg.minConf)) replacement = m;
         before.undo();
       }
       this.correctionN = replacement && replacement.san === this.correctionKey ? this.correctionN + 1 : replacement ? 1 : 0;
@@ -191,7 +199,8 @@ export class PositionTracker {
       if (exp[i] || obsGrid[i] !== color) this.acceptedExtras.delete(i);
     }
     const diff: number[] = [];
-    for (let i = 0; i < 64; i++) if (exp[i] !== obsGrid[i]) diff.push(i);
+    const obsE = resolve(exp);
+    for (let i = 0; i < 64; i++) if (exp[i] !== obsE[i]) diff.push(i);
     const extraOnly = diff.every((i) => !exp[i] && !!obsGrid[i]);
     if (!b.handOver && b.cams > 0 && (this.lastMove !== null || this.game.history().length > 0)
       && diff.length > 0 && diff.length <= MAX_UNCERTAIN_SQUARES && extraOnly) {
@@ -230,7 +239,7 @@ export class PositionTracker {
         if (m.promotion && m.promotion !== this.cfg.promotion) continue;
         g.move(m);
         const grid = gridOf(g);
-        cands.push({ moves: [...prefix, m], cost: this.cost(grid, obsGrid, b.conf), key: g.fen(), grid, unsure: unsureOf(grid) });
+        cands.push({ moves: [...prefix, m], cost: this.cost(grid, resolve(grid), b.conf), key: g.fen(), grid, unsure: unsureOf(grid) });
         g.undo();
       }
     };
@@ -257,13 +266,13 @@ export class PositionTracker {
     // cost 0 means the squares agree; they are only soft, not contradictory. A half-castle still disagrees and waits.
     // Squares the move does not touch, where the cameras only half-see an extra piece, do not count against it: a tall
     // knight on f3 leans into e3 in a low camera's picture, and without this the first move was never accepted.
-    const contradicts = (grid: string[]) => { for (let i = 0; i < 64; i++) if (grid[i] !== obsGrid[i] && (grid[i] !== exp[i] || b.conf[i] >= this.cfg.minConf)) return true; return false; };
+    const contradicts = (grid: string[]) => { const o = resolve(grid); for (let i = 0; i < 64; i++) if (grid[i] !== o[i] && (grid[i] !== exp[i] || b.conf[i] >= this.cfg.minConf)) return true; return false; };
     const exactStep = best?.moves.length === 1 && (best.cost === 0 || !contradicts(best.grid));
     // What moved: the squares that changed, explained by a legal move. When exactly one legal move makes every square it
     // touches match the picture, that is the move, even if a square or two it does not touch is misread (a tall piece
     // leaning over its neighbour, a reflection). A piece of the mover's that confidently vanished elsewhere rules it out.
     const touched = (c: Cand) => { const t: number[] = []; for (let i = 0; i < 64; i++) if (c.grid[i] !== exp[i]) t.push(i); return t; };
-    const fits = cands.filter((c) => c.moves.length === 1 && touched(c).every((i) => c.grid[i] === obsGrid[i]));
+    const fits = cands.filter((c) => c.moves.length === 1 && touched(c).every((i) => c.grid[i] === resolve(c.grid)[i]));
     let sole: Cand | null = null;
     if (fits.length && new Set(fits.map((c) => c.grid.join(","))).size === 1) {
       // A soft extra blob on an empty square (a knight's shadow, a lamp spot) is not a stray: only firm disagreements count.
@@ -273,8 +282,8 @@ export class PositionTracker {
     const urgent = this.urgencyAt !== null && b.t - this.urgencyAt >= 5000 && !b.handOver && b.cams > 0;
     // Require evidence of a destination and an improvement over doing nothing.
     // A lifted piece alone must never turn into an arbitrary legal move.
-    const guess = urgent ? cands.find((c) => c.moves.length === 1 && c.cost < this.cost(exp, obsGrid, b.conf)
-      && touched(c).some((i) => c.grid[i] && c.grid[i] !== exp[i] && obsGrid[i] === c.grid[i])) : undefined;
+    const guess = urgent ? cands.find((c) => c.moves.length === 1 && c.cost < this.cost(exp, obsE, b.conf)
+      && touched(c).some((i) => c.grid[i] && c.grid[i] !== exp[i] && resolve(c.grid)[i] === c.grid[i])) : undefined;
     const normal = ok && (best.unsure === 0 || exactStep) ? best : sole;
     const chosen = normal ?? guess;
     if (!chosen) {

@@ -47,21 +47,31 @@ let readerSeq = 0;
 /** Drops this reader's calibration (no camera, node removed) and its window. */
 function stopCalibration(state: ReaderState, now: number) {
   if (state.aligner) { state.aligner = null; state.watch.ended(now); }
-  if (bus.calibration?.cam === state.sampler.cam) bus.calibration = null;
+  if (bus.calibration?.cam === state.sampler.cam) { bus.calibration = null; bus.calibrationAccept = bus.calibrationDismiss = false; state.watch.dismiss(now); }
 }
 
 const storage = () => (typeof localStorage === "undefined" ? undefined : localStorage);
 
 /**
  * When the board stays unreadable, find the corners again (the same search as Auto detect in the corners editor) and
- * re-learn the empty squares when the start position stands on the board. Shows "Calibration in progress..." on the bus
- * while it runs. CalibrationWatch keeps it from looping: a cooldown, three tries, and Dismiss holds it off.
+ * offer calibration in the top menu. Only explicit approval starts the search.
+ * Dismissal and completed attempts stay quiet until sustained recovery.
  */
 function autoCalibrate(state: ReaderState, params: Record<string, number | string | boolean>, f: GrayFrame, now: number, fresh: boolean) {
   const cam = state.sampler.cam, view = bus.calibration, mine = view?.cam === cam;
-  if (mine && bus.calibrationDismiss) { bus.calibrationDismiss = false; state.aligner = null; state.watch.dismiss(now); bus.calibration = null; return; }
-  if (mine && view.phase !== "running" && now >= (view.hideAt ?? 0)) bus.calibration = null;
-  if (!params.autoFind) { if (state.aligner) stopCalibration(state, now); return; }
+  if (mine && bus.calibrationDismiss) { bus.calibrationDismiss = bus.calibrationAccept = false; state.aligner = null; state.watch.dismiss(now); bus.calibration = null; return; }
+  if (mine && view.phase !== "suggested" && view.phase !== "running" && now >= (view.hideAt ?? 0)) bus.calibration = null;
+  if (!params.autoFind) { if (state.aligner || mine) stopCalibration(state, now); return; }
+  if (mine && view.phase === "suggested" && bus.calibrationAccept) {
+    bus.calibrationAccept = false;
+    const corners = parseCorners(String(params.corners));
+    let seed: { x: number; y: number }[] | null = null;
+    try { const q = findCheckerCorners(f); seed = q ? orientBoardCorners(f, q) : null; } catch { seed = null; }
+    const store = storage();
+    state.aligner = new AutoAligner(f, seed ?? corners, 60, undefined, store ? rememberedLayouts(f.width, f.height, store) : []);
+    state.follower.unlock();
+    bus.calibration = { cam, phase: "running", label: "Looking for the board...", progress: 0 };
+  }
   // Judge the board twice a second: how well the grid fits, how much of it reads, and whether the start position shows.
   if (fresh && now - state.checkAt >= 500) {
     state.checkAt = now;
@@ -80,15 +90,13 @@ function autoCalibrate(state: ReaderState, params: Record<string, number | strin
       }
     } else {
       const why = state.watch.feed(r);
-      const busy = !!bus.calibration && !mine && bus.calibration.phase === "running"; // one camera at a time
+      const busy = !!bus.calibration && !mine;
       if (why && busy) state.watch.ended(now);
       else if (why) {
-        let seed: { x: number; y: number }[] | null = null;
-        try { const q = findCheckerCorners(f); seed = q ? orientBoardCorners(f, q) : null; } catch { seed = null; }
-        const store = storage();
-        state.aligner = new AutoAligner(f, seed ?? corners, 60, undefined, store ? rememberedLayouts(f.width, f.height, store) : []);
-        state.follower.unlock();
-        bus.calibration = { cam, phase: "running", label: why === "no-start" ? "The start position is not showing. Looking for the board…" : "Looking for the board…", progress: 0 };
+        bus.calibration = { cam, phase: "suggested", label: "Do you want to auto calibrate", progress: 0 };
+      }
+      if (mine && view.phase === "suggested" && state.watch.healthy(r)) {
+        state.watch.dismiss(now); bus.calibration = null; bus.calibrationAccept = false;
       }
     }
   }
@@ -97,7 +105,7 @@ function autoCalibrate(state: ReaderState, params: Record<string, number | strin
   al.step(8);
   bus.calibration = { cam, phase: "running", label: al.label, progress: al.progress };
   if (!al.done) return;
-  state.aligner = null; state.watch.ended(now);
+  state.aligner = null; state.watch.dismiss(now);
   if (al.phase === "done" && al.corners.length === 4 && al.confidence >= Math.max(0.45, state.fit + 0.05)) {
     params.corners = fmtCorners(al.corners);
     const store = storage(); if (store) rememberLayout(al.corners, f.width, f.height, store);
@@ -128,7 +136,7 @@ const reader: NodeSpec<ReaderState> = {
     { id: "clean", kind: "bool", label: "Clean up noise", value: true },
     { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
-    { id: "autoFind", kind: "bool", label: "Auto-calibrate when lost", value: true },
+    { id: "autoFind", kind: "bool", label: "Suggest auto-calibration when lost", value: true },
     { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
   ],
   previewSize: READER_BASE,
@@ -195,19 +203,20 @@ const reader: NodeSpec<ReaderState> = {
     if (!state.cleaned) { setFidelity(null); return { obs: null }; } // the first picture is still being cleaned
     const img = state.cleaned!;
     if (params.learn) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; state.readOf = null; }
-    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && !gameStarted() && img !== state.readOf && img.t - state.calT >= AUTO_CAL_RETRY_MS && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
+    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && (!gameStarted() || !s.calibrated) && img !== state.readOf && img.t - state.calT >= AUTO_CAL_RETRY_MS && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
       // Auto-learn keeps trying until the reading looks like the start position. Learning once from the first frame locked in a
       // dark warm-up frame or the default corners for good: every square then read wrong and the game never started.
       span("calibrateFromStart", () => s.calibrateFromStart(img));
       state.calT = img.t; state.calTries++;
       state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight)));
-      if (looksLikeStart(state.obs) || state.calTries >= AUTO_CAL_MAX_TRIES) state.autoDone = true;
+      // Reloaded mid-game: the open ranks are enough to learn the empty squares, but the start position will not show, so learn once.
+      if (looksLikeStart(state.obs) || state.calTries >= AUTO_CAL_MAX_TRIES || (gameStarted() && s.calibrated)) state.autoDone = true;
     }
     if (img !== state.readOf || !state.obs) { state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight))); } // one read per camera frame
     if (state.analysis && !calibrationRuntime.active) { const f = state.analysis; span("auto-calibrate", () => autoCalibrate(state, params, f, now, !!ready)); }
     setFidelity(state.obs.quality * (1 - Math.min(1, state.obs.motion * 4)));
-    return { obs: state.obs };
     if (params.collect && !calibrationRuntime.active) collectFrame({ cam: s.cam, frame: img, corners: s.cfg.corners, fen: bus.game?.fen, board: bus.board }); // dev server only: keeps real frames labelled by the tracker's confirmed position
+    return { obs: state.obs };
   },
   dispose(s) { cleanPool().forget(s.key); },
   hover(p, w, h, s) {

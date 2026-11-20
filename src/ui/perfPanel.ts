@@ -101,7 +101,7 @@ export class PerfPanel {
     const heat = el("label", "chk"); const hc = el("input"); hc.type = "checkbox"; hc.checked = hooks.heatOn(); hc.onchange = () => hooks.setHeat(hc.checked); heat.append(hc, document.createTextNode("Timings on nodes"));
     const seg = (items: readonly (readonly [string, string | number])[], get: () => string | number, set: (v: any) => void) => {
       const g = el("div", "seg");
-      for (const [label, v] of items) { const b = el("button", "", label); b.onclick = () => { set(v); for (const x of g.children) x.classList.toggle("on", x === b); }; b.classList.toggle("on", get() === v); g.append(b); }
+      for (const [label, v] of items) { const b = withIcon(el("button", "", label), "gauge", 14); b.onclick = () => { set(v); for (const x of g.children) x.classList.toggle("on", x === b); }; b.classList.toggle("on", get() === v); g.append(b); }
       return g;
     };
     bar.append(this.pauseBtn, clear, worst, save, this.baseBtn, bud, heat);

@@ -48,6 +48,7 @@ export class CalibrationWatch {
   private lowSince: number | null = null;
   private noStartSince: number | null = null;
   private lastEnd = -Infinity;
+  private healthySince: number | null = null;
   constructor(cfg: Partial<WatchConfig> = {}) { this.cfg = { ...defaultWatchConfig(), ...cfg }; }
 
   /** The board reads well right now. */
@@ -55,7 +56,13 @@ export class CalibrationWatch {
 
   /** Feeds one reading. Returns why a calibration should start now, or null. */
   feed(r: WatchReading): WatchReason | null {
-    if (this.healthy(r)) { this.lowSince = this.noStartSince = null; this.attempts = 0; this.dismissed = false; return null; }
+    if (r.still && this.healthy(r)) {
+      this.healthySince ??= r.now;
+      this.lowSince = this.noStartSince = null;
+      if (r.now - this.healthySince >= 10000) { this.attempts = 0; this.dismissed = false; }
+      return null;
+    }
+    this.healthySince = null;
     if (!r.still) { this.lowSince = this.noStartSince = null; return null; } // a hand or a moving piece: judge the board once it settles
     const poor = r.fit < this.cfg.lowFit || r.quality < this.cfg.lowQuality;
     this.lowSince = poor ? this.lowSince ?? r.now : null;
@@ -79,7 +86,7 @@ export class CalibrationWatch {
 /** What the "Calibration in progress..." window shows. Published on the bus by the reader that is calibrating. */
 export interface CalibrationView {
   cam: string;
-  phase: "running" | "done" | "failed";
+  phase: "suggested" | "running" | "done" | "failed";
   /** What the search is doing, or how it ended. */
   label: string;
   progress: number;

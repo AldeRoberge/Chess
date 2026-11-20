@@ -1,3 +1,4 @@
+import { withIcon, setLabel } from "./icons";
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
@@ -42,12 +43,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const stage = document.createElement("div"); stage.className = "qe-stage"; stage.append(cv);
   box.style.setProperty("--qe-ar", String(fw / fh));
   const bar = document.createElement("div"); bar.className = "qe-bar";
-  const btn = (t: string, cls = "") => { const b = document.createElement("button"); b.className = "qe-btn " + cls; b.textContent = t; return b; };
+  const btn = (t: string, cls = "") => { const b = document.createElement("button"); b.className = "qe-btn " + cls; b.textContent = t; return withIcon(b, ({ "Auto detect": "scan", Reset: "undo", Cancel: "x", Done: "check", "Negative grid: on": "contrast", "Try following camera: on": "camera", "Matrix: on": "grid" } as Record<string, string>)[t] ?? "scan"); };
   const auto = btn("Auto detect"), reset = btn("Reset"), cancel = btn("Cancel"), ok = btn("Done", "primary");
   let negative = true;
   const neg = btn("Negative grid: on");
   neg.title = "Draw the grid as the inverse of the camera picture so it stays visible on light and dark squares";
-  neg.onclick = () => { negative = !negative; neg.textContent = `Negative grid: ${negative ? "on" : "off"}`; };
+  neg.onclick = () => { negative = !negative; setLabel(neg, `Negative grid: ${negative ? "on" : "off"}`); };
   bar.append(auto, reset, cancel, ok);
   const opts = document.createElement("div"); opts.className = "qe-bar"; opts.append(neg);
   // alignment readout: a bar and a sentence that go from orange to green as the grid settles onto the squares
@@ -67,10 +68,10 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const progRow = mkRow("Progress"), confRow = mkRow("Confidence"); autoBox.append(progRow.row, confRow.row);
   let follow = true; const followBtn = btn("Try following camera: on");
   followBtn.title = "When the camera is nudged, ease the grid so it stays on the board";
-  followBtn.onclick = () => { follow = !follow; followBtn.textContent = `Try following camera: ${follow ? "on" : "off"}`; follower.unlock(); };
+  followBtn.onclick = () => { follow = !follow; setLabel(followBtn, `Try following camera: ${follow ? "on" : "off"}`); follower.unlock(); };
   let matrix = true; const matrixBtn = btn("Matrix: on");
   matrixBtn.title = "Show the detected perspective lines as a transparent ground";
-  matrixBtn.onclick = () => { matrix = !matrix; matrixBtn.textContent = `Matrix: ${matrix ? "on" : "off"}`; };
+  matrixBtn.onclick = () => { matrix = !matrix; setLabel(matrixBtn, `Matrix: ${matrix ? "on" : "off"}`); };
   opts.append(followBtn, matrixBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1;
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
@@ -106,7 +107,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
           const pic = fr ?? o.frame();
           if (pic) { rememberLayout(pts, pic.width, pic.height); follower.lock(pic, pts); }
         }
-        aligner = null; auto.textContent = "Auto detect";
+        aligner = null; setLabel(auto, "Auto detect");
       }
     } else if (o.grid > 1 && fr && follow) {
       if (!follower.locked) { if (meter.good) follower.lock(fr, pts); }
@@ -170,7 +171,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
     const p = at(e); let best = 0, bd = Infinity;
     pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = i; } });
     sel = best; cv.setPointerCapture(e.pointerId); cv.focus();
-    aligner = null; auto.textContent = "Auto detect"; follower.unlock(); status = "";
+    aligner = null; setLabel(auto, "Auto detect"); follower.unlock(); status = "";
     pts[sel] = clamp(p); emit();
     const move = (ev: PointerEvent) => { pts[sel] = clamp(at(ev)); emit(); };
     const up = () => { cv.removeEventListener("pointermove", move); cv.removeEventListener("pointerup", up); };
@@ -199,12 +200,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
       try { const q = findCheckerCorners(fr); seed = q ? orientBoardCorners(fr, q) : null; } catch { seed = null; }
       follower.unlock(); progress = 0; doneConf = 0;
       rememberLayout(pts, fr.width, fr.height);
-      aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); auto.textContent = "Stop";
+      aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); setLabel(auto, "Stop");
       return;
     }
     legacyAuto();
   };
-  auto.onclick = () => { if (aligner) { aligner = null; status = "Stopped"; auto.textContent = "Auto detect"; } else startAuto(); };
+  auto.onclick = () => { if (aligner) { aligner = null; status = "Stopped"; setLabel(auto, "Auto detect"); } else startAuto(); };
   const legacyAuto = () => {
     const fr = o.frame();
     // Board corners are a8, h8, h1, a1. A clock box is just a busy rectangle and keeps the older finder.
@@ -212,9 +213,9 @@ export function openQuadEditor(o: QuadEditorOpts) {
     let found: Pt[] | null = null;
     if (fr && chess) { const q = findCheckerCorners(fr); found = q ? orientBoardCorners(fr, q) : null; }
     else if (fr) found = findBoardCorners(fr);
-    if (found) { pts = found; emit(); auto.textContent = "Auto detect"; return; }
-    auto.textContent = fr ? "No board found" : "No camera frame";
-    clearTimeout(autoTimer); autoTimer = window.setTimeout(() => { auto.textContent = "Auto detect"; }, 2000);
+    if (found) { pts = found; emit(); setLabel(auto, "Auto detect"); return; }
+    setLabel(auto, fr ? "No board found" : "No camera frame");
+    clearTimeout(autoTimer); autoTimer = window.setTimeout(() => { setLabel(auto, "Auto detect"); }, 2000);
   };
   reset.onclick = () => { pts = parseCorners(start) ?? pts; emit(); };
   paint(); cv.focus();

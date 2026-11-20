@@ -207,7 +207,7 @@ export class TablePanel {
     const p = this.pending; this.promo.hidden = !p; if (!p) return;
     this.promo.append(el("span", "", "Promote to"));
     for (const ch of p.choices) {
-      const b = el("button", "", `${PROMO[ch]} (${ch})`); b.type = "button";
+      const b = withIcon(el("button", "", `${PROMO[ch]} (${ch})`), ({ q: "queen", r: "rook", b: "bishop", n: "knight" } as Record<string, string>)[ch]); b.type = "button";
       b.onclick = () => this.commit(p.from + p.to + ch);
       this.promo.append(b);
     }
@@ -325,7 +325,7 @@ export class TablePanel {
     this.paintSide(this.botSeat, top === "w" ? "b" : "w", missing(top === "w" ? "w" : "b"));
     const head = el("div", "cc-moves-head"); head.append(el("span", "", "Moves"));
     if (hist.length) {
-      const live = el("button", this.viewPly === null ? "on" : "", "Live"); live.type = "button";
+      const live = withIcon(el("button", this.viewPly === null ? "on" : "", "Live"), "live"); live.type = "button";
       live.setAttribute("aria-label", "Follow the live game"); live.setAttribute("aria-pressed", String(this.viewPly === null));
       live.onclick = () => { this.viewPly = null; this.paintGame(); this.paintBoardAria(); };
       head.append(live);
@@ -334,7 +334,7 @@ export class TablePanel {
     for (let i = 0; i < hist.length; i += 2) {
       const tr = el("tr"); tr.append(el("th", "", String(i / 2 + 1)));
       const cell = (san: string, ply: number, side: "White" | "Black") => {
-        const td = el("td"), b = el("button", "", san); b.type = "button";
+        const td = el("td"), b = withIcon(el("button", "", san), "pawn", 12); b.type = "button";
         b.setAttribute("aria-label", `Move ${i / 2 + 1}, ${side} ${san}: show this position`);
         if (this.viewPly === ply) { b.classList.add("on"); b.setAttribute("aria-current", "true"); }
         b.onclick = () => { this.viewPly = ply; this.paintGame(); this.paintBoardAria(); };

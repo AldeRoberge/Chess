@@ -1,4 +1,5 @@
 import { renderCalibration } from "../ui/calibrate";
+import { RelaySocket } from "./socket";
 /**
  * The phone page (`#/remote`): follow the game on the computer, read the moves on a paper score sheet, step back through them,
  * look at what the camera sees, and send a move. It never runs the cameras or the engine; it only talks to the relay.
@@ -25,8 +26,17 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") 
 const baseUrl = () => { try { return (import.meta as any).env?.BASE_URL ?? "/"; } catch { return "/"; } };
 
 export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
-  const fetchFn = deps.fetchFn ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   const api = `${deps.base ?? baseUrl()}remote/api/`;
+  let socket: RelaySocket | undefined, socketCode = "";
+  const fetchFn: typeof fetch = deps.fetchFn ?? ((input, init) => {
+    const url = new URL(String(input), location.href);
+    if (url.pathname.startsWith("/chess/remote/api/")) {
+      const current = url.searchParams.get("code") ?? "";
+      if (!socket || socketCode !== current) { socket?.close(); socketCode = current; socket = new RelaySocket(`${deps.base ?? baseUrl()}remote/`, current); }
+      return socket.request(`api/${url.pathname.split("/api/")[1]}${url.search}`, init);
+    }
+    return fetch(input, init);
+  });
   const store = () => deps.storage ?? sessionStorage;
   const read = (k: string) => { try { return store().getItem(k) ?? ""; } catch { return ""; } };
   const write = (k: string, v: string) => { try { store().setItem(k, v); } catch { /* private mode: the code is asked again next time */ } };
@@ -172,7 +182,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
     if (!p) return;
     promoEl.append(el("span", "", "Promote to"));
     for (const [ch, name] of [["q", "Queen"], ["r", "Rook"], ["b", "Bishop"], ["n", "Knight"]] as const) {
-      const b = el("button", "rm-btn", name); b.type = "button"; b.setAttribute("aria-label", `Promote to ${name}`);
+      const b = withIcon(el("button", "rm-btn", name), name.toLowerCase()); b.type = "button"; b.setAttribute("aria-label", `Promote to ${name}`);
       b.onclick = () => { const cur = promo!; promo = null; void sendMove(cur.from, cur.to, ch); draw(); };
       promoEl.append(b);
     }
@@ -226,7 +236,7 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       const paper = el("div", "rm-paper");
       if (!rows.length) { paper.append(el("p", "rm-empty", "No moves yet. They are written here as they are played.")); panel.append(paper); return; }
       const t = el("table", "rm-sheet"), body = el("tbody");
-      const cell = (san: string | null, ply: number) => { const td = el("td"); if (san) { const b = el("button", "", san); b.type = "button"; b.setAttribute("aria-label", `Move ${Math.ceil(ply / 2)}, ${ply % 2 ? "White" : "Black"} ${san}: show this position`); if ((view ?? total()) === ply) { b.classList.add("on"); b.setAttribute("aria-current", "true"); } b.onclick = () => go(ply); td.append(b); } return td; };
+      const cell = (san: string | null, ply: number) => { const td = el("td"); if (san) { const b = withIcon(el("button", "", san), "pawn", 12); b.type = "button"; b.setAttribute("aria-label", `Move ${Math.ceil(ply / 2)}, ${ply % 2 ? "White" : "Black"} ${san}: show this position`); if ((view ?? total()) === ply) { b.classList.add("on"); b.setAttribute("aria-current", "true"); } b.onclick = () => go(ply); td.append(b); } return td; };
       const head = el("thead"), hr = el("tr"); for (const x of ["No.", "White", "Black"]) hr.append(el("th", "", x)); head.append(hr);
       for (const r of rows) { const tr = el("tr"); tr.append(el("th", "", String(r.n)), cell(r.white, r.n * 2 - 1), cell(r.black, r.n * 2)); body.append(tr); }
       t.append(head, body); paper.append(t); panel.append(paper);
@@ -242,7 +252,19 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
       const url = `${api}frame/${encodeURIComponent(c.id)}.jpg?code=${encodeURIComponent(code)}&cid=${cid}&r=${frames[c.id] ?? 0}`;
       if (!shot) { shot = el("img", "rm-shot"); shot.decoding = "async"; }
       shot.alt = `Latest picture from camera ${c.id}`;
-      if (shot.dataset.url !== url) { shot.dataset.url = url; shot.src = url; }
+      if (shot.dataset.url !== url) {
+        shot.dataset.url = url;
+        const imageElement = shot;
+        if (!deps.fetchFn && api.startsWith("/chess/")) {
+          void fetchFn(url).then(async (r) => {
+            if (!r.ok) return;
+            const image = URL.createObjectURL(await r.blob());
+            if (stopped || imageElement.dataset.url !== url) { URL.revokeObjectURL(image); return; }
+            if (imageElement.src.startsWith("blob:")) URL.revokeObjectURL(imageElement.src);
+            imageElement.src = image;
+          }).catch(() => { imageElement.dataset.url = ""; });
+        } else shot.src = url;
+      }
       panel.append(shot, el("p", "rm-cap", "Grayscale, as the tracker sees it. Updates about once a second."));
     } else {
       const dl = el("dl", "rm-info"), row = (k: string, v: string) => { dl.append(el("dt", "", k), el("dd", "", v)); };
@@ -300,5 +322,5 @@ export function mountRemote(root: HTMLElement, deps: RemoteDeps = {}) {
   }
 
   if (!code) askCode(); else { build(); void poll(); }
-  return { stop() { stopped = true; clearTimeout(timer); moveGuide.stop(); document.body.classList.remove("remote"); } };
+  return { stop() { stopped = true; clearTimeout(timer); socket?.close(); moveGuide.stop(); document.body.classList.remove("remote"); } };
 }

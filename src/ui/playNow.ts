@@ -15,7 +15,7 @@ export function openPlayNow(api: WorkflowApi, onPlay: () => void = () => {}) {
     const row = el("div", "wf-field"); row.append(el("span", "", label));
     const bar = el("div", "bk-bar");
     const draw = () => { for (const b of Array.from(bar.children) as HTMLButtonElement[]) b.classList.toggle("primary", b.dataset.v === get()); };
-    for (const [v, text] of opts) { const b = el("button", "", text); b.type = "button"; b.dataset.v = v; b.onclick = () => { set(v); draw(); }; bar.append(b); }
+    for (const [v, text] of opts) { const b = withIcon(el("button", "", text), v === "real" ? "camera" : v === "simulated" ? "hand" : "opponent"); b.type = "button"; b.dataset.v = v; b.onclick = () => { set(v); draw(); }; bar.append(b); }
     draw(); row.append(bar); return row;
   };
   const elo = el("input"); elo.type = "range"; elo.min = "500"; elo.max = "2500"; elo.step = "100"; elo.value = String(o.elo);

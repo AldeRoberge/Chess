@@ -244,11 +244,11 @@ describe("vision.boardReader", () => {
     const o = n.run({ frame: shoot(table, "A", 3500, 6, 9) })!.obs;
     expect(looksLikeStart(o)).toBe(true);
   });
-  it("never re-learns the start position once a move is on the board", () => {
+  it("learns the empty squares after a reload into a game under way, so the camera does not read 50% everywhere", () => {
     const n = node("vision.boardReader", { cam: "A", corners: fmtCorners(rigCorners(RIGS.A)) });
     bus.game = { ply: 1 } as any;
     n.run({ frame: flatFrame(0, undefined, undefined, 50) }); n.run({ frame: shoot(table, "A", 2000) });
-    expect((n.state as any).sampler.calibrated).toBe(false);
+    expect((n.state as any).sampler.calibrated).toBe(true);
     bus.game = null;
   });
   it("paints the preview with corner outline and hand markers", () => {
@@ -265,7 +265,12 @@ describe("vision.boardReader", () => {
     bus.calibration = null; bus.game = null;
     let t = 0, seen = false;
     for (; t < 20000 && !cal(); t += 250) n.run({ frame: at(t) }, t);
-    expect(cal()).toMatchObject({ cam: "A", phase: "running" });
+    expect(cal()).toMatchObject({ cam: "A", phase: "suggested" });
+    expect(n.params.corners).toBe(fmtCorners(off));
+    for (let i = 0; i < 20; i++, t += 500) n.run({ frame: at(t) }, t);
+    expect(cal()?.phase).toBe("suggested");
+    expect((n.state as any).aligner).toBeNull();
+    bus.calibrationAccept = true; n.run({ frame: at(t) }, t);
     for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) { n.run({ frame: at(t) }, t); seen ||= (cal()?.progress ?? 0) > 0; }
     expect(seen).toBe(true);
     expect(cal()?.phase).toBe("done");
@@ -280,6 +285,7 @@ describe("vision.boardReader", () => {
     bus.calibration = null; bus.game = null;
     let t = 0;
     for (; t < 20000 && !cal(); t += 250) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
+    bus.calibrationAccept = true; n.run({ frame: flatFrame(110, 480, 360, t) }, t);
     for (let i = 0; i < 6000 && cal()?.phase === "running"; i++, t += 66) n.run({ frame: flatFrame(110, 480, 360, t) }, t);
     expect(cal()?.phase).toBe("failed");
     expect(n.params.corners).toBe(start);
@@ -290,7 +296,7 @@ describe("vision.boardReader", () => {
     bus.calibration = null; bus.game = null;
     let t = 0;
     for (; t < 20000 && !cal(); t += 250) n.run({ frame: shoot(table, "A", t) }, t);
-    expect(cal()?.phase).toBe("running");
+    expect(cal()?.phase).toBe("suggested");
     bus.calibrationDismiss = true; n.run({ frame: shoot(table, "A", t) }, t);
     expect(cal()).toBeNull(); expect(bus.calibrationDismiss).toBe(false);
     for (let i = 0; i < 60; i++, t += 1000) n.run({ frame: shoot(table, "A", t) }, t);

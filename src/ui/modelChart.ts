@@ -1,3 +1,4 @@
+import { withIcon } from "./icons";
 import type { ModelInfo } from "../core/types";
 
 export interface ModelChartOpts {
@@ -21,7 +22,7 @@ export function openModelChart(o: ModelChartOpts) {
   const priced = o.models.filter((m) => m.input !== undefined && m.output !== undefined);
   const top = Math.max(0.01, ...priced.map((m) => Math.max(m.input ?? 0, m.output ?? 0)));
   const bar = document.createElement("div"); bar.className = "qe-bar";
-  const cancel = document.createElement("button"); cancel.className = "qe-btn"; cancel.textContent = "Close";
+  const cancel = document.createElement("button"); cancel.className = "qe-btn"; cancel.textContent = "Close"; withIcon(cancel, "x");
   bar.append(cancel);
 
   const close = () => { document.removeEventListener("keydown", key, true); back.remove(); };
@@ -29,7 +30,7 @@ export function openModelChart(o: ModelChartOpts) {
   for (const m of o.models) {
     const row = document.createElement("button"); row.type = "button"; row.className = "mc-row" + (m.id === o.current ? " on" : "");
     row.setAttribute("role", "option"); row.setAttribute("aria-selected", String(m.id === o.current));
-    const name = document.createElement("span"); name.className = "mc-name"; name.textContent = m.id;
+    const name = document.createElement("span"); name.className = "mc-name"; name.textContent = m.id; withIcon(name, "brain", 14);
     const cost = document.createElement("span"); cost.className = "mc-cost";
     const track = (cls: string, v: number | undefined, label: string) => {
       const t = document.createElement("span"); t.className = "mc-track";

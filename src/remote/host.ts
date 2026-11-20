@@ -3,6 +3,7 @@
  * and turns a move sent from a phone into something that happens at the table.
  */
 import { Chess } from "chess.js";
+import { RelaySocket } from "./socket";
 import { fmtClock } from "../clock/types";
 import { movesFromReading } from "../ui/pieceCoach";
 import { sqName } from "../vision/types";
@@ -142,18 +143,22 @@ export class RemoteHost {
   private lastState = -Infinity; private lastFrame = -Infinity;
   private busy = { probe: false, state: false, frame: false };
   private fetchFn: typeof fetch;
+  private socket?: RelaySocket;
   constructor(private d: HostDeps) { this.fetchFn = d.fetchFn ?? ((...a) => fetch(...a)); }
 
   private async probe() {
     if (this.busy.probe) return; this.busy.probe = true;
     try {
       const r = await this.fetchFn(`${this.d.base}host/${this.d.cloud ? "session" : "info"}`, this.d.cloud ? { method: "POST" } : undefined);
-      if (r.ok) { const j = await r.json(); this.token = this.d.cloud ? String(j.token ?? "") : ""; this.code = String(j.code ?? ""); this.urls = j.urls ?? []; this.clients = j.clients ?? 0; this.available = true; } else this.available = false;
+      if (r.ok) { const j = await r.json(); this.token = this.d.cloud ? String(j.token ?? "") : ""; this.code = String(j.code ?? ""); this.urls = j.urls ?? []; this.clients = j.clients ?? 0; this.available = true;
+        if (this.d.cloud && !this.d.fetchFn) this.socket = new RelaySocket(this.d.base, this.code, this.token);
+      } else this.available = false;
     } catch { this.available = false; }
     this.busy.probe = false;
   }
 
   private publish(path: string, body: BodyInit, type: string) {
+    if (this.socket) return this.socket.request(path, { method: "POST", body });
     const join = path.includes("?") ? "&" : "?";
     const url = `${this.d.base}${path}${this.d.cloud ? `${join}code=${encodeURIComponent(this.code)}` : ""}`;
     return this.fetchFn(url, { method: "POST", headers: { "Content-Type": type, ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body });
@@ -163,7 +168,8 @@ export class RemoteHost {
   tick(now: number) {
     if (this.available === null) { void this.probe(); return; }
     if (!this.available) return;
-    if (now - this.lastState >= STATE_MS && !this.busy.state) { this.lastState = now; void this.pushState(now); }
+    const stateMs = this.socket && !this.clients ? 5000 : STATE_MS;
+    if (now - this.lastState >= stateMs && !this.busy.state) { this.lastState = now; void this.pushState(now); }
     if (this.clients > 0 && now - this.lastFrame >= FRAME_MS && !this.busy.frame) { this.lastFrame = now; void this.pushFrames(); }
   }
 

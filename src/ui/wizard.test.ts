@@ -109,9 +109,11 @@ describe("cameras step", () => {
     const rows = () => [...w.root.querySelectorAll<HTMLElement>("table.halo-cams tbody tr.sys-row")];
     expect(rows().map((r) => r.querySelector(".sys-name")!.textContent)).toEqual(["A · Virtual camera A", "B · Virtual camera B"]);
     expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Simulated"); expect(rows()[0].querySelector("canvas.halo-cam-thumb")).toBeTruthy();
-    const on = () => rows()[0].querySelector<HTMLButtonElement>('button[aria-pressed]')!;
-    expect(on().getAttribute("aria-pressed")).toBe("true");
-    on().click(); expect(w.cfg.cameras[0].online).toBe(false); expect(on().getAttribute("aria-pressed")).toBe("false"); expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Offline");
+    const on = () => rows()[0].querySelector<HTMLButtonElement>('button.sys-act')!;
+    expect(on().textContent).toBe("Turn off"); expect(on().getAttribute("aria-label")).toBe("Turn off camera A");
+    expect(rows()[0].querySelector(".halo-cam-live-dot")).toBeTruthy();
+    on().click(); expect(w.cfg.cameras[0].online).toBe(false); expect(on().textContent).toBe("Turn on"); expect(rows()[0].querySelector(".sys-val")!.textContent).toContain("Offline");
+    expect(rows()[0].querySelector(".halo-cam-live-dot")).toBeNull();
     w.cfg.cameras.push(webcamSetup("x", "Real", "C")); (w as any).render(); expect(rows()).toHaveLength(3);
     expect(w.root.querySelector(".sys-sum")!.textContent).toBe("2 of 3 online");
   });

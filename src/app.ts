@@ -3,7 +3,7 @@ import "./style.css";
 import { chipIcons, chipTone } from "./ui/chipIcons";
 import { installContextMenus, registerContextMenu } from "./ui/contextMenu";
 import { appMenu } from "./ui/menus/appMenu";
-import "./ui/halo.css";
+import "./ui/setup-wizard.css";
 import "./ui/theme.css";
 import "./ui/tooltip.css";
 import "@fontsource/chakra-petch/400.css";
@@ -138,6 +138,7 @@ export function boot(root: HTMLElement): Boot {
         <div class="spacer"></div>
         <div class="chips" id="hud"></div>
         <div class="chips" id="buildchips"></div>
+        <div id="notifications"></div>
         <button id="scenpause" class="scen-pause" type="button" disabled aria-label="Pause scenario" data-tip="Pause scenario" data-tip-body="Holds the scenario player between moves while a game is replaying. Press again to resume.">${icon("pause", 16)}<span class="lbl">Pause</span></button>
         <div class="chips" id="hist">
           <button id="hudundo" class="chip" type="button" disabled aria-label="Undo" data-act="undo" data-tip="Undo" data-tip-keys="Ctrl,Z" data-tip-body="Step back through your edits to the workflow."></button>
@@ -159,8 +160,8 @@ export function boot(root: HTMLElement): Boot {
             <button id="workflows" class="rb" data-tip="Demos" data-tip-body="Load a ready-made demo workflow. The current one is backed up first.">${icon("film", 22)}<span>Demos</span></button>
             <button id="aiwiz" class="rb" data-tip="Build with AI" data-tip-body="Describe what you want and a model drafts the workflow. You review it before anything changes.">${icon("wand", 22)}<span>Build with AI</span></button>
             <button id="settings" class="rb" data-tip="Settings" data-tip-body="Cameras, projector, narration, and players.">${icon("setup", 22)}<span>Settings</span></button>
-            <button id="calibrate" class="rb"><span>Calibrate</span></button>
-            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8)."><span>Align boards</span></button>
+            <button id="calibrate" class="rb">${icon("target", 22)}<span>Calibrate</span></button>
+            <button id="alignall" class="rb" data-tip="Align all boards" data-tip-body="Finds the board grid on every camera at once. Runs several boards in parallel on a powerful computer (up to 8).">${icon("board", 22)}<span>Align boards</span></button>
             <button id="phone" class="rb" data-tip="Phone remote" data-tip-body="Watch the moves, see the camera and play from a phone on the same Wi-Fi.">${icon("people", 22)}<span>Phone</span></button>
           </div><div class="rlabel">Start</div></div>
           <div class="rgroup"><div class="rbtns">
@@ -270,7 +271,7 @@ export function boot(root: HTMLElement): Boot {
   const inputPreview = document.createElement("section"); inputPreview.className = "simple-input";
   const inputHeader = document.createElement("div"); inputHeader.className = "simple-input-header";
   const inputTitle = document.createElement("strong"); inputTitle.textContent = "Input webcam";
-  const adjustCorners = document.createElement("button"); adjustCorners.type = "button"; adjustCorners.textContent = "Adjust corners";
+  const adjustCorners = document.createElement("button"); adjustCorners.type = "button"; adjustCorners.textContent = "Adjust corners"; withIcon(adjustCorners, "board", 14);
   adjustCorners.onclick = () => go({ page: "settings", step: "board" });
   const inputCanvas = document.createElement("canvas"); inputCanvas.width = 480; inputCanvas.height = 360;
   inputCanvas.setAttribute("aria-label", "Input webcam preview");
@@ -555,8 +556,8 @@ export function boot(root: HTMLElement): Boot {
         { title: `This PC’s join code: ${remote.code}`, details: remote.urls.length ? remote.urls : ["No network address found. Connect this computer to Wi-Fi, then open this window again."] });
     }
   };
-  const calWin = new CalibrationOverlay(() => { bus.calibrationDismiss = true; });
-  installJoinBadge(remote, () => document.getElementById("phone")!.click());
+  const calWin = new CalibrationOverlay(() => { bus.calibrationDismiss = true; }, document.getElementById("notifications")!, () => { bus.calibrationAccept = true; });
+  installJoinBadge(remote, () => document.getElementById("buildchips"));
   const step = (now: number) => {
     remote.tick(now);
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }

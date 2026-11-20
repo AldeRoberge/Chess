@@ -1,0 +1,34 @@
+/* Setup wizard: navigation. */
+.halo-steps{list-style:none;margin:0;padding:6px 0;display:flex;flex-direction:column;gap:6px;align-self:stretch;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.halo-step{display:flex;align-items:center;gap:14px;padding:10px 14px 10px 10px;min-height:56px;cursor:pointer;color:var(--text-dim);font-size:1.08em;font-weight:500;background:var(--ink-1);border:1px solid var(--line);border-radius:16px;transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s,border-color .15s,color .15s,box-shadow .15s}
+.halo-step-ic{display:inline-grid;place-items:center;flex:none;width:38px;height:38px;border-radius:12px;color:var(--signal);background:color-mix(in srgb,var(--signal) 14%,var(--ink-2));transition:background .15s,color .15s,transform .15s}
+.halo-step-ic svg{stroke-width:2}
+.halo-step:hover{color:var(--text);background:var(--ink-2);border-color:var(--line-hi);transform:translateX(2px)}
+.halo-step:hover .halo-step-ic{transform:scale(1.08)}
+.halo-step.cur{color:var(--text);background:var(--ink-2);border-color:var(--signal);box-shadow:0 4px 14px color-mix(in srgb,var(--signal) 22%,transparent)}
+.halo-step.cur .halo-step-ic{color:var(--ink-0);background:var(--signal)}
+.halo-step.cur.sel{color:var(--signal-hi);background:var(--ink-3)}
+@media (max-width:760px){
+  .halo-steps{flex-direction:row;align-self:start;gap:6px;padding:4px 0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .halo-steps::-webkit-scrollbar{display:none}
+  .halo-step{flex:none;min-height:44px;gap:8px;padding:4px 14px 4px 6px;border-radius:12px;font-size:var(--t-sm)}
+  .halo-step:hover{transform:none}
+  .halo-step-ic{width:30px;height:30px;border-radius:9px}
+  .halo-navrow{flex-wrap:wrap}
+}
+
+.halo-navrow{display:flex;justify-content:space-between;gap:12px;margin-top:auto;padding-top:22px}
+.halo-nav{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;color:var(--text-dim)}
+.halo-nav.next{margin-left:auto;color:var(--signal-hi);border-color:var(--line-hi)}
+.halo-nav:hover{color:var(--text)}
+.halo-nav .ic{flex:none}
+
+/* steps list scrolls on its own when the dialog is short */
+.halo-steps{align-self:stretch;overflow-y:auto;min-height:0;scrollbar-width:thin}
+.compact .halo-step{min-height:44px;padding:4px 10px 4px 6px;gap:10px}
+.compact .halo-step-ic{width:32px;height:32px}
+@media (max-width:760px),(max-aspect-ratio:1/1){
+  .halo-steps{flex-direction:row;overflow-x:auto;overflow-y:hidden;align-self:start;padding:2px 0 6px}
+  .halo-step{flex:none;white-space:nowrap;min-height:44px}
+}
+@media (max-height:800px){.halo-step{min-height:44px;padding-block:6px}.halo-step-ic{width:30px;height:30px}.halo-steps{gap:4px}}

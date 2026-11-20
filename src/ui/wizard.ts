@@ -259,9 +259,10 @@ export class SetupWizard {
     void this.deps.openCamera(cam.deviceId).then((s) => {
       if (this.streamFor !== cam.deviceId) { s.getTracks().forEach((t) => t.stop()); return; }
       this.stream = s;
-      this.video = document.createElement("video"); this.video.muted = true; this.video.srcObject = s; void this.video.play();
-    }).catch(() => { this.stream = null; if (this.streamFor === cam.deviceId) this.streamFor = ""; });
+      this.video = document.createElement("video"); this.video.muted = true; this.video.playsInline = true; this.video.srcObject = s; void this.video.play().catch(() => {});
+    }).catch(() => { this.stream = null; if (this.streamFor === cam.deviceId) { this.streamFor = ""; this.retryAt = performance.now() + 2500; } });
   }
+  private retryAt = 0;
   private stopStream() { this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; this.video = null; this.streamFor = ""; }
 
   private pointer(kind: "down" | "move" | "up", e?: PointerEvent) {
@@ -285,7 +286,11 @@ export class SetupWizard {
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0.016; this.lastFrame = now;
     const id = STEPS[this.step].id, ctx = this.canvas.getContext("2d")!;
     if (id === "scenes") this.scr.draw(ctx, this.canvas.width, this.canvas.height, this.state.scenePreview, now, dt);
-    else if (id === "board" && this.cfg.cameras.length) this.drawBoardPreview(ctx, now);
+    else if (id === "board" && this.cfg.cameras.length) {
+      // a failed or timed-out open (camera briefly busy) is retried instead of leaving "No signal" forever
+      if (!this.streamFor && this.retryAt && performance.now() >= this.retryAt) { this.retryAt = 0; this.ensureVideo(); }
+      this.drawBoardPreview(ctx, now);
+    }
     else if (id === "cameras") this.drawCamPreviews(now);
   }
 
@@ -518,11 +523,15 @@ export class SetupWizard {
       const nm = el("td", "sys-name"); nm.innerHTML = `<span class="sys-ico">${icon(cam.kind === "virtual" ? "world" : "camera", 16)}</span>`; nm.append(`${cam.id} · ${cam.label}`);
       const pv = el("td", "halo-cam-cell"); pv.append(p.canvas);
       const sv = el("td", "sys-val", st.text);
+      if (st.tone === "ok") {
+        const dot = el("span", "halo-cam-live-dot"); dot.setAttribute("aria-hidden", "true"); sv.prepend(dot);
+      }
       const tog = el("td", "sys-tog"), wrap = el("div", "sys-acts");
 
-      const on = el("button", `sys-act${cam.online ? "" : " hot"}`); on.type = "button"; on.setAttribute("aria-pressed", String(cam.online));
-      on.setAttribute("aria-label", `${cam.id}: ${cam.online ? "online" : "offline"}, switch`);
-      on.innerHTML = `<span>${cam.online ? "Online" : "Offline"}</span>`; on.dataset.tip = "Online or offline"; on.dataset.tipBody = "An offline camera is ignored by the tracker until you switch it back on.";
+      const action = cam.online ? "Turn off" : "Turn on";
+      const on = el("button", `sys-act${cam.online ? "" : " hot"}`); on.type = "button";
+      on.setAttribute("aria-label", `${action} camera ${cam.id}`);
+      on.innerHTML = `<span>${action}</span>`; on.dataset.tip = `${action} camera`; on.dataset.tipBody = cam.online ? "Stops this camera. The tracker ignores it until you turn it back on." : "Starts this camera so the tracker can use it again.";
       on.onclick = (e) => { e.stopPropagation(); cam.online = !cam.online; this.deps.sfx.play("tick"); this.render(); };
       wrap.append(on);
       if (st.action) {

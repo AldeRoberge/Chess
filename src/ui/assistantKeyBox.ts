@@ -1,3 +1,4 @@
+import { withIcon } from "./icons";
 import { AI_DEFAULT_MODEL, loadAiSettings, saveAiSettings } from "../workflows/ai";
 import { effectiveKey, loadServerKeys, serverHas } from "../net/vendorFetch";
 
@@ -20,7 +21,7 @@ export class KeyBox {
     const s = loadAiSettings(), key = el("input"), model = el("input"), rem = el("input"), save = el("button", "primary", "Save");
     key.type = "password"; key.placeholder = "OpenAI API key (sk-...)"; key.autocomplete = "off"; key.value = s.apiKey; key.setAttribute("aria-label", "OpenAI API key");
     model.value = s.model; model.setAttribute("aria-label", "Model"); model.placeholder = AI_DEFAULT_MODEL;
-    rem.type = "checkbox"; rem.checked = s.remember; save.type = "button";
+    rem.type = "checkbox"; rem.checked = s.remember; save.type = "button"; withIcon(save, "save");
     const keep = el("label", "chk"); keep.append(rem, el("span", "", "Remember the key in this browser (stored unencrypted)"));
     save.onclick = () => { saveAiSettings({ apiKey: key.value, model: model.value.trim() || AI_DEFAULT_MODEL, remember: rem.checked }); this.root.classList.remove("open"); this.sync(); };
     this.root.replaceChildren(el("p", "", "Messages go to OpenAI. The assistant never sees API keys, and never sets them."), key, model, keep, save);

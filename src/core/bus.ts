@@ -38,10 +38,12 @@ export const bus = {
   fxSpawns: [] as FxCall[],
   /** Set from the top-bar Pause button: holds the scenario player between moves without resetting it. */
   scenarioPaused: false,
-  /** A board reader that lost the board is finding the corners again by itself: drives the "Calibration in progress..." window. */
+  /** A deduplicated calibration suggestion or explicitly approved search in the top menu. */
   calibration: null as CalibrationView | null,
-  /** Set by that window's Dismiss button; the calibrating reader stops and holds off until the board reads well again. */
+  /** Dismiss stops the search and suppresses suggestions until sustained recovery. */
   calibrationDismiss: false,
+  /** Explicit approval from the top-menu suggestion. */
+  calibrationAccept: false,
 };
 
 export function pushLog<T>(arr: T[], items: T[], max = 60) {

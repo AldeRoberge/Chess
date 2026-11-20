@@ -17,6 +17,21 @@ const call = (env: Env, path: string, init: RequestInit = {}, origin: string | n
 afterEach(() => vi.unstubAllGlobals());
 
 describe("worker", () => {
+  it("caches key reads and never writes request counters to KV", async () => {
+    const { env, KEYS } = mk({ OPENAI_API_KEY: "secret" });
+    const read = vi.spyOn(KEYS, "get"), write = vi.spyOn(KEYS, "put");
+    vi.stubGlobal("fetch", async () => new Response("{}"));
+    for (let i = 0; i < 5; i++) expect((await call(env, "openai/models")).status).toBe(200);
+    expect(read).toHaveBeenCalledTimes(1); expect(write).not.toHaveBeenCalled();
+  });
+
+  it("keeps dashboard secrets usable when KV has exhausted its quota", async () => {
+    const { env, KEYS } = mk({ OPENAI_API_KEY: "secret" });
+    vi.spyOn(KEYS, "get").mockRejectedValue(new Error("KV quota exceeded"));
+    vi.stubGlobal("fetch", async () => new Response("{}"));
+    expect((await call(env, "openai/models")).status).toBe(200);
+  });
+
   it("serves assets outside /chess/api/", async () => {
     const { env } = mk();
     expect(await (await worker.fetch(new Request("https://alderoberge.com/chess/"), env)).text()).toBe("asset");
@@ -94,7 +109,7 @@ describe("worker", () => {
     vi.stubGlobal("fetch", up);
     await call(env, "openai/models");
     expect((up.mock.calls[0][1].headers as Record<string, string>).Authorization).toBe("Bearer sk-env");
-    KEYS.m.set("key:openai", "sk-kv");
+    await call(env, "keys", { method: "PUT", headers: { Authorization: "Bearer pw" }, body: JSON.stringify({ openai: "sk-kv" }) });
     await call(env, "openai/models");
     expect((up.mock.calls[1][1].headers as Record<string, string>).Authorization).toBe("Bearer sk-kv");
   });
