@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openQuadEditor, squareToQuad, turnQuad } from "./quadEditor";
 import { fmtCorners, parseCorners } from "../plugins/shared";
+import { boardTilt, quadUpright, quadValid } from "./quadRules";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { VirtualTable } from "../sim/virtualTable";
 import { shoot } from "../test/helpers";
@@ -143,6 +144,23 @@ describe("openQuadEditor", () => {
     expect(quadSideRatio(q)).not.toBeCloseTo(side, 2); // a flat turn would keep the shape; a 3D turn re-projects it
     const centre = squareToQuad(q)(0.5, 0.5), c0 = squareToQuad(c)(0.5, 0.5);
     expect(Math.abs(centre.x - c0.x)).toBeLessThan(3); expect(Math.abs(centre.y - c0.y)).toBeLessThan(3); // about the board's middle (the grid may have snapped a pixel or two onto the picture's edges first)
+  });
+  it("a corner dragged across the box turns it instead of criss-crossing, and the board never goes upside down", () => {
+    const names = ["a8", "h8", "h1", "a1"], { changes, cv } = open({ names } as never);
+    // h8 is at 540,72 on the canvas; drag it over to the far bottom-left
+    cv.dispatchEvent(ptr("pointerdown", 540, 72));
+    cv.dispatchEvent(ptr("pointermove", 200, 280));
+    cv.dispatchEvent(ptr("pointermove", 190, 300));
+    cv.dispatchEvent(ptr("pointerup", 190, 300));
+    const q = parseCorners(changes[changes.length - 1])!;
+    expect(quadValid(q)).toBe(true); expect(quadUpright(q, true)).toBe(true);
+    // and the round handle, pulled straight down (a half turn), stops short of upside down
+    key("Escape"); // close the first editor so the next one is the only canvas
+    const { changes: c2, cv: cv2 } = open({ names } as never);
+    cv2.dispatchEvent(ptr("pointerdown", 360, 32));
+    cv2.dispatchEvent(ptr("pointermove", 500, 180)); cv2.dispatchEvent(ptr("pointermove", 360, 330)); cv2.dispatchEvent(ptr("pointermove", 220, 200));
+    const r = parseCorners(c2[c2.length - 1])!;
+    expect(quadValid(r)).toBe(true); expect(Math.abs(boardTilt(r))).toBeLessThanOrEqual(111) // the corners are rounded when written out;
   });
 });
 

@@ -5,7 +5,9 @@ import type { GrayFrame, Pt } from "../vision/types";
 import { labelHints } from "../vision/boardLabels";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { quadToSquare, squareToQuad } from "./quadMap";
-import { pickTurnBase, turnQuadPlane } from "./quadTurn";
+import { pickTurnBase, turnQuad, turnQuadPlane } from "./quadTurn";
+export { turnQuad };
+import { dragCorner, quadUpright } from "./quadRules";
 import { AlignmentMeter, alignColor, drawDirection, drawEdgeIcons, drawMatrixGround, iconLevels, readPerspective, scoreAlignment, startOrientation, type Orientation } from "./boardGuide";
 import { BoardSampler } from "../vision/sampler";
 import { loadBoardCnn } from "../vision/boardModel";
@@ -217,6 +219,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
   };
 
   const at = (e: PointerEvent) => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * fw, y: ((e.clientY - r.top) / r.height) * fh }; };
+  const isBoard = o.grid > 1 && o.names[0] === "a8" && o.names[2] === "h1";
   const clamp = (p: Pt): Pt => ({ x: Math.min(fw, Math.max(0, p.x)), y: Math.min(fh, Math.max(0, p.y)) });
   cv.addEventListener("pointermove", (e) => { const r = cv.getBoundingClientRect(); cursor = { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }; });
   cv.addEventListener("pointerleave", () => { cursor = null; });
@@ -240,6 +243,9 @@ export function openQuadEditor(o: QuadEditorOpts) {
           let d = (mode === "3d" ? boardAngle(ev) ?? a0 : flatAngle(ev)) - a0;
           d = Math.atan2(Math.sin(d), Math.cos(d));
           if (ev.shiftKey) d = Math.round(d / (Math.PI / 12)) * (Math.PI / 12);
+          // the box may be turned, but never criss-crossed or upside down: past that it stops at the limit
+          const make = (a: number) => (mode === "3d" ? turnQuadPlane(base, a) : null) ?? turnQuad(base, { x: c.x / sx, y: c.y / sy }, a, sx, sy);
+          if (!quadUpright(make(d), isBoard)) { let lo = 0, hi = d; for (let k = 0; k < 14; k++) { const mid = (lo + hi) / 2; if (quadUpright(make(mid), isBoard)) lo = mid; else hi = mid; } d = lo; }
           const turned = mode === "3d" ? turnQuadPlane(base, d) : null;
           turning = { from: a0, shown: d, mode: turned || mode === "flat" ? mode : "flat" };
           pts = turned ?? turnQuad(base, { x: c.x / sx, y: c.y / sy }, d, sx, sy); emit();
@@ -253,8 +259,9 @@ export function openQuadEditor(o: QuadEditorOpts) {
     pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = i; } });
     sel = best; cv.setPointerCapture(e.pointerId); cv.focus();
     aligner = null; setLabel(auto, "Auto detect"); follower.unlock(); status = "";
-    pts[sel] = clamp(p); emit();
-    const move = (ev: PointerEvent) => { pts[sel] = clamp(at(ev)); emit(); };
+    // A corner never criss-crosses the box or turns it upside down: past that point it turns the whole box instead.
+    let last = clamp(p); pts = dragCorner(pts, sel, pts[sel], last, isBoard); emit();
+    const move = (ev: PointerEvent) => { const to = clamp(at(ev)); pts = dragCorner(pts, sel, last, to, isBoard); last = to; emit(); };
     const up = () => { cv.removeEventListener("pointermove", move); cv.removeEventListener("pointerup", up); };
     cv.addEventListener("pointermove", move); cv.addEventListener("pointerup", up);
   });
@@ -267,7 +274,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
     if (e.key === "Escape") { e.preventDefault(); close(false); return; }
     if (e.key === "Enter") { e.preventDefault(); close(true); return; }
     const step = e.shiftKey ? 10 : 1, d: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
-    if (d[e.key]) { e.preventDefault(); pts[sel] = clamp({ x: pts[sel].x + d[e.key][0], y: pts[sel].y + d[e.key][1] }); emit(); }
+    if (d[e.key]) { e.preventDefault(); const next = pts.map((p, k) => (k === sel ? clamp({ x: p.x + d[e.key][0], y: p.y + d[e.key][1] }) : p)); if (quadUpright(next, isBoard) || !quadUpright(pts, isBoard)) { pts = next; emit(); } }
     else if (e.key >= "1" && e.key <= "4") sel = Number(e.key) - 1;
   };
   document.addEventListener("keydown", key, true);
@@ -300,10 +307,4 @@ export function openQuadEditor(o: QuadEditorOpts) {
   };
   reset.onclick = () => { pts = parseCorners(start) ?? pts; emit(); };
   paint(); cv.focus();
-}
-
-/** The quad turned by `angle` (radians, clockwise on screen) about `c` (frame pixels). The turn is done in canvas pixels (`sx`, `sy` per frame pixel) so the grid does not shear. */
-export function turnQuad(q: Pt[], c: Pt, angle: number, sx = 1, sy = 1): Pt[] {
-  const cs = Math.cos(angle), sn = Math.sin(angle);
-  return q.map((p) => { const dx = (p.x - c.x) * sx, dy = (p.y - c.y) * sy; return { x: c.x + (dx * cs - dy * sn) / sx, y: c.y + (dx * sn + dy * cs) / sy }; });
 }

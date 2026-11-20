@@ -66,3 +66,9 @@ export function pickTurnBase(f: GrayFrame | null, pts: Pt[]): TurnBase {
   } catch { /* the picture cannot be read there */ }
   return flat;
 }
+
+/** The quad turned by `angle` (radians, clockwise on screen) about `c` (frame pixels). The turn is done in canvas pixels (`sx`, `sy` per frame pixel) so the grid does not shear. */
+export function turnQuad(q: Pt[], c: Pt, angle: number, sx = 1, sy = 1): Pt[] {
+  const cs = Math.cos(angle), sn = Math.sin(angle);
+  return q.map((p) => { const dx = (p.x - c.x) * sx, dy = (p.y - c.y) * sy; return { x: c.x + (dx * cs - dy * sn) / sx, y: c.y + (dx * sn + dy * cs) / sy }; });
+}
