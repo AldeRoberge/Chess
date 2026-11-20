@@ -47,11 +47,33 @@ export function findCenterSeed(f: GrayFrame): CenterSeed | null {
     if (best) found.push(best);
   }
   if (found.length < 9) return null;
-  // the square size most crossings agree on (weighted by how clear each one is)
-  const bySize = radii.map((r) => ({ r, w: found.filter((c) => c.r === r).reduce((s, c) => s + c.score, 0) })).sort((a, b) => b.w - a.w);
+  // Real crossings sit on a lattice: a square away, in line with their own turn, lie more crossings. Piece fuzz and the board's
+  // outer edge can show far stronger contrast than the faint squares, but nothing lines up round them, so keep only the supported ones.
+  const cell = 3, buckets = new Map<number, number[]>(), cellKey = (x: number, y: number) => Math.floor(y / cell) * 4096 + Math.floor(x / cell);
+  found.forEach((c, i) => { const key = cellKey(c.x, c.y), b = buckets.get(key); if (b) b.push(i); else buckets.set(key, [i]); });
+  const turnOk = (a: number, b: number) => { const d = Math.abs(a - b) % (Math.PI / 2); return Math.min(d, Math.PI / 2 - d) < 0.35; };
+  const support = (c: Cross) => {
+    const sq = c.r * Math.SQRT2, tol = Math.max(0.3 * sq, 2.5), cs = Math.cos(c.theta), sn = Math.sin(c.theta);
+    let n = 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const ex = c.x + sq * (dx * cs - dy * sn), ey = c.y + sq * (dx * sn + dy * cs);
+      let hit = false;
+      for (let yy = Math.floor((ey - tol) / cell); yy <= Math.floor((ey + tol) / cell) && !hit; yy++) for (let xx = Math.floor((ex - tol) / cell); xx <= Math.floor((ex + tol) / cell) && !hit; xx++) {
+        for (const i of buckets.get(yy * 4096 + xx) ?? []) {
+          const o = found[i];
+          if (Math.hypot(o.x - ex, o.y - ey) <= tol && o.r >= c.r / 1.3 && o.r <= c.r * 1.3 && turnOk(o.theta, c.theta)) { hit = true; break; }
+        }
+      }
+      if (hit) n++;
+    }
+    return n;
+  };
+  const lattice = found.filter((c) => support(c) >= 2);
+  if (lattice.length < 9) return null;
+  // the square size most crossings agree on
+  const bySize = radii.map((r) => ({ r, w: lattice.filter((c) => c.r === r).length })).sort((a, b) => b.w - a.w);
   const r0 = bySize[0].r;
-  let keep = found.filter((c) => c.r >= r0 / 1.3 && c.r <= r0 * 1.3);
-  // one crossing per square corner: keep the clearest in each neighbourhood
+  let keep = lattice.filter((c) => c.r >= r0 / 1.3 && c.r <= r0 * 1.3);
   keep.sort((a, b) => b.score - a.score);
   const thin: Cross[] = [];
   for (const c of keep) if (thin.every((t) => Math.hypot(t.x - c.x, t.y - c.y) > r0 * 1.15)) thin.push(c);
@@ -72,7 +94,7 @@ export function findCenterSeed(f: GrayFrame): CenterSeed | null {
   if (group.length < 9) return null;
   // the turn: lines of crossings repeat every quarter turn, so average four times the angle
   let sa = 0, ca = 0;
-  for (const c of group) { sa += c.score * Math.sin(4 * c.theta); ca += c.score * Math.cos(4 * c.theta); }
+  for (const c of group) { sa += Math.sin(4 * c.theta); ca += Math.cos(4 * c.theta); }
   const angle = Math.atan2(sa, ca) / 4, u = { x: Math.cos(angle), y: Math.sin(angle) }, v = { x: -u.y, y: u.x };
   // the square size: the usual distance from a crossing to its nearest neighbour
   const nn = group.map((c) => Math.min(...group.filter((o) => o !== c).map((o) => Math.hypot(o.x - c.x, o.y - c.y)))).sort((a, b) => a - b);
