@@ -1,3 +1,4 @@
+import type { Square } from "chess.js";
 import { Chess } from "chess.js";
 import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
@@ -29,7 +30,7 @@ export function wrongSquare(game: Chess, from: string, to: string, pick: number)
     const nf = f + df, nr = r + dr;
     if (nf < 0 || nf > 7 || nr < 0 || nr > 7) continue;
     const sq = String.fromCharCode(97 + nf) + (nr + 1);
-    if (sq !== from && !game.get(sq as any)) out.push(sq);
+    if (sq !== from && !game.get(sq as Square)) out.push(sq);
   }
   return out.length ? out[Math.floor(pick * out.length) % out.length] : null;
 }

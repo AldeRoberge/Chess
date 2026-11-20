@@ -567,8 +567,8 @@ export function boot(root: HTMLElement): Boot {
   };
   document.getElementById("calibrate")!.onclick = () => { calibrationSignature = ""; drawCalibration(); calibrationDialog.showModal(); };
   const remote = new RemoteHost({
-    cloud: !!(import.meta as any).env?.PROD,
-    base: `${(import.meta as any).env?.BASE_URL ?? "/"}remote/`,
+    cloud: import.meta.env.PROD,
+    base: `${import.meta.env.BASE_URL}remote/`,
     build: (framed, notice, now) => {
       const s = snapshot(bus, { now, virtualBoard: virtualBoard(), framed, notice });
       s.calibration = calibrate.view ? { ...calibrate.view, results: calibrate.view.results.map(r => ({ ...r, errors: r.errors.slice(0, 12) })) } : null;

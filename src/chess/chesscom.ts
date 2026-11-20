@@ -10,15 +10,20 @@ export interface RemoteGame { url: string; pgn: string; fen: string; turn: "whit
 const nameOf = (u: unknown) => String(u ?? "").split("/").pop()!.toLowerCase();
 export const API = "https://api.chess.com/pub/player/";
 
+/** The fields of a chess.com daily game that we read. */
+interface ApiGame { url?: unknown; pgn?: unknown; fen?: unknown; turn?: unknown; white?: unknown; black?: unknown }
+
 /** Pick the game to follow from a `/pub/player/{user}/games` response (`gameUrl` narrows it when several are running). */
-export function pickGame(json: any, username: string, gameUrl = ""): RemoteGame | null {
+export function pickGame(json: unknown, username: string, gameUrl = ""): RemoteGame | null {
   const me = username.trim().toLowerCase();
-  const list: any[] = Array.isArray(json?.games) ? json.games : [];
-  const g = list.find((x) => !gameUrl.trim() || String(x.url) === gameUrl.trim()) ?? null;
+  const games = (json as { games?: unknown } | null)?.games;
+  const list: ApiGame[] = Array.isArray(games) ? games : [];
+  const g = list.find((x) => !gameUrl.trim() || String(x?.url) === gameUrl.trim()) ?? null;
   if (!g || typeof g.pgn !== "string") return null;
+  const pgn = g.pgn;
   const white = nameOf(g.white), black = nameOf(g.black), color = white === me ? "w" : "b";
-  const c = new Chess(); try { c.loadPgn(g.pgn); } catch { return null; }
-  return { url: String(g.url ?? ""), pgn: g.pgn, fen: String(g.fen ?? c.fen()), turn: g.turn === "black" ? "black" : "white", white, black, color, opponent: color === "w" ? black : white, moveCount: c.history().length };
+  const c = new Chess(); try { c.loadPgn(pgn); } catch { return null; }
+  return { url: String(g.url ?? ""), pgn, fen: String(g.fen ?? c.fen()), turn: g.turn === "black" ? "black" : "white", white, black, color, opponent: color === "w" ? black : white, moveCount: c.history().length };
 }
 
 export interface RemoteMove { from: string; to: string; uci: string; san: string; by: "you" | "opponent" }

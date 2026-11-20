@@ -1,3 +1,4 @@
+import type { Square } from "chess.js";
 import { Chess } from "chess.js";
 import type { ExperienceEvent } from "../core/events";
 import { sqIndex, sqName } from "../vision/types";
@@ -63,9 +64,9 @@ export class DragDrop {
         if (!sq) continue;
         const idx = sqIndex(sq), cx = (idx % 8) + 0.5, cy = Math.floor(idx / 8) + 0.5;
         if (Math.hypot(p.x - cx, p.y - cy) > this.cfg.grabRadius) continue;
-        const piece = game.get(sq as any);
+        const piece = game.get(sq as Square);
         if (!piece || piece.color !== game.turn()) continue; // only the side to move can be picked up
-        const legal = [...new Set((game.moves({ square: sq as any, verbose: true }) as { to: string }[]).map((m) => m.to))];
+        const legal = [...new Set((game.moves({ square: sq as Square, verbose: true }) as { to: string }[]).map((m) => m.to))];
         if (!legal.length) continue; // nothing to do with this piece: do not pick it up
         this.pid = p.id; this.lostAt = null;
         this.drag = { from: sq, piece: piece.type, color: piece.color, x: p.x, y: p.y, legal, hover: sq };
