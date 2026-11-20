@@ -3,6 +3,8 @@ export interface GrayFrame {
   height: number;
   data: Uint8ClampedArray; // 1 byte / pixel luminance (IR or visible)
   t: number;
+  /** Which camera made this picture (its device name), when known. */
+  source?: string;
 }
 export type Pt = { x: number; y: number };
 

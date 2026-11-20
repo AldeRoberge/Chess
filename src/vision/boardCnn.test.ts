@@ -28,10 +28,11 @@ describe("whole-board CNN", () => {
   beforeAll(async () => { await loadBoardCnn(); await loadSquareCnn(); });
 
   it("reproduces the logits PyTorch gave for the same board images", () => {
-    const net = BoardSampler.boardNet!, x = Float32Array.from(check.x), n = BOARD_SIDE * BOARD_SIDE;
-    for (let k = 0; k < check.logits.length / 192; k++) {
+    const net = BoardSampler.boardNet!, x = Float32Array.from(check.x), n = BOARD_SIDE * BOARD_SIDE, per = net.classes * 64;
+    expect(net.classes).toBe(13);
+    for (let k = 0; k < check.logits.length / per; k++) {
       const out = net.logits(x.subarray(k * n, (k + 1) * n));
-      for (let i = 0; i < 192; i++) expect(out[i]).toBeCloseTo(check.logits[k * 192 + i], 2);
+      for (let i = 0; i < per; i++) expect(out[i]).toBeCloseTo(check.logits[k * per + i], 2);
     }
   });
 
@@ -60,6 +61,8 @@ describe("whole-board CNN", () => {
     for (const m of ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Bxc6", "dxc6"]) t.game.move(m);
     const truth = truthOf(t.game), midScene = t.scene3d();
     const total = { rules: 0, cnn: 0, board: 0 }, ms = { cnn: 0, board: 0 };
+    const kind = truth.map((v, i) => { const p = t.game.board().flat()[i]; return p ? "pnbrqk".indexOf(p.type) : -1; });
+    let pieces = 0, typed = 0;
     for (const rig of ["A", "B", "C"]) {
       const o = { width: 480, height: 360, rig: RIGS[rig], shadows: true };
       const start = renderLuminance(startScene, o), mid = renderLuminance(midScene, o), corners = rigCorners(RIGS[rig]);
@@ -70,10 +73,21 @@ describe("whole-board CNN", () => {
           s.calibrateFromStart(f0);
           const t0 = performance.now(), e = errors(s, f1, truth);
           if (engine !== "rules") ms[engine] += performance.now() - t0;
+          if (engine === "board") {
+            const pt = s.pieceTypes!;
+            for (let i = 0; i < 64; i++) {
+              if (kind[i] < 0) continue;
+              pieces++;
+              let best = 1; for (let c = 2; c < 13; c++) if (pt[i * 13 + c] > pt[i * 13 + best]) best = c;
+              if (((best - 1) % 6) === kind[i] && (best > 6 ? 2 : 1) === truth[i]) typed++;
+            }
+          }
           total[engine] += e;
         }
       }
     }
+    console.info(`piece type and colour right on ${typed} of ${pieces} pieces`);
+    expect(typed / pieces).toBeGreaterThan(0.6);
     console.info(`square errors over 9 boards: rules ${total.rules}, square cnn ${total.cnn}, board cnn ${total.board}; uncached read ms per board: square ${(ms.cnn / 9).toFixed(1)}, board ${(ms.board / 9).toFixed(1)}`);
     expect(total.board).toBeLessThanOrEqual(Math.max(total.rules, 9));
   });

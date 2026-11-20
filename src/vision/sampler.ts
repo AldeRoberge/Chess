@@ -63,6 +63,8 @@ export class BoardSampler {
   /** The trained whole-board reader (engine "board"), shared by every reader. Load it with `loadBoardCnn()` (boardModel.ts). */
   static boardNet: BoardCnn | null = null;
   private boardCache: BoardCache | null = null;
+  /** The board reader's latest piece-type probabilities (64 squares x 13 classes, see PIECE_NAMES), or null before a read or with an older 3-class model. Not used by the tracker yet. */
+  get pieceTypes(): Float32Array | null { return this.boardCache && this.boardCache.net.classes === 13 ? this.boardCache.types : null; }
   private boardImg = new Float32Array(BOARD_SIDE * BOARD_SIDE);
   private cnnCache: SquareCache | null = null;
   private crops = new Float32Array(64 * CROP * CROP);

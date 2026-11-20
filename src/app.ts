@@ -61,7 +61,7 @@ import { settingSearchEntries } from "./ui/wizardSteps";
 import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
 import { STEPS } from "./ui/wizardSteps";
-import { icon, withIcon } from "./ui/icons";
+import { icon, withIcon, setPressed } from "./ui/icons";
 import { BUILD, buildBadge, ciBadge, latestCi, type CiRun } from "./setup/buildInfo";
 import { APP_THEMES, appMode, appTheme, nextMode, onAppTheme, setAppMode, setAppTheme } from "./ui/appTheme";
 import { installJoinBadge } from "./ui/joinBadge";
@@ -316,7 +316,7 @@ export function boot(root: HTMLElement): Boot {
   });
   const assistant = new AssistantPanel(assistantHost, { speak: speakAssistant });
   const panels: [string, { root: HTMLElement }][] = [["Game", table], ["World", world], ["Log", log], ["Performance", perf], ["Assistant", assistant]];
-  const setHeat = (on: boolean) => { editor.setHeat(on); document.getElementById("heat")!.classList.toggle("on", on); patchPrefs({ heat: on }); };
+  const setHeat = (on: boolean) => { editor.setHeat(on); setPressed(document.getElementById("heat")!, on); patchPrefs({ heat: on }); };
   document.getElementById("heat")!.onclick = () => setHeat(!editor.heatOn);
   const themeSel = document.getElementById("theme") as HTMLSelectElement, modeBtn = document.getElementById("mode")!;
   const syncTheme = () => { themeSel.value = appTheme().id; modeBtn.querySelector(".lbl")!.textContent = appMode()[0].toUpperCase() + appMode().slice(1); };
@@ -394,7 +394,8 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("export")!.onclick = doExport;
 
   // ---- undo / redo, backups, crash recovery
-  const loadState = (g: GraphJSON) => { graph.load(migrateCameraBot(g)); editor.rebuild(); save(); syncUndo(); };
+  /** Opening a workflow, file or backup tidies the nodes into sections first, so none overlap whatever layout it was saved with. */
+  const loadState = (g: GraphJSON) => { graph.load(migrateCameraBot(g)); editor.rebuild(); editor.organize(); save(); syncUndo(); };
   const stepState = (g: GraphJSON) => { graph.restore(g); editor.rebuild(); save(); dirty = true; syncUndo(); }; // in place: nothing restarts
   const undo = () => { const s = edits.undo(); if (s) stepState(s); };
   const redo = () => { const s = edits.redo(); if (s) stepState(s); };
@@ -450,7 +451,7 @@ export function boot(root: HTMLElement): Boot {
   function syncRibbon() {
     const sel = editor.selection(), n = sel.length, btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
     for (const id of ["seldup", "selbypass", "seldel"]) btn(id).disabled = n === 0;
-    btn("selbypass").classList.toggle("on", n > 0 && sel.every((id) => !!graph.nodes.get(id)?.bypass));
+    setPressed(btn("selbypass"), n > 0 && sel.every((id) => !!graph.nodes.get(id)?.bypass));
     document.getElementById("sellabel")!.textContent = n ? `${n} selected` : "Select nodes";
     document.getElementById("selgroup")!.classList.toggle("idle", n === 0);
     btn("export").classList.toggle("attn", dirty);
@@ -615,7 +616,7 @@ export function boot(root: HTMLElement): Boot {
     calWin.render(bus.calibration);
     if (!document.body.classList.contains("simple")) { const t0 = performance.now(); profiler.span("editor", () => editor.frame(now)); editorMs = ema(editorMs, performance.now() - t0); } else editorMs = 0; // a hidden editor paints nothing
     if (calibrationDialog.open) drawCalibration();
-    document.getElementById("calibrate")!.classList.toggle("on", !!calibrate.view);
+    setPressed(document.getElementById("calibrate")!, !!calibrate.view);
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
     const viewT0 = performance.now();

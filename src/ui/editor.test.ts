@@ -61,21 +61,28 @@ describe("NodeEditor rendering", () => {
     r.register(spec({ type: "reader", params: [
       { id: "online", kind: "bool", label: "Online", value: true },
       { id: "threshold", kind: "number", label: "Sensitivity", min: 0, max: 1, value: 0.5 },
+      { id: "weight", kind: "number", label: "Weight", min: 0, max: 1, value: 0.5 },
       { id: "apiKey", kind: "text", label: "API key", value: "", secret: true },
+      { id: "orgKey", kind: "text", label: "Org key", value: "", secret: true },
+      { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, value: 12 },
     ] }));
     const g = new Graph(r), n = g.addNode("reader"), ed = new NodeEditor(g); document.body.append(ed.root);
     const card = node(ed, n.id), sections = card.querySelectorAll("details");
     expect(sections).toHaveLength(2); expect(sections[0].open).toBe(false);
+    expect(sections[0].querySelector("strong")!.textContent).toBe("Tune piece detection");
+    expect(sections[0].querySelector("summary")!.textContent).toContain("2 settings");
+    expect(sections[1].querySelector("strong")!.textContent).toBe("Enter API keys");
     expect(card.querySelector('[data-param="online"]')!.closest("details")).toBeNull();
+    expect(card.querySelector('[data-param="fps"]')!.closest("details")).toBeNull(); // a section never hides a single setting
     const range = sections[0].querySelector("input")!;
     range.value = "0.7"; range.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(n.params.threshold).toBe(0.7); expect(sections[0].querySelector("summary")!.textContent).toContain("1 modified");
+    expect(n.params.threshold).toBe(0.7); expect(sections[0].querySelector("summary")!.textContent).toContain("1 changed");
     expect(sections[1].textContent).not.toContain("0.7");
     sections[0].open = true; sections[0].dispatchEvent(new Event("toggle")); ed.rebuild();
     expect(node(ed, n.id).querySelector("details")!.open).toBe(true);
     expect(node(ed, n.id).querySelector('input[type="password"]')).not.toBeNull();
   });
-  it("exposes a colour for every port type", () => { expect(Object.keys(PORT_COLOR).sort()).toEqual(["action", "any", "board", "clock", "event", "frame", "fx", "game", "obs", "player", "pointer", "pose", "scene", "seat", "text", "world"]); });
+  it("exposes a colour for every port type", () => { expect(Object.keys(PORT_COLOR).sort()).toEqual(["action", "any", "board", "clock", "event", "flat", "frame", "fx", "game", "obs", "player", "pointer", "pose", "reading", "scene", "seat", "text", "world"]); });
   it("draws one card per node with category colour, title, pins (typed, labelled), preview canvas and parameter widgets", () => {
     const { ed, a, b } = setup();
     expect(ed.root.querySelectorAll(".ne-node")).toHaveLength(3);
@@ -277,6 +284,7 @@ describe("wiring", () => {
 it("search expands a hidden parameter section and pans to it without editing the graph", () => {
   const r = new Registry(); r.register(spec({ type: "searchable", params: [
     { id: "threshold", kind: "number", label: "Threshold", min: 0, max: 1, value: 0.5 },
+    { id: "weight", kind: "number", label: "Weight", min: 0, max: 1, value: 0.5 },
   ] }));
   const g = new Graph(r), n = g.addNode("searchable", 3000, -2000), ed = new NodeEditor(g);
   document.body.append(ed.root); const before = JSON.stringify(g.toJSON());
