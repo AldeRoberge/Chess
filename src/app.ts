@@ -394,7 +394,8 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("export")!.onclick = doExport;
 
   // ---- undo / redo, backups, crash recovery
-  const loadState = (g: GraphJSON) => { graph.load(migrateCameraBot(g)); editor.rebuild(); save(); syncUndo(); };
+  /** Opening a workflow, file or backup tidies the nodes into sections first, so none overlap whatever layout it was saved with. */
+  const loadState = (g: GraphJSON) => { graph.load(migrateCameraBot(g)); editor.rebuild(); editor.organize(); save(); syncUndo(); };
   const stepState = (g: GraphJSON) => { graph.restore(g); editor.rebuild(); save(); dirty = true; syncUndo(); }; // in place: nothing restarts
   const undo = () => { const s = edits.undo(); if (s) stepState(s); };
   const redo = () => { const s = edits.redo(); if (s) stepState(s); };
