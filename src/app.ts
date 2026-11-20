@@ -3,6 +3,7 @@ import "./style.css";
 import { chipIcons, chipTone } from "./ui/chipIcons";
 import { installContextMenus, registerContextMenu } from "./ui/contextMenu";
 import { appMenu } from "./ui/menus/appMenu";
+import { installMenuBar } from "./ui/menus/menuBar";
 import "./ui/setup-wizard.css";
 import "./ui/theme.css";
 import "./ui/tooltip.css";
@@ -224,6 +225,7 @@ export function boot(root: HTMLElement): Boot {
   // ---- ribbon: tab headers switch panes; "File" dropdown closes on outside click / Escape
   // Clicking the tab that is already open folds the ribbon away (Office-style); any tab click brings it back. Remembered between visits.
   const headerEl = app.querySelector("header")!;
+  installMenuBar(app.querySelector<HTMLElement>(".rtabs")!);
   const setRibbonCollapsed = (c: boolean, save = true) => {
     headerEl.classList.toggle("ribbon-collapsed", c);
     for (const o of app.querySelectorAll<HTMLElement>("[data-rtab]")) o.setAttribute("aria-expanded", String(!c));
