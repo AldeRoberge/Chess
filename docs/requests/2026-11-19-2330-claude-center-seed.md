@@ -7,4 +7,5 @@
 - [x] findCenterSeed (rotation-invariant crossing lattice -> centre, size, turn, corners)
 - [x] Added to candidateLayouts and as a trace seed
 - [x] Tests (0/20/35/70 degrees, plain picture); tsc and UI/vision tests pass
-- [ ] ML piece guide: asked the user how to proceed (needs corners first)
+- [x] ML piece guide: user said yes, rank candidates
+- [x] ML ranking: netFit scores each candidate layout with the board reader; candidateLayouts puts the most believed first (reorder only)

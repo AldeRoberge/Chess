@@ -1,7 +1,8 @@
 import { findCenterSeed } from "../vision/centerSeed";
 import { findBoardCorners, findCheckerCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
-import { GOOD, type GridGuide, guideDrift, iconLevels, scoreAlignment, traceSquareGuide } from "./boardGuide";
+import { BoardSampler } from "../vision/sampler";
+import { GOOD, type GridGuide, guideDrift, iconLevels, netFit, scoreAlignment, traceSquareGuide } from "./boardGuide";
 import { squareToQuad } from "./quadMap";
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -200,7 +201,21 @@ export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[]
   }
   for (const q of prior) push(q);
   if (!checker) push(findBoardCorners(f));
-  return out;
+  return rankByNet(f, out);
+}
+
+/**
+ * Puts the guesses the board reader believes most first, so the best start is tried first and a sure fit ends the search early.
+ * It only reorders: with no reader loaded (or one that fails) the order is unchanged, and no guess is dropped.
+ */
+function rankByNet(f: GrayFrame, cands: Pt[][]): Pt[][] {
+  const net = BoardSampler.boardNet;
+  if (!net || cands.length < 2) return cands;
+  try {
+    const scored = cands.map((q, i) => ({ q, i, s: netFit(net, f, q) }));
+    scored.sort((a, b) => b.s - a.s || a.i - b.i);
+    return scored.map((x) => x.q);
+  } catch { return cands; }
 }
 
 /** How far the refined layouts end up from the merged one, on average, in squares. */

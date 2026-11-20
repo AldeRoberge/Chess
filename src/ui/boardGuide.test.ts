@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
-import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, drawMatrixGround, edgeIcons, pieceSides, piecesLookTurned, readPerspective, scoreAlignment, snapLevel, startOrientation, traceSquareGuide } from "./boardGuide";
+import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, drawMatrixGround, edgeIcons, pieceSides, piecesLookTurned, readPerspective, scoreAlignment, snapLevel, netFit, startOrientation, traceSquareGuide } from "./boardGuide";
 import { VirtualTable } from "../sim/virtualTable";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { shoot } from "../test/helpers";
@@ -157,5 +157,19 @@ describe("which way round the corners are (neural, start position)", () => {
     for (const san of ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6"]) table.game.move(san);
     const f = shoot(table, "A");
     for (const k of [c, rot2(c)]) { const r = startOrientation(net, f, k); expect(r.verdict === "turned" ? r.turned >= 0.7 && r.turned - r.here >= 0.2 : true).toBe(true); }
+  });
+});
+
+describe("netFit ranks layouts by how much the board reader believes them", () => {
+  it("scores the right corners above a shifted, a shrunken and an oversized guess, at the start and mid-game", async () => {
+    const net = await loadBoardCnn(), c = rigCorners(RIGS.A);
+    const mid = c.reduce((a, p) => ({ x: a.x + p.x / 4, y: a.y + p.y / 4 }), { x: 0, y: 0 });
+    const scale = (k: number) => c.map((p) => ({ x: mid.x + (p.x - mid.x) * k, y: mid.y + (p.y - mid.y) * k }));
+    const shift = c.map((p) => ({ x: p.x + 60, y: p.y + 35 }));
+    for (const moves of [[], ["e4", "e5", "Nf3", "Nc6"]]) {
+      const table = new VirtualTable(); for (const m of moves) table.game.move(m);
+      const f = shoot(table, "A"), good = netFit(net, f, c);
+      for (const bad of [shift, scale(0.45), scale(2.2)]) expect(good).toBeGreaterThan(netFit(net, f, bad));
+    }
   });
 });

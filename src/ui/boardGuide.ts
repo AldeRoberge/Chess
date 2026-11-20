@@ -522,6 +522,25 @@ export function startMatch(net: BoardCnn, f: GrayFrame, corners: Pt[]): number {
   return s / 64;
 }
 
+/**
+ * How much the board reader believes a layout (0..1), without assuming the game is at the start: a layout that sits on the squares
+ * gives sure, board-like reads (each square clearly empty, white or black, a believable number of pieces), a layout off the squares
+ * gives muddled ones. The start position, in either corner order, adds a little when it matches. Used to rank guesses, never to veto one.
+ */
+export function netFit(net: BoardCnn, f: GrayFrame, corners: Pt[]): number {
+  const p = net.classify(extractBoard(f, corners));
+  let sure = 0, pieces = 0;
+  for (let sq = 0; sq < 64; sq++) { sure += Math.max(p[sq * 3], p[sq * 3 + 1], p[sq * 3 + 2]); if (p[sq * 3] < 0.5) pieces++; }
+  sure /= 64;
+  const plausible = pieces >= 4 && pieces <= 32 ? 1 : 0.6;
+  let here = 0, turned = 0;
+  for (let sq = 0; sq < 64; sq++) {
+    here += p[sq * 3 + (sq < 16 ? 2 : sq >= 48 ? 1 : 0)];
+    turned += p[sq * 3 + (sq < 16 ? 1 : sq >= 48 ? 2 : 0)];
+  }
+  return (sure * 0.75 + (Math.max(here, turned) / 64) * 0.25) * plausible;
+}
+
 /** The start position must fit this well, in the order that is claimed right, before anything is said. */
 const START_FIT = 0.7;
 /** ...and this much better than in the other order, so neither a messy board nor a half-played game decides. */
