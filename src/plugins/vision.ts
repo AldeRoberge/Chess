@@ -336,7 +336,7 @@ const fuse: NodeSpec<FuseState> = {
   process(inputs, { now, params, state, setFidelity, span }) {
     const obs = (["o1", "o2", "o3", "o4"].map((k) => inputs[k]).filter(Boolean)) as SquareObs[];
     // timestamp with graph time: cameras that stop producing frames age out and drop from the vote
-    const live = obs.map((o) => ({ ...o, t: o.t || now }));
+    const live = state.fusion.orient(obs.map((o) => ({ ...o, t: o.t || now })));
     state.board = span("fuse", () => state.fusion.fuse(live, now, Number(params.staleMs), Number(params.handMotion)));
     state.obs = live; state.handMotion = Number(params.handMotion);
     bus.cameras = live.map((o) => ({ id: o.cam, online: true, quality: o.quality, reliability: state.fusion.reliability.get(o.cam) ?? 0.8 }));
@@ -358,7 +358,7 @@ const fuse: NodeSpec<FuseState> = {
     });
   },
   preview: (ctx, w, h, s) => withDetail(ctx, w, h, [120, 120], (pw, ph) => drawBoard(ctx, pw, ph, s.board, { presence: true }), () => [
-    ["cameras", String(s.board?.cams ?? 0)], ["fidelity", s.board ? brief(s.board.fidelity) : "—"], ["hand over", brief(s.board?.handOver)], ["settled", brief(s.board?.settled)],
+    ["cameras", String(s.board?.cams ?? 0)], ...Array.from(s.fusion.turned).filter(([, t]) => t).map(([cam]): DetailRow => [`cam ${cam}`, "turned 180° (white was on top)"]), ["fidelity", s.board ? brief(s.board.fidelity) : "—"], ["hand over", brief(s.board?.handOver)], ["settled", brief(s.board?.settled)],
     ["pieces seen", s.board ? String(Array.from(s.board.occ).filter((v) => v > 0.5).length) : "—"],
     ...(bus.cameras ?? []).map((c): DetailRow => [`cam ${c.id}`, `q ${brief(c.quality)} · rel ${brief(c.reliability)}`])]),
 };
