@@ -4,6 +4,7 @@ import { bus, pushLog } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import type { NodeSpec, Plugin } from "../core/types";
 import { PositionTracker, type TrackResult } from "../chess/tracker";
+import { explainMismatch, type Mismatch } from "../chess/mismatch";
 import { clearSavedGame, loadGame, newGameGeneration, replay, saveGame } from "../chess/savedGame";
 import { createEngine, type Engine } from "../chess/engine";
 import type { DirectorOut } from "../experience/director";
@@ -13,6 +14,17 @@ import { chesscomNode } from "./chesscom";
 import { drawBoard, withDetail } from "./shared";
 import { boardHover, pct, tone, visualSize } from "./hover";
 import type { TipRow } from "../ui/tooltip";
+
+/** Height (in preview units) of the strip under the tracker's board that says in words what it sees. */
+const FOOT_H = 54;
+const BASE: [number, number] = [140, 140 + FOOT_H];
+
+/** The plain-English difference between what the detector sees and what the game expects, when they disagree. */
+function mismatchOf(r: TrackResult | null, b: BoardBelief | null): Mismatch | null {
+  if (!r || !r.diff.length || !b || (r.status !== "illegal" && r.status !== "unclear")) return null;
+  const m = explainMismatch(r.fen, r.diff, b);
+  return m.items.length ? m : null;
+}
 
 interface TrackState { tracker: PositionTracker; res: TrackResult | null; board: BoardBelief | null; prevPhase: string; gen: number; resumed: ExperienceEvent | null }
 
@@ -46,7 +58,7 @@ const track: NodeSpec<TrackState> = {
     { id: "promotion", kind: "select", label: "Promote to", options: ["q", "r", "b", "n"], value: "q" },
     { id: "resync", kind: "bool", label: "Reset to start position", value: false, action: true },
   ],
-  previewSize: [140, 140],
+  previewSize: BASE,
   init: () => { const tracker = new PositionTracker(); return { tracker, res: null, board: null, prevPhase: "idle", gen: newGameGeneration(), resumed: resumeSaved(tracker) }; },
   process({ board, director, control }, { params, state, setFidelity, span, now }) {
     if (calibrationRuntime.active) return { game: state.res, events: [] };
@@ -74,13 +86,14 @@ const track: NodeSpec<TrackState> = {
     return { game: state.res, events: state.res.events };
   },
   hover(p, w, h, s) {
-    const v = visualSize(w, h, [140, 140]), r = s.res;
+    const v = visualSize(w, h, BASE), r = s.res, foot = v.h * (FOOT_H / BASE[1]);
     if (p.x > v.w || p.y > v.h) return null;
-    if (p.y >= v.h - 20) {
+    if (p.y >= v.h - foot) {
       if (!r) return { title: "Move Tracker", tag: "no position yet", body: "Waiting for a board reading." };
+      const mm = mismatchOf(r, s.board);
       return {
         title: `ply ${r.ply}`, tag: "Move Tracker", color: r.status === "illegal" ? "#ff5a6e" : "#35e0b4",
-        body: r.last ? `Last move ${r.last.san}. ${r.over ? "The game is over." : r.turn === "w" ? "White to move." : "Black to move."}` : "No move recorded yet.",
+        body: mm ? `${mm.items.slice(0, 4).map((x) => x.sentence).join(" ")}${mm.items.length > 4 ? ` …and ${mm.items.length - 4} more squares.` : ""} ${mm.hint}` : r.last ? `Last move ${r.last.san}. ${r.over ? "The game is over." : r.turn === "w" ? "White to move." : "Black to move."}` : "No move recorded yet.",
         rows: [
           { label: "Status", value: r.status, tone: r.status === "illegal" ? "bad" : r.status === "synced" ? "ok" : "warn" },
           { label: "Fidelity", value: pct(r.fidelity), bar: r.fidelity, tone: tone(r.fidelity) },
@@ -92,7 +105,7 @@ const track: NodeSpec<TrackState> = {
       };
     }
     const legal = (sq: number): { san: string; to: string }[] => { try { return r ? (new Chess(r.fen).moves({ square: sqName(sq) as any, verbose: true }) as any[]) : []; } catch { return []; } };
-    return boardHover(p, v.w, v.h - 20, s.board, {
+    return boardHover(p, v.w, v.h - foot, s.board, {
       title: "Move Tracker", fen: r?.fen, flagged: r?.diff, flagLabel: "Mismatch vs. expected",
       also: (sq) => legal(sq).map((m) => sqIndex(m.to)),
       extra: (sq): TipRow[] => {
@@ -106,15 +119,29 @@ const track: NodeSpec<TrackState> = {
     });
   },
   preview(ctx, w, h, s) {
-    withDetail(ctx, w, h, [140, 140], (pw, ph) => {
-      drawBoard(ctx, pw, ph - 20, s.board, { diff: s.res?.diff, fen: s.res?.fen });
-      ctx.fillStyle = "#04101c"; ctx.fillRect(0, ph - 20, pw, 20);
-      ctx.fillStyle = s.res?.status === "illegal" ? "#ff5a6e" : "#b9c6e4"; ctx.font = `500 12px "Chakra Petch",system-ui,sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.fillText(`${s.res?.status ?? "—"}  ${s.res?.history.slice(-1)[0] ?? ""}  ply ${s.res?.ply ?? 0}`, 4, ph - 5);
+    withDetail(ctx, w, h, BASE, (pw, ph) => {
+      const res = s.res, mm = mismatchOf(res, s.board), top = ph - FOOT_H;
+      drawBoard(ctx, pw, top, s.board, { diff: res?.diff, fen: res?.fen });
+      ctx.fillStyle = "#04101c"; ctx.fillRect(0, top, pw, FOOT_H);
+      ctx.font = `600 9px "Chakra Petch",system-ui,sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      const line = (t: string, y: number, color: string) => { let x = t; while (x.length > 4 && ctx.measureText(x).width > pw - 6) x = x.slice(0, -2); ctx.fillStyle = color; ctx.fillText(x === t ? t : x.trimEnd() + "…", 4, y); };
+      if (mm) {
+        const bad = res?.status === "illegal";
+        line(bad ? "Doesn't match the game" : "Can't tell what changed", top + 11, bad ? "#ff5a6e" : "#ffcf5a");
+        line(mm.summary, top + 22, "#ffcf5a");
+        const shown = mm.items.length > 2 ? 1 : mm.items.length;
+        mm.items.slice(0, shown).forEach((it, i) => line(it.short, top + 33 + i * 11, "#dfe8f7"));
+        if (mm.items.length > shown) line(`+${mm.items.length - shown} more squares`, top + 33 + shown * 11, "#8fa0a8");
+      } else {
+        const st = res?.status ?? "—";
+        line(st === "synced" ? "Matches the game" : st === "moved" ? `Move seen: ${res?.history.slice(-1)[0] ?? ""}` : st === "lifted" ? `Piece in hand: ${res?.lifted ?? ""}` : st === "—" ? "Waiting for a reading" : st, top + 11, st === "illegal" ? "#ff5a6e" : "#b9c6e4");
+        line(`ply ${res?.ply ?? 0}${res ? ` · ${res.turn === "w" ? "White" : "Black"} to move` : ""}`, top + 22, "#8fa0a8");
+      }
     }, () => {
       const r = s.res, hist = r?.history ?? [], pairs: string[] = [];
       for (let i = 0; i < hist.length; i += 2) pairs.push(`${i / 2 + 1}. ${hist[i]}${hist[i + 1] ? " " + hist[i + 1] : ""}`);
-      return [["status", r?.status ?? "—", r?.status === "illegal" ? "#ff5a6e" : undefined], ["ply", String(r?.ply ?? 0)], ["fidelity", r ? r.fidelity.toFixed(2) : "—"], ["over", r?.over ? "yes" : "no"],
+      const mm = mismatchOf(r ?? null, s.board);
+      return [...(mm ? [["what it sees", mm.summary, "#ff5a6e"] as [string, string, string], ...mm.items.slice(0, 8).map((x, i): [string, string] => [i === 0 ? "squares" : "", x.short]), ...(mm.hint ? [["hint", mm.hint] as [string, string]] : [])] : []), ["status", r?.status ?? "—", r?.status === "illegal" ? "#ff5a6e" : undefined], ["ply", String(r?.ply ?? 0)], ["fidelity", r ? r.fidelity.toFixed(2) : "—"], ["over", r?.over ? "yes" : "no"],
         ["changed squares", String(r?.diff?.length ?? 0)], ["fen", r?.fen ?? "—"], ...pairs.slice(-12).map((p, i): [string, string] => [i === 0 ? "moves" : "", p])];
     });
   },
