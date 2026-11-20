@@ -4,10 +4,21 @@ import { analyzePosition, terminalPosition } from "../../chess/analysis";
 import type { AssistantHost } from "../host";
 import { obj, str, type ToolGroup } from "./shared";
 
+function trackedPosition() {
+  const tracked = bus.game;
+  if (!tracked) return null;
+  const current = new Chess(tracked.fen), replay = new Chess();
+  try {
+    for (const move of tracked.history) replay.move(move);
+    if (replay.fen() === current.fen()) return replay;
+  } catch { /* A custom starting FEN cannot be replayed from the standard start. */ }
+  return current;
+}
+
 export function gameContext(h: AssistantHost) {
   const tracked = bus.game;
   if (!tracked) return { available: false, note: "No tracked game yet. The virtual table is separate; request source=virtual explicitly to inspect it." };
-  let game: Chess; try { game = new Chess(tracked.fen); } catch { return { available: false, note: "The tracker has not published a valid FEN yet." }; }
+  let game: Chess; try { game = trackedPosition()!; } catch { return { available: false, note: "The tracker has not published a valid FEN yet." }; }
   const material = { white: 0, black: 0 }, values: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
   for (const p of game.board().flat()) if (p) material[p.color === "w" ? "white" : "black"] += values[p.type];
   return {
@@ -43,10 +54,13 @@ export const chessTools: ToolGroup = h => [
       if (source === "tracked" && !bus.game) throw new Error("No tracked game yet. Do not substitute the virtual table silently.");
       const fen = source === "tracked" ? bus.game!.fen : source === "virtual" ? h.table.fen() : a.fen;
       if (typeof fen !== "string" || !fen.trim()) throw new Error("A valid FEN is required.");
+      const confidence = source === "tracked" ? bus.game?.fidelity : null;
+      const terminal = source === "tracked" ? terminalPosition(trackedPosition()!) : null;
+      if (terminal) return { fen, source, engine: "rules", terminal, score: null, best_move: null, principal_variation: [], position_changed: false, confidence };
       const result = await analyzePosition(fen, { signal: ctx.signal, movetime_ms: a.movetime_ms });
       const current = source === "tracked" ? bus.game?.fen : source === "virtual" ? h.table.fen() : fen;
       return { ...result, source, position_changed: current !== fen, current_fen: current ?? null,
-        confidence: source === "tracked" ? bus.game?.fidelity : null,
+        confidence,
         score_perspective: "White; 100 centipawns = one pawn. This is a search estimate, not a guaranteed result.",
         history_note: "FEN-only analysis does not reconstruct repetition history.", };
     } },

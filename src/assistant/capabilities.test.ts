@@ -7,6 +7,7 @@ import { readUI, appMap } from "./uiContext";
 import { gameContext } from "./tools/chess";
 import { ChatSession } from "./session";
 import { createAppHost } from "./appHost";
+import { snapshot } from "./snapshot";
 import * as analysis from "../chess/analysis";
 
 const ctx = () => ({ signal: new AbortController().signal, confirm: vi.fn(async () => true), choose: vi.fn(async () => "") });
@@ -74,14 +75,33 @@ describe("UI and feature awareness", () => {
     const h = fakeHost({ ui: () => ({ mode: "nodes", focus: null, dialogs: [], controls: [], text: ["Camera offline"] }) }), map = appMap(h.host);
     expect(map.features.some(f => f.path === "Settings / Board")).toBe(true); expect(map.node_types.some(n => n.type === "game.tracker")).toBe(true);
     expect(map.parameter_help.some(p => p.path.endsWith("game.tracker.minConf"))).toBe(true);
+    expect(map.settings_controls.some(p => p.path.endsWith("Computer strength"))).toBe(true);
     const found: any = tool(h, "get_app_map").run({ query: "duplicate" }, ctx()); expect(found.items[0].path).toBe("Workflow / nodes");
     expect(tool(h, "get_ui").run({ query: "offline" }, ctx())).toHaveProperty("text.items", ["Camera offline"]);
     expect(() => tool(h, "app_action").run({ action: "reset_everything" }, ctx())).toThrow(/Unknown/);
     expect(() => tool(h, "set_view_settings").run({ display: { flip: true, fake: false } }, ctx())).toThrow(/Invalid display/);
   });
+  it("includes inactive panel controls and honors explicit secret parameter metadata", () => {
+    const detached = document.createElement("section"); detached.className = "panel"; detached.innerHTML = '<button data-tip="Flip board">Flip</button>';
+    expect(readUI(document, [detached]).controls).toContainEqual(expect.objectContaining({ label: "Flip board", visible: false }));
+    const h = fakeHost(); h.host.registry.register({ type: "test.private", title: "Private", category: "Source", inputs: [], outputs: [], params: [{ id: "credential", kind: "text", label: "Credential", value: "", secret: true }], process() {} });
+    const n = h.graph.addNode("test.private", 0, 0, { credential: "hidden-value" }); h.select([n.id]);
+    expect(JSON.stringify(snapshot(h.host))).not.toContain("hidden-value");
+    expect(JSON.stringify(tool(h, "get_workflow").run({ query: n.id }, ctx()))).not.toContain("hidden-value");
+    expect(JSON.stringify(tool(h, "get_node").run({ id: n.id }, ctx()))).not.toContain("hidden-value");
+    expect(() => tool(h, "set_node_param").run({ node_id: n.id, param: "credential", value: "leak" }, ctx())).toThrow(/Secrets/);
+  });
 });
 
 describe("game awareness and fresh per-step state", () => {
+  it("uses accepted history to recognize a repetition draw that FEN alone cannot describe", async () => {
+    const game = new Chess(), moves = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"]; for (const move of moves) game.move(move);
+    bus.game = { fen: game.fen(), turn: "w", ply: 8, over: true, last: null, history: moves, fidelity: 1 } as any;
+    const h = fakeHost(), analyze = vi.spyOn(analysis, "analyzePosition");
+    expect(gameContext(h.host)).toHaveProperty("result", "Draw by threefold repetition");
+    expect(await tool(h, "analyze_game").run({}, ctx())).toMatchObject({ terminal: "Draw by threefold repetition", engine: "rules", best_move: null });
+    expect(analyze).not.toHaveBeenCalled();
+  });
   it("distinguishes last mover from side to move without inventing a person", () => {
     const game = new Chess(); game.move("e4"); game.move("e5");
     bus.game = { fen: game.fen(), turn: "w", ply: 2, over: false, last: { color: "b", san: "e5" }, history: ["e4", "e5"], fidelity: 0.9, moveFidelity: 0.95 } as any;

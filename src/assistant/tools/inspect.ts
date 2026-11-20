@@ -4,7 +4,7 @@ import { validateSetup } from "../../setup/config";
 import { SCENARIOS } from "../../sim/scenarios";
 import { catalog } from "../../workflows/ai";
 import { PARAM_DOCS } from "../../ui/paramDocs";
-import { redact } from "../host";
+import { publicNodeParams, redact } from "../host";
 import { problems, snapshot } from "../snapshot";
 import { SECRET, obj, str, type ToolGroup } from "./shared";
 
@@ -20,7 +20,7 @@ export const paramInfo = (reg: Registry, type: string) => (reg.get(type)?.params
 
 /** Read-only tools: nothing here changes the app. */
 export const inspectTools: ToolGroup = (h) => [
-  { name: "think", risk: "read", label: { doing: "Thinking", done: "Thought it through" }, description: "Write down your plan or reasoning before a multi-step task. Shown to the person as your thinking. Has no effect.",
+  { name: "think", risk: "read", label: { doing: "Planning", done: "Planned the next actions" }, description: "State a short action plan before a multi-step task: what you will inspect and change. Shown to the person. Do not include private internal reasoning. Has no effect.",
     parameters: obj({ thought: str("Short plan: what you know, what you will check or change, in what order.") }, ["thought"]), run: () => ({ ok: true }) },
 
   { name: "get_state", risk: "read", label: { doing: "Looking at the app", done: "Looked at the app" }, description: "Fresh snapshot of the running app: page, selection, setup, problems, workflow summary, tracked game, table, cameras, director, scene, recent events, commentary. Use `sections` to get only some keys.",
@@ -52,7 +52,7 @@ export const inspectTools: ToolGroup = (h) => [
       const g = h.graph(), n = g.nodes.find((x) => x.id === a.id);
       if (!n) throw new Error(`No node "${a.id}". Use get_state to see the workflow.`);
       const spec = h.registry.get(n.type);
-      return { id: n.id, type: n.type, title: spec?.title, description: spec?.desc, inputs: spec?.inputs, outputs: spec?.outputs, bypass: !!n.bypass, params: redact(n.params), allowed: paramInfo(h.registry, n.type), wires: g.edges.filter(e => e.from.node === n.id || e.to.node === n.id), wires_in: g.edges.filter((e) => e.to.node === n.id).map((e) => `${e.from.node}.${e.from.port} -> ${e.to.port}`), wires_out: g.edges.filter((e) => e.from.node === n.id).map((e) => `${e.from.port} -> ${e.to.node}.${e.to.port}`), error: h.nodeErrors().find((e) => e.node === n.id) ?? null };
+      return { id: n.id, type: n.type, title: spec?.title, description: spec?.desc, inputs: spec?.inputs, outputs: spec?.outputs, bypass: !!n.bypass, params: publicNodeParams(h.registry, n), allowed: paramInfo(h.registry, n.type), wires: g.edges.filter(e => e.from.node === n.id || e.to.node === n.id), wires_in: g.edges.filter((e) => e.to.node === n.id).map((e) => `${e.from.node}.${e.from.port} -> ${e.to.port}`), wires_out: g.edges.filter((e) => e.from.node === n.id).map((e) => `${e.from.port} -> ${e.to.node}.${e.to.port}`), error: h.nodeErrors().find((e) => e.node === n.id) ?? null };
     } },
 
   { name: "list_scenarios", risk: "read", label: { doing: "Listing demo games", done: "Listed demo games" }, description: "Scripted demo games that can be played without a camera (use update_setup demo.scenario / demo.autoplay).",

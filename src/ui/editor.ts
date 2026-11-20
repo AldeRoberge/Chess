@@ -32,7 +32,9 @@ interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HT
 export class NodeEditor {
   root = h("div", "ne");
   private world = h("div", "ne-world");
-  private resetButton = h("button", "ne-reset-view", "Reset view");
+  private resetButton = withIcon(h("button", "ne-reset-view", "Reset view"), "target", 16);
+  private resetControls = h("div", "ne-reset-controls");
+  private resetDismissed = false;
   private svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   private views = new Map<string, NodeView>();
   private view: View = { x: 40, y: 30, k: 0.85 };
@@ -83,7 +85,15 @@ export class NodeEditor {
     this.resetButton.addEventListener("pointerdown", e => e.stopPropagation());
     this.resetButton.addEventListener("dblclick", e => e.stopPropagation());
     this.resetButton.addEventListener("click", () => this.resetView());
-    this.root.append(this.resetButton);
+    const closeReset = withIcon(h("button", "ne-reset-close"), "x", 14);
+    closeReset.type = "button";
+    closeReset.setAttribute("aria-label", "Hide reset view");
+    closeReset.title = "Hide until you return to the graph";
+    closeReset.addEventListener("click", () => { this.resetDismissed = true; this.updateResetButton(); });
+    this.resetControls.addEventListener("pointerdown", e => e.stopPropagation());
+    this.resetControls.addEventListener("dblclick", e => e.stopPropagation());
+    this.resetControls.append(this.resetButton, closeReset);
+    this.root.append(this.resetControls);
     this.palette = h("div", "ne-palette"); this.palette.hidden = true; this.root.append(this.palette);
     this.bindInteraction();
     this.rebuild();
@@ -480,11 +490,13 @@ export class NodeEditor {
   private updateResetButton() {
     const width = this.root.clientWidth, height = this.root.clientHeight;
     const { x, y, k } = this.view;
-    this.resetButton.hidden = !width || !height || !this.graph.nodes.size || [...this.graph.nodes.values()].some(n => {
+    const inBounds = !this.graph.nodes.size || [...this.graph.nodes.values()].some(n => {
       const el = this.views.get(n.id)?.el;
       const left = n.x * k + x, top = n.y * k + y;
       return left < width && top < height && left + (el?.offsetWidth || n.w || NODE_W) * k > 0 && top + (el?.offsetHeight || n.h || NODE_H) * k > 0;
     });
+    if (width && height && inBounds) this.resetDismissed = false;
+    this.resetButton.hidden = this.resetControls.hidden = !width || !height || inBounds || this.resetDismissed;
   }
 
   private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; this.updateResetButton(); }

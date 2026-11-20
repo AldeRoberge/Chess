@@ -5,6 +5,7 @@ import { Graph } from "./core/graph";
 import { createRegistry } from "./plugins";
 import { initialSceneState } from "./scene/types";
 import { virtualTable } from "./sim/virtualTable";
+import { WORKFLOWS } from "./workflows";
 
 vi.mock("./world/view", () => ({ WorldView: class { showFrusta = true; showProjection = true; renders = 0; constructor() {} setMapping() {} render() { this.renders++; } } }));
 vi.mock("./setup/devices", () => ({ listCameras: vi.fn(async () => []), openCamera: vi.fn(async () => ({ getTracks: () => [] })) }));
@@ -291,7 +292,7 @@ describe("workflows", () => {
   it("the Workflows button loads a demo into the live patch, and Ctrl+Z brings the old one back", () => {
     finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
     (document.getElementById("workflows") as HTMLButtonElement).click();
-    expect(document.querySelectorAll(".wf-row")).toHaveLength(7);
+    expect(document.querySelectorAll(".wf-row")).toHaveLength(WORKFLOWS.length);
     (document.querySelector(".wf-row button") as HTMLButtonElement).click();
     expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);
@@ -396,7 +397,7 @@ it("Ctrl+F searches the workflow and Enter opens the assistant with the query an
   expect(document.body.classList.contains("simple")).toBe(false);
   expect(app.editor.selection()).toHaveLength(1); expect(root.querySelector(".search-match")).toBeTruthy();
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-  expect(app.route()).toEqual({ page: "assistant" }); expect(finder.hidden).toBe(true);
+  expect(app.route()).toEqual({ page: "assistant" }); expect(finder.hidden).toBe(false);
   expect(submit).toHaveBeenCalledOnce(); expect(submit.mock.calls[0][0]).toContain("vision.boardReader");
   expect(submit.mock.calls[0][0]).toContain("Board Reader (Workflow");
 });

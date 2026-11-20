@@ -1,4 +1,5 @@
 import type { GraphJSON } from "../core/types";
+import { buildCameraBot } from "./cameraBot";
 import type { SetupConfig } from "../setup/config";
 import basic from "./basic.workflow.json";
 import botplay from "./botplay.workflow.json";
@@ -23,6 +24,7 @@ export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
   { id: "pieceless", ...(pieceless as unknown as WorkflowFile) },
   { id: "botplay", ...(botplay as unknown as WorkflowFile) },
   { id: "humanvsbot", ...(humanvsbot as unknown as WorkflowFile) },
+  { id: "camera-bot", app: "chess-experience", kind: "workflow", name: "Simple cameras → bot", description: "Every camera from Settings feeds one on-screen board processor. Play against Stockfish and move its indicated piece on your physical board. Uses saved board corners; no projector or people tracking.", ...buildCameraBot(null) },
 ];
 
 /**
@@ -30,6 +32,7 @@ export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
  * the first keeps its source and board reader, the second is a copy of them (own device and corners) feeding the fuser and people tracker.
  */
 export function withLiveCameras(w: WorkflowFile, saved: SetupConfig | null): { graph: GraphJSON; setup: SetupConfig | null } {
+  if (w.graph.nodes.some(n => n.type === "game.cameraBot")) return buildCameraBot(saved);
   const cams = (saved?.cameras ?? []).filter((c) => c.kind === "webcam" && c.online).slice(0, 2);
   const src = w.graph.nodes.find((n) => n.type === "source.webcam"), rd = src && w.graph.nodes.find((n) => n.type === "vision.boardReader" && w.graph.edges.some((e) => e.from.node === src.id && e.to.node === n.id));
   if (cams.length < 2 || !src || !rd || w.graph.nodes.filter((n) => n.type === "source.webcam").length !== 1) return { graph: w.graph, setup: w.setup };

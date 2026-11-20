@@ -1,7 +1,7 @@
 import { bus } from "../core/bus";
 import type { ExperienceEvent } from "../core/events";
 import { validateSetup, type Issue } from "../setup/config";
-import { redact, type AssistantHost } from "./host";
+import { publicNodeParams, redact, type AssistantHost } from "./host";
 import { APP_FEATURES } from "./uiContext";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -26,7 +26,7 @@ export function snapshot(h: AssistantHost, now = h.now()) {
     page: route.page === "settings" ? `settings (${route.step ?? "?"})` : route.page,
     setup: h.setup() ? redact(h.setup()) : "not completed yet",
     problems: problems(h),
-    selected_nodes: g.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, type: n.type, bypass: !!n.bypass, params: redact(n.params) })),
+    selected_nodes: g.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, type: n.type, bypass: !!n.bypass, params: publicNodeParams(h.registry, n) })),
     workflow: { nodes: g.nodes.length, wires: g.edges.length, groups: g.groups?.length ?? 0, by_type: byType, bypassed: g.nodes.filter((n) => n.bypass).map((n) => n.id),
       node_index: g.nodes.slice(0, 80).map(n => ({ id: n.id, type: n.type, title: h.registry.get(n.type)?.title })), index_truncated: g.nodes.length > 80, inspect: "get_workflow for ports, parameters, connections and more nodes" },
     game: game ? { fen: game.fen, turn: game.turn, ply: game.ply, status: game.status, over: game.over, last_move: game.last,

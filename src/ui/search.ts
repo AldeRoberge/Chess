@@ -124,7 +124,7 @@ export class AppSearch {
   private ask() {
     const query = this.input.value.trim(); if (!query) { this.input.focus(); return; }
     const hits = matchSearch(this.entries, query), scope = this.scope.value as SearchScope;
-    this.close(); this.deps.ask(query, scope, hits);
+    this.deps.ask(query, scope, hits);
   }
 }
 

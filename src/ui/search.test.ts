@@ -37,7 +37,7 @@ describe("app search", () => {
     input.value = "camera alignment"; key(input, "Enter");
     expect(ask).toHaveBeenCalledOnce(); expect(ask.mock.calls[0][0]).toBe("camera alignment");
     expect(ask.mock.calls[0][1]).toBe("everywhere"); expect(ask.mock.calls[0][2]).toHaveLength(1);
-    expect(search.root.hidden).toBe(true);
+    expect(search.root.hidden).toBe(false);
   });
   it("does not submit composition Enter or let app shortcuts process search navigation", () => {
     const { search, input, ask } = make(); search.open(); input.value = "board";

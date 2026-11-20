@@ -12,12 +12,27 @@ interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElemen
 /** Capture sizes. The picture is kept at this size (or the camera's own size when that is smaller). The board reader averages it down to 480×360 to sample the squares. */
 const RESOLUTIONS: Record<string, [number, number]> = { "640x480": [640, 480], "960x720": [960, 720], "1280x960": [1280, 960] };
 
+/** The Device dropdown's choices, edited in place: the editor rebuilds the list from these arrays each time it opens. */
+const deviceOptions: string[] = [""], deviceLabels: string[] = ["Default camera"];
+async function refreshDevices() {
+  try {
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput" && d.deviceId);
+    deviceOptions.length = 0; deviceLabels.length = 0;
+    deviceOptions.push(""); deviceLabels.push("Default camera");
+    cams.forEach((d, i) => { deviceOptions.push(d.deviceId); deviceLabels.push(d.label || `Camera ${i + 1}`); });
+  } catch { /* no camera API: only the default stays */ }
+}
+if (typeof navigator !== "undefined" && typeof navigator.mediaDevices?.enumerateDevices === "function") {
+  void refreshDevices();
+  navigator.mediaDevices.addEventListener?.("devicechange", () => void refreshDevices());
+}
+
 const webcam: NodeSpec<WebcamState> = {
   type: "source.webcam", title: "Webcam", category: "Source",
   inputs: [], outputs: [{ id: "frame", type: "frame" }],
   params: [
     { id: "online", kind: "bool", label: "Online", value: true },
-    { id: "device", kind: "text", label: "Device", value: "" },
+    { id: "device", kind: "select", label: "Device", options: deviceOptions, labels: deviceLabels, value: "" },
     { id: "channel", kind: "select", label: "Channel", options: ["luma", "red", "green", "blue"], value: "luma" },
     { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 4 },
     { id: "resolution", kind: "select", label: "Capture resolution", options: Object.keys(RESOLUTIONS), value: "1280x960" },
@@ -51,6 +66,7 @@ const webcam: NodeSpec<WebcamState> = {
           const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
           const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: capW, height: capH } });
           const v = document.createElement("video"); v.srcObject = stream; v.muted = true; await v.play();
+          void refreshDevices(); // names are only known once the camera is allowed
           state.stream = stream; state.video = v; state.res = String(params.resolution); state.canvas = document.createElement("canvas"); state.err = "";
           stream.getVideoTracks()[0].onended = () => stop(); // unplugged -> camera simply goes offline
         } catch (e) { state.err = String(e); }

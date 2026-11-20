@@ -1,6 +1,6 @@
 import { portsCompatible, type GraphJSON, type NodeInstance } from "../../core/types";
 import { clamp } from "../../workflows/ai";
-import { redact, SECRET, type AssistantHost } from "../host";
+import { publicNodeParams, SECRET, type AssistantHost } from "../host";
 import { problems } from "../snapshot";
 import { obj, str, type ToolGroup } from "./shared";
 
@@ -33,7 +33,7 @@ export const graphTools: ToolGroup = h => [
       const offset = Math.max(0, Math.floor(Number(a.offset) || 0)), limit = Math.max(1, Math.min(20, Math.floor(Number(a.limit) || 10)));
       const page = found.slice(offset, offset + limit), set = new Set(page.map(n => n.id));
       return { total: found.length, next_offset: offset + page.length < found.length ? offset + page.length : null,
-        nodes: page.map(n => { const spec = h.registry.get(n.type); return { ...n, params: redact(n.params), title: spec?.title, inputs: spec?.inputs, outputs: spec?.outputs }; }),
+        nodes: page.map(n => { const spec = h.registry.get(n.type); return { ...n, params: publicNodeParams(h.registry, n), title: spec?.title, inputs: spec?.inputs, outputs: spec?.outputs }; }),
         wires: g.edges.filter(e => set.has(e.from.node) || set.has(e.to.node)), groups: g.groups ?? [], selected: h.selection() };
     } },
   { name: "add_node", risk: "write", undoable: true, description: "Add one node of a registered type. Parameter values are validated. Does not connect it automatically. Undoable; existing cameras and game state are kept.",
@@ -49,12 +49,12 @@ export const graphTools: ToolGroup = h => [
         const v = clamp(p, value); if (v === undefined) throw new Error(`Invalid value for ${key}.`); params[key] = v;
       }
       const n = { id: uid(g, "n"), type: spec.type, x: finite(a.x, 0), y: finite(a.y, 0), params }; g.nodes.push(n);
-      return { created: { ...n, params: redact(n.params) }, ...commit(h, g) };
+      return { created: { ...n, params: publicNodeParams(h.registry, n) }, ...commit(h, g) };
     } },
   { name: "duplicate_nodes", risk: "write", undoable: true, description: "Duplicate the specified or selected nodes with the same settings, offset by 40px. Optionally copy wires BETWEEN the duplicated nodes; never steals existing input wires. Secrets remain internal and are not returned.",
     parameters: obj({ node_ids: idsSchema, include_internal_wires: { type: "boolean" }, dx: number("offset x, default 40"), dy: number("offset y, default 40") }),
     run: a => {
-      const g = clone(h), selected = ids(h, a, g), originals = [...g.edges], mapping: Record<string, string> = {};
+      const g = clone(h), selected = ids(h, a, g), originals = [...g.edges], mapping: Record<string, string> = Object.create(null);
       const dx = finite(a.dx, 40), dy = finite(a.dy, 40);
       for (const id of selected) { const n = node(g, id), copy = { ...n, params: { ...n.params }, id: uid(g, "n"), x: n.x + dx, y: n.y + dy }; mapping[id] = copy.id; g.nodes.push(copy); }
       if (a.include_internal_wires) for (const e of originals) if (mapping[e.from.node] && mapping[e.to.node]) g.edges.push({ id: uid(g, "e"), from: { node: mapping[e.from.node], port: e.from.port }, to: { node: mapping[e.to.node], port: e.to.port } });

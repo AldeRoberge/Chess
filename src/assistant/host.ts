@@ -1,4 +1,4 @@
-import type { GraphJSON, Registry } from "../core/types";
+import type { GraphJSON, NodeInstance, Registry } from "../core/types";
 import type { SetupConfig } from "../setup/config";
 import type { Route } from "../ui/route";
 
@@ -46,4 +46,11 @@ export function redact<T>(v: T): T {
   if (Array.isArray(v)) return v.map(redact) as T;
   if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, SECRET.test(k) ? (x ? "(set)" : "(empty)") : redact(x)])) as T;
   return v;
+}
+
+/** Respect explicit secret fields too, even if their ids do not contain "key". */
+export function publicNodeParams(registry: Registry, node: NodeInstance) {
+  const params = redact(node.params);
+  for (const p of registry.get(node.type)?.params ?? []) if (p.kind === "text" && p.secret && p.id in params) params[p.id] = node.params[p.id] ? "(set)" : "(empty)";
+  return params;
 }

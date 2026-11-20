@@ -1,4 +1,5 @@
 import { Registry } from "../core/types";
+import { cameraGamePlugin } from "./cameraGame";
 import { experiencePlugin } from "./experience";
 import { gamePlugin } from "./game";
 import { narrationPlugin } from "./narration";
@@ -14,5 +15,5 @@ import { fumblerPlugin } from "./fumbler";
 
 /** Add a plugin = add one line here (or call registry.use() at runtime from your own module). */
 export function createRegistry() {
-  return new Registry().use(sourcesPlugin).use(visionPlugin).use(gamePlugin).use(experiencePlugin).use(narrationPlugin).use(scenePlugin).use(trackingPlugin).use(clockPlugin).use(worldPlugin).use(fxPlugin).use(projectedPlugin).use(fumblerPlugin);
+  return new Registry().use(sourcesPlugin).use(visionPlugin).use(gamePlugin).use(experiencePlugin).use(narrationPlugin).use(scenePlugin).use(trackingPlugin).use(clockPlugin).use(worldPlugin).use(fxPlugin).use(projectedPlugin).use(fumblerPlugin).use(cameraGamePlugin);
 }

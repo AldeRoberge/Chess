@@ -83,7 +83,9 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne{position:absolute;inset:0;overflow:hidden;background-color:var(--ink-0);background-image:radial-gradient(var(--ink-3) 1px,transparent 1px);background-size:24px 24px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .ne input[type=text],.ne select{user-select:text;-webkit-user-select:text}
 .ne-world{position:absolute;left:0;top:0;transform-origin:0 0}
-.ne-reset-view{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);z-index:8;box-shadow:0 4px 18px var(--shadow);cursor:pointer}
+.ne-reset-controls{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);z-index:8;display:flex;align-items:center;gap:4px;box-shadow:0 4px 18px var(--shadow)}
+.ne-reset-controls[hidden]{display:none}
+.ne-reset-view,.ne-reset-close{cursor:pointer}
 /* while the map moves: one compositor layer, no hover hit-testing; dropped afterwards so zoomed text re-rasterises crisp */
 .ne.moving .ne-world{will-change:transform}.ne.moving .ne-world>*{pointer-events:none}.ne.moving{cursor:grabbing}
 .ne-wires{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
