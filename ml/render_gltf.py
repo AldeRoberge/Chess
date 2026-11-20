@@ -15,6 +15,30 @@ from PIL import Image
 
 SQUARE = 0.0575
 TYPES = {'pawn':'p', 'knight':'n', 'bishop':'b', 'rook':'r', 'queen':'q', 'king':'k'}
+LIGHTING = ('daylight', 'dim', 'bright', 'warm', 'cool', 'side-lit', 'hard-shadow', 'uneven')
+
+def vary_lighting(scene, rand, index):
+    """Vary actual illumination and shadow geometry, not just final pixel gain."""
+    name = LIGHTING[index % len(LIGHTING)]
+    ambient = {'dim':0.025, 'bright':0.55, 'hard-shadow':0.035, 'uneven':0.045}.get(name, 0.16)
+    tint = (1.0,0.53,0.22) if name == 'warm' else (0.45,0.68,1.0) if name == 'cool' else (0.85,0.9,1.0)
+    background = scene.world.node_tree.nodes['Background']
+    background.inputs[0].default_value = (*tint,1)
+    background.inputs[1].default_value = ambient * rand.uniform(0.8,1.2)
+    lights = [o for o in scene.objects if o.type == 'LIGHT']
+    angle = rand.uniform(-math.pi,math.pi)
+    for i,obj in enumerate(lights):
+        a = angle + i*2.5
+        low = name in ('side-lit','hard-shadow','uneven')
+        obj.location = (math.sin(a)*0.6,math.cos(a)*0.6,rand.uniform(0.22,0.38) if low else rand.uniform(0.6,1.1))
+        obj.rotation_euler = (Vector((rand.uniform(-0.1,0.1),rand.uniform(-0.1,0.1),0))-obj.location).to_track_quat('-Z','Y').to_euler()
+        power = 5 if name == 'dim' else 45 if name == 'bright' else 24
+        obj.data.energy = power*rand.uniform(0.7,1.3)*(0.05 if i and low else 1)
+        obj.data.size = rand.uniform(0.02,0.08) if name == 'hard-shadow' else rand.uniform(0.15,0.35) if low else rand.uniform(0.4,0.9)
+        obj.data.color = tint
+    scene.view_settings.exposure = rand.uniform(-0.4,0.3)
+    return {'profile':name,'ambient':float(background.inputs[1].default_value),'exposure':scene.view_settings.exposure,
+            'lights':[{'position':list(o.location),'watts':o.data.energy,'size':o.data.size,'color':list(o.data.color)} for o in lights]}
 
 def bounds(obj):
     points = [obj.matrix_world @ p.co for p in obj.data.vertices]
@@ -125,6 +149,7 @@ def setup_scene(rand, width, height, samples):
     scene.render.engine = 'CYCLES'
     scene.cycles.samples = samples
     scene.cycles.use_denoising = True
+    scene.render.use_persistent_data = True
     # Prefer CUDA when available; CPU is a supported fallback.
     try:
         prefs = bpy.context.preferences.addons['cycles'].preferences
@@ -173,8 +198,11 @@ def main():
     p.add_argument('--samples',type=int,default=32)
     p.add_argument('--width',type=int,default=960)
     p.add_argument('--height',type=int,default=720)
+    p.add_argument('--exclude',type=Path,help='Folder whose labeled positions must not appear in this run')
+    p.add_argument('--resume',action='store_true',help='Skip complete existing frames')
     args = p.parse_args()
     args.out.mkdir(parents=True,exist_ok=True)
+    excluded = {json.loads(f.read_text())['fen'].split()[0] for f in args.exclude.glob('*.json')} if args.exclude else set()
     rand = random.Random(args.seed)
     for si, pack in enumerate(args.sets):
         bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -182,9 +210,14 @@ def main():
         scene,camera,light,dark = setup_scene(rand,args.width,args.height,args.samples)
         pieces = []
         for i in range(si,args.count,len(args.sets)):
+            stem = args.out/f'{args.seed:04d}-{i:06d}-{pack}'
+            if args.resume and all(stem.with_suffix(ext).exists() for ext in ('.png','.gray','.json')): continue
+            rand = random.Random(args.seed*100000+i)
             for obj in pieces: bpy.data.objects.remove(obj,do_unlink=True)
             pieces = []
             board = random_position(rand)
+            while board.board_fen() in excluded:
+                board = random_position(rand)
             for square,piece in board.piece_map().items():
                 key = ('w' if piece.color else 'b') + piece.symbol().lower()
                 obj = templates[key].copy(); obj.data = templates[key].data
@@ -196,11 +229,7 @@ def main():
             radius = rand.uniform(0.25,0.5)
             camera.location = (math.sin(angle)*radius,math.cos(angle)*radius,rand.uniform(0.65,0.85))
             camera.rotation_euler = (Vector((0,0,0))-camera.location).to_track_quat('-Z','Y').to_euler()
-            scene.view_settings.exposure = rand.uniform(-0.3,0.3)
-            for obj in scene.objects:
-                if obj.type == 'LIGHT':
-                    obj.data.energy = rand.uniform(12, 30)
-                    obj.data.size = rand.uniform(0.3, 0.8)
+            lighting = vary_lighting(scene,rand,i//len(args.sets))
             for mat, palettes in [(light, [(0.63,0.48,0.30),(0.72,0.70,0.64),(0.45,0.53,0.42)]), (dark, [(0.12,0.065,0.032),(0.05,0.065,0.075),(0.08,0.15,0.10)])]:
                 mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (*rand.choice(palettes), 1)
             scene.cycles.seed = args.seed*10000+i
@@ -217,12 +246,11 @@ def main():
                 if not (0 <= v.x <= 1 and 0 <= v.y <= 1 and v.z>0):
                     raise ValueError('Board outside camera frame')
                 corners.append({'x':v.x*args.width,'y':(1-v.y)*args.height})
-            stem = args.out/f'{args.seed:04d}-{i:06d}-{pack}'
             scene.render.filepath = str(stem.with_suffix('.png').resolve())
             bpy.ops.render.render(write_still=True)
             image = Image.open(stem.with_suffix('.png')).convert('L')
             stem.with_suffix('.gray').write_bytes(image.tobytes())
-            stem.with_suffix('.json').write_text(json.dumps({'fen':board.fen(),'corners':corners,'width':args.width,'height':args.height,'set':pack,'seed':args.seed,'renderer':'Blender Cycles','samples':args.samples}))
+            stem.with_suffix('.json').write_text(json.dumps({'fen':board.fen(),'corners':corners,'width':args.width,'height':args.height,'set':pack,'seed':args.seed,'renderer':'Blender Cycles','samples':args.samples,'lighting':lighting}))
             print(f'SAVED {stem}',flush=True)
     print(f'Done: {args.count} labeled textured renders in {args.out}',flush=True)
 
