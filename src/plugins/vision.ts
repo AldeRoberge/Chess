@@ -21,8 +21,9 @@ import { AlignFollower, AutoAligner, evaluate, rememberLayout, rememberedLayouts
 import { findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import { CalibrationWatch, type WatchReading } from "../vision/autoCalibrate";
 import { GOOD } from "../ui/boardGuide";
+import { recallCorners, rememberCorners } from "../vision/cornerMemory";
 
-interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; calT: number; calTries: number; lastT: number; cleaner: FrameCleaner; key: string; inflight: number; epoch: number; ready: Cleaned | null; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number }
+interface ReaderState { sampler: BoardSampler; frame: GrayFrame | null; obs: SquareObs | null; corners: string; autoDone: boolean; calT: number; calTries: number; lastT: number; cleaner: FrameCleaner; key: string; inflight: number; epoch: number; ready: Cleaned | null; raw: GrayFrame | null; analysis: GrayFrame | null; cleaned: GrayFrame | null; readOf: GrayFrame | null; follower: AlignFollower; followOf: GrayFrame | null; followWrote: string; lockTry: number; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number; camName: string }
 const AUTO_CAL_RETRY_MS = 1000, AUTO_CAL_MAX_TRIES = 8, AUTO_CAL_MIN_LUMA = 20;
 /** A move has been played: the pieces are no longer where the start-position calibration assumes. */
 const gameStarted = () => (bus.game?.ply ?? 0) > 0;
@@ -143,10 +144,16 @@ const reader: NodeSpec<ReaderState> = {
   ],
   previewSize: READER_BASE,
   frameOf: (s) => s.frame,
-  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, calT: -Infinity, calTries: 0, lastT: -1, cleaner: new FrameCleaner(), key: `reader${++readerSeq}`, inflight: 0, epoch: 0, ready: null, raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1 }),
+  init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), frame: null, obs: null, corners: "", autoDone: false, calT: -Infinity, calTries: 0, lastT: -1, cleaner: new FrameCleaner(), key: `reader${++readerSeq}`, inflight: 0, epoch: 0, ready: null, raw: null, analysis: null, cleaned: null, readOf: null, follower: new AlignFollower(), followOf: null, followWrote: "", lockTry: 0, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1, camName: "" }),
   process({ frame }, { now, params, state, setFidelity, span }) {
     const s = state.sampler;
     s.cam = String(params.cam);
+    // A camera this app has calibrated before: start from its last corners instead of the default grid (unless these were already moved by hand).
+    if (frame?.source && frame.source !== state.camName) {
+      state.camName = frame.source;
+      const saved = recallCorners(frame.source);
+      if (saved && String(params.corners) === fmtCorners(CAM_PRESETS.A) && saved !== params.corners && parseCorners(saved)) params.corners = saved;
+    }
     if (!frame) { stopCalibration(state, now); if (state.raw) cleanPool().forget(state.key); state.frame = state.raw = state.analysis = state.cleaned = state.ready = null; state.cleaner.recent = []; state.epoch++; state.inflight = 0; state.obs = null; state.follower.unlock(); setFidelity(null); return { obs: null }; }
     // The picture you line up stays at the camera's resolution. The squares are read from a 480×360 average of it, which is the space the saved corners are in.
     // Clean-up: a median filter plus the mean of the last few frames of a still board (benchmarked: far fewer phantom and missed pieces than reading raw frames).
@@ -187,6 +194,7 @@ const reader: NodeSpec<ReaderState> = {
         }
       }
     }
+    if (state.camName && String(params.corners) !== fmtCorners(CAM_PRESETS.A)) rememberCorners(state.camName, String(params.corners)); // every calibration, hand fit or follow step is kept for next time
     if (state.corners !== params.corners) {
       const c = parseCorners(String(params.corners));
       // New corners make the learned empty squares stale: learn the start position again, unless a game is under way.

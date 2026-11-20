@@ -152,7 +152,7 @@ footer.AA{box-shadow:inset 2px 0 var(--signal)}footer.AB{box-shadow:inset 2px 0 
 .ne-section-head:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
 .ne-section-icon{display:flex;color:var(--signal-hi);flex:none}
 .ne-section-label{display:flex;flex-direction:column;gap:3px;min-width:0;font-size:var(--t-sm)}
-.ne-section-caption{font-size:var(--t-xs);color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ne-section-caption{font-size:var(--t-xs);color:var(--text-dim);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ne-section-content{padding:3px 6px 6px;display:grid;grid-template-columns:minmax(70px,1fr) minmax(90px,1.3fr) auto;gap:3px 8px;border-top:1px solid var(--line)}
 .ne-node:not(.wide) .ne-section-content .ne-param,.ne-section-content .ne-param{grid-column:1/-1;grid-template-columns:subgrid}
 .ne-param{display:grid;grid-template-columns:minmax(70px,1fr) 1.3fr auto;gap:8px;align-items:center;color:var(--text);font-size:var(--t-sm);padding:2px 0 2px 6px;border-left:2px solid transparent;border-radius:2px}
@@ -334,6 +334,7 @@ body.resizing{cursor:col-resize;user-select:none}
 .ne-opt-x{background:transparent;border:0;color:var(--text);opacity:.6;cursor:pointer;padding:0 4px;font:inherit}.ne-opt-x:hover{opacity:1;color:var(--bad)}
 .ne-opt-add{grid-column:1/-1;width:100%;box-sizing:border-box;background:var(--ink-0);color:var(--text);border:1px dashed var(--line);border-radius:3px;padding:4px 6px;font:400 var(--t-sm) var(--font-ui);cursor:pointer}
 .ne-node:not(.wide) .ne-opt-card .ne-param{background:transparent;border-bottom:0;border-radius:0}
+.ne-calbar{display:flex;flex-wrap:wrap;gap:6px;margin:6px 12px 2px}.ne-calbtn{flex:1 1 auto;margin-left:0;padding:5px 10px}
 .ne-qbtn{margin-left:6px;padding:0 6px;font:600 var(--t-sm) var(--font-ui);color:var(--signal-hi);background:transparent;border:1px solid var(--signal);border-radius:3px;cursor:pointer}.ne-qbtn:hover{background:color-mix(in srgb,var(--signal) 22%,transparent)}
 .ne-param .ne-action{grid-column:2/4;justify-self:stretch;padding:3px 8px;font:600 var(--t-sm) var(--font-ui);color:var(--signal-hi);background:color-mix(in srgb,var(--signal) 12%,transparent);border:1px solid var(--signal);border-radius:3px;cursor:pointer}.ne-param .ne-action:hover{background:color-mix(in srgb,var(--signal) 26%,transparent)}.ne-param .ne-action:active{transform:translateY(1px)}
 /* Corner editor dialog. The picture's stage takes whatever height is left, so the whole dialog fits the window at any size or shape. */
@@ -599,3 +600,13 @@ body.simple .simple-input{display:block;flex:none;border:1px solid var(--border,
 .alignprog .ap-sub,.alignprog .ap-note{opacity:.75}
 .alignprog .ap-bar{height:6px;background:var(--ink-3);border-radius:3px;overflow:hidden;margin:6px 0}
 .alignprog .ap-bar i{display:block;height:100%;width:0;background:var(--signal);transition:width .15s}
+
+/* Toggle buttons: any button with aria-pressed shows a small switch (track + knob), so it reads as on/off, not as a one-shot action. */
+.qe-btn[aria-pressed],.ribbon .rb[aria-pressed]{position:relative}
+.qe-btn[aria-pressed]::after,.ribbon .rb[aria-pressed]::after{content:"";flex:none;box-sizing:border-box;width:26px;height:14px;border-radius:7px;border:1px solid var(--line-hi,#4a5d7a);background:radial-gradient(circle at 6px 50%,currentColor 0 4px,transparent 4.5px),transparent;opacity:.65;transition:background-position .15s,background-color .15s,opacity .15s}
+.qe-btn[aria-pressed]{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.qe-btn[aria-pressed="true"]::after,.ribbon .rb[aria-pressed="true"]::after{background:radial-gradient(circle at 20px 50%,#06110e 0 4px,transparent 4.5px),var(--signal,#35e0b4);border-color:var(--signal,#35e0b4);opacity:1}
+.qe-btn[aria-pressed="true"]{border-color:var(--signal,#35e0b4)}
+.ribbon .rb[aria-pressed]::after{width:22px;height:11px;border-radius:6px;background-size:auto}
+.ribbon .rb[aria-pressed="true"]::after{background:radial-gradient(circle at 16px 50%,#06110e 0 3px,transparent 3.5px),var(--signal,#35e0b4)}
+.ribbon .rb[aria-pressed="false"]::after{background:radial-gradient(circle at 6px 50%,currentColor 0 3px,transparent 3.5px),transparent}

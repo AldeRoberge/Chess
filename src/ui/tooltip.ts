@@ -69,6 +69,7 @@ export class Tooltips {
   private px = 0;
   private py = 0;
   private follow = false;
+  private menuAt = 0;
   private raf = 0;
   private off: (() => void)[] = [];
 
@@ -79,12 +80,19 @@ export class Tooltips {
     on(doc, "pointerover", this.over);
     on(doc, "pointermove", (e: MouseEvent) => {
       this.px = e.clientX; this.py = e.clientY;
+      // A native <select> popup lives above the page and swallows pointer events; once they flow again it has closed.
+      if (this.menuAt && Date.now() - this.menuAt > 250) this.menuAt = 0;
       if (!this.src) return;
       if (this.follow) this.place();
       if (this.src.hasAttribute("data-tip-live") && !this.raf) this.raf = requestAnimationFrame(() => { this.raf = 0; this.refresh(); }); // content depends on where the pointer is
     });
     on(doc, "pointerout", (e: MouseEvent) => { if (!e.relatedTarget) this.hide(); });
-    on(doc, "pointerdown", () => this.dismiss(), true);
+    on(doc, "pointerdown", (e: Event) => {
+      // Opening a native dropdown: a card here would sit in the way, and it can never draw above the popup.
+      this.menuAt = (e.target as Element | null)?.closest?.("select") ? Date.now() : 0;
+      this.dismiss();
+    }, true);
+    on(doc, "keydown", (e: KeyboardEvent) => { if ((e.target as Element | null)?.tagName === "SELECT" && e.key !== "Tab") { this.menuAt = Date.now(); this.hide(); } }, true);
     on(doc, "wheel", () => this.hide(), true);
     on(doc, "scroll", () => this.hide(), true);
     on(doc, "keydown", (e: KeyboardEvent) => { if (e.key === "Escape") this.dismiss(); });
@@ -111,6 +119,7 @@ export class Tooltips {
   }
 
   private over = (ev: Event) => {
+    if (this.menuAt) return;
     const f = this.find(ev.target);
     if (!f) { this.suppressed = null; this.hide(); return; }
     if (f.el === this.src || f.el === this.pending || f.el === this.suppressed) return;
@@ -123,6 +132,7 @@ export class Tooltips {
 
   private focus = (ev: Event) => {
     const t = ev.target as Element;
+    if (this.menuAt) return;
     let visible = true;
     try { visible = t.matches(":focus-visible"); } catch { /* old engines: treat as keyboard focus */ }
     const f = visible ? this.find(t) : null;
@@ -143,6 +153,7 @@ export class Tooltips {
 
   private refresh() {
     if (!this.src) return;
+    if (this.menuAt) { this.hide(); return; }
     const at = this.src.isConnected ? this.src : (this.doc.elementFromPoint?.(this.px, this.py) ?? null);
     const f = this.find(at);
     if (!f) { this.hide(); return; }

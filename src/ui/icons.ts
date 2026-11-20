@@ -160,6 +160,8 @@ export const BUTTON_ICON: Record<string, string> = {
 };
 
 /** Changes a button's text, keeping its icon. */
+/** Marks a button as a toggle and sets its state: aria-pressed drives the shared switch look (see `[aria-pressed]` in style.css). */
+export function setPressed(b: HTMLElement, on: boolean) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
 export function setLabel(b: HTMLElement, text: string) { const l = b.querySelector(".lbl"); if (l) l.textContent = text; else b.textContent = text; }
 
 export const icon = (name: string, size = 16): string =>

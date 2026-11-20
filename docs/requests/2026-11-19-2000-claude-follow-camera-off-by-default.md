@@ -6,4 +6,4 @@
 ## Tasks
 - [x] quadEditor button starts off
 - [x] vision node "Follow camera moves" param defaults to off
-- [ ] Run tests
+- [x] Run tests (ui + vision suites pass)
