@@ -15,6 +15,7 @@ export function fakeHost(over: Partial<AssistantHost> = {}) {
     registry, graph: () => graph.toJSON(), setup: () => setup,
     applySetup: vi.fn((c: SetupConfig) => { setup = c; buildGraphFromConfig(graph, c); }),
     applyGraph: vi.fn(),
+    editGraph: vi.fn(g => graph.restore(g)),
     setParam: vi.fn((id: string, k: string, v: string | number | boolean) => { const n = graph.nodes.get(id); if (!n) return false; n.params[k] = v; return true; }),
     setBypass: vi.fn((id: string, on: boolean) => { const n = graph.nodes.get(id); if (!n) return false; n.bypass = on; return true; }),
     selection: () => selection, nodeErrors: () => [], route: () => route, go: vi.fn((r: Route) => { route = r; }),

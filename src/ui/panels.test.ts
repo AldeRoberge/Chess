@@ -247,8 +247,14 @@ describe("LogPanel", () => {
 });
 
 describe("WorldPanel", () => {
+  it("builds no 3D view until it is first used", () => {
+    const { g } = graphWith(true); const p = new WorldPanel(g);
+    expect(view.made).toHaveLength(0);
+    void p.view; void p.view;
+    expect(view.made).toHaveLength(1);
+  });
   const graphWith = (online = true) => { const g = new Graph(createRegistry()); const cam = g.addNode("source.webcam", 0, 0, { online }); return { g, cam }; };
-  const make = (online = true) => { const { g, cam } = graphWith(online); const p = new WorldPanel(g); return { p, g, cam, v: view.made[0], ch: FakeChannel.all[0], status: () => (p as any).status.textContent as string }; };
+  const make = (online = true) => { const { g, cam } = graphWith(online); const p = new WorldPanel(g); void p.view; return { p, g, cam, v: view.made[0], ch: FakeChannel.all[0], status: () => (p as any).status.textContent as string }; };
   const btn = (p: WorldPanel, text: string, nth = 0) => [...p.root.querySelectorAll<HTMLElement>("button, .btn")].filter((b) => b.textContent!.startsWith(text))[nth];
 
   it("builds the 3D view from the saved mapping and lists a rig row per projector", () => {

@@ -198,6 +198,19 @@ interface BridgeEnv { BRIDGE?: BridgeNamespace; KEYS?: { get(k: string): Promise
 // Best-effort per-isolate throttling keeps the relay independent of the API-key store.
 const requestCounts = new Map<string, number>();
 let requestMinute = -1;
+let unavailableUntil = 0;
+
+async function roomFetch(env: BridgeEnv, code: string, req: Request): Promise<Response> {
+  if (Date.now() < unavailableUntil) return json({ error: "Cloudflare phone relay quota is exhausted. Try again after the quota resets." }, 503);
+  try { return await env.BRIDGE!.get(env.BRIDGE!.idFromName(code)).fetch(req); }
+  catch (error) {
+    if (!/exceeded.*(volume|limit)|quota/i.test(String(error))) throw error;
+    unavailableUntil = Date.now() + 60_000;
+    return new Response(JSON.stringify({ error: "Cloudflare phone relay quota is exhausted. Try again after the quota resets." }), {
+      status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Retry-After": "60" },
+    });
+  }
+}
 
 /** Sends /chess/remote/* to the live room. Returns null when the URL is not a remote route. */
 export async function handleRemote(req: Request, env: BridgeEnv, url: URL): Promise<Response | null> {
@@ -220,7 +233,7 @@ export async function handleRemote(req: Request, env: BridgeEnv, url: URL): Prom
       const joinCode = String(100000 + bytes[0] % 900000);
       const token = crypto.randomUUID();
       const target = new URL("/chess/remote/host/info", url); target.searchParams.set("code", joinCode);
-      const response = await env.BRIDGE.get(env.BRIDGE.idFromName(joinCode)).fetch(new Request(target, {
+      const response = await roomFetch(env, joinCode, new Request(target, {
         method: "POST", headers: { Authorization: `Bearer ${token}` },
       }));
       if (response.status === 409) continue;
@@ -229,5 +242,5 @@ export async function handleRemote(req: Request, env: BridgeEnv, url: URL): Prom
     }
     return json({ error: "Could not allocate a phone room. Try again." }, 503);
   }
-  return env.BRIDGE.get(env.BRIDGE.idFromName(code)).fetch(req);
+  return roomFetch(env, code, req);
 }

@@ -368,6 +368,13 @@ export class AlignBatch {
   constructor(jobs: AlignJob[], readonly limit = alignConcurrency(), private paceMs = 0, private now: () => number = () => performance.now(), private rampSteps = 6) { this.waiting = [...jobs]; this.allowed = Math.min(2, limit); }
   get active() { return this.live.length; }
   get pending() { return this.waiting.length + this.live.length; }
+  /** What the running boards are doing now, for a progress readout: boards' worth of work finished so far (fractions count), the most advanced board's step label, and how many run / wait. */
+  get status() {
+    const finished = [...this.results.values()].filter((r) => r.phase === "done" || r.phase === "failed").length;
+    const partial = this.live.reduce((s, { a }) => s + (a.done ? 0 : a.progress), 0);
+    const lead = this.live.reduce<AutoAligner | null>((b, { a }) => (!b || a.progress > b.progress ? a : b), null);
+    return { work: finished + partial, label: lead?.label ?? "", running: this.live.length, waiting: this.waiting.length };
+  }
   step(budgetMs = 12) {
     const t0 = this.now();
     while (this.live.length < this.allowed && this.waiting.length) {

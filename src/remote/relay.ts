@@ -14,6 +14,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { networkInterfaces } from "node:os";
 import { randomBytes, randomInt } from "node:crypto";
+import { RelaySocket } from "./socket.ts";
 import { parseCommand, joinUrl, type RemoteCommand, type RemoteState } from "./protocol.ts";
 
 export interface RelayOptions {
@@ -25,6 +26,8 @@ export interface RelayOptions {
   addresses?: () => string[];
   /** Publish the game here so a phone on alderoberge.com can join. Omit to stay on this network only. */
   bridge?: string;
+  /** Disable only for legacy relays without WebSocket support. */
+  webSocket?: boolean;
 }
 
 /** The public phone page uses this to reach the worker. The dev server publishes to the same place. */
@@ -62,6 +65,8 @@ export function createRelay(opts: RelayOptions = {}) {
   let queue: RemoteCommand[] = [];
   const seen = new Map<string, number>();
   let remoteClients = 0, remoteAt = 0;
+  let bridgeSocket: RelaySocket | undefined;
+  let retryAt = 0, lastPublish = -Infinity;
 
   const clients = () => { const t = now(); for (const [id, at] of seen) if (t - at > SEEN_MS) seen.delete(id); return seen.size; };
   const phones = () => clients() + (now() - remoteAt > SEEN_MS ? 0 : remoteClients);
@@ -69,17 +74,31 @@ export function createRelay(opts: RelayOptions = {}) {
   /** Copy a host publish to the public bridge and bring back any moves a distant phone sent. */
   async function publish(path: string, body: Buffer | string, type: string): Promise<{ commands?: RemoteCommand[]; clients?: number } | null> {
     if (!bridge) return null;
+    if (now() < retryAt) return null;
+    const useSocket = opts.webSocket !== false;
+    if (useSocket && path === "host/state" && !remoteClients && now() - lastPublish < 5000) return null;
+    if (useSocket && path.startsWith("host/frame") && (!remoteClients || now() - remoteAt > SEEN_MS)) return null;
     try {
       const root = bridge.endsWith("/") ? bridge : `${bridge}/`;
       const join = path.includes("?") ? "&" : "?";
-      const r = await fetch(`${root}${path}${join}code=${encodeURIComponent(code)}`, {
+      if (useSocket && !bridgeSocket) {
+        const session = await fetch(`${root}host/info?code=${encodeURIComponent(code)}`, {
+          method: "POST", headers: { Authorization: `Bearer ${hostToken}` }, signal: AbortSignal.timeout(2500),
+        });
+        if (!session.ok) { retryAt = now() + 60_000; return null; }
+        bridgeSocket = new RelaySocket(root, code, hostToken);
+      }
+      lastPublish = now();
+      const r = bridgeSocket ? await bridgeSocket.request(path, {
+        method: "POST", body: typeof body === "string" ? body : new Blob([new Uint8Array(body)]),
+      }) : await fetch(`${root}${path}${join}code=${encodeURIComponent(code)}`, {
         method: "POST", headers: { Authorization: `Bearer ${hostToken}`, "Content-Type": type }, body: typeof body === "string" ? body : body as unknown as BodyInit, signal: AbortSignal.timeout(2500),
       });
-      if (!r.ok) return null;
+      if (!r.ok) { retryAt = now() + 60_000; return null; }
       const j = await r.json() as { commands?: RemoteCommand[]; clients?: number };
       if (typeof j.clients === "number") { remoteClients = j.clients; remoteAt = now(); }
       return j;
-    } catch { return null; }
+    } catch { retryAt = now() + 60_000; bridgeSocket?.close(); bridgeSocket = undefined; return null; }
   }
 
   /** Handles one request under `prefix` (for example "/remote/"). Returns false when the URL is not ours, so the server can carry on. */

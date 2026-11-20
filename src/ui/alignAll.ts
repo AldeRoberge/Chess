@@ -7,7 +7,7 @@ import { AlignBatch, type AlignJob, rememberedLayouts } from "./autoAlign";
 const isBoardQuad = (names: string[] | undefined) => names?.length === 4 && names[0] === "a8" && names[1] === "h8" && names[2] === "h1" && names[3] === "a1";
 
 /** Aligns the grid of every camera board in the workflow at once (up to 8 at a time on a strong machine). Resolves with how many boards were aligned. */
-export function alignAllBoards(graph: Graph, onProgress?: (done: number, total: number) => void): Promise<{ total: number; aligned: number }> {
+export function alignAllBoards(graph: Graph, onProgress?: (done: number, total: number, info: { fraction: number; label: string; running: number; waiting: number }) => void): Promise<{ total: number; aligned: number }> {
   const jobs: AlignJob[] = [], target = new Map<string, { id: string; sx: number; sy: number }>();
   for (const n of graph.nodes.values()) {
     if (n.bypass) continue;
@@ -27,7 +27,8 @@ export function alignAllBoards(graph: Graph, onProgress?: (done: number, total: 
   return new Promise((resolve) => {
     const tick = () => {
       const more = batch.step(12);
-      onProgress?.(jobs.length - batch.pending, jobs.length);
+      const s = batch.status;
+      onProgress?.(jobs.length - batch.pending, jobs.length, { fraction: Math.min(1, s.work / jobs.length), label: s.label, running: s.running, waiting: s.waiting });
       if (more) { requestAnimationFrame(tick); return; }
       let aligned = 0;
       for (const [id, r] of batch.results) {

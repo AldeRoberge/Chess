@@ -382,3 +382,21 @@ describe("phone remote", () => {
     root.querySelector<HTMLElement>("#phone")!.click(); expect(document.querySelector(".notice-details")!.textContent).toContain("Connect this computer to Wi-Fi"); expect(document.querySelector(".notice-msg")!.textContent).toContain("No phone is connected yet");
   });
 });
+
+
+it("Ctrl+F searches the workflow and Enter opens the assistant with the query and matches", async () => {
+  const { AssistantPanel } = await import("./ui/assistantPanel");
+  const submit = vi.spyOn(AssistantPanel.prototype, "submit").mockImplementation(() => {});
+  finishSetup(); const app = boot(root);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true }));
+  const finder = document.querySelector<HTMLElement>(".app-search")!;
+  expect(finder.hidden).toBe(false);
+  const scope = finder.querySelector("select")!, input = finder.querySelector("input")!;
+  input.value = "vision.boardReader"; scope.value = "everywhere"; scope.dispatchEvent(new Event("change"));
+  expect(document.body.classList.contains("simple")).toBe(false);
+  expect(app.editor.selection()).toHaveLength(1); expect(root.querySelector(".search-match")).toBeTruthy();
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  expect(app.route()).toEqual({ page: "assistant" }); expect(finder.hidden).toBe(true);
+  expect(submit).toHaveBeenCalledOnce(); expect(submit.mock.calls[0][0]).toContain("vision.boardReader");
+  expect(submit.mock.calls[0][0]).toContain("Board Reader (Workflow");
+});

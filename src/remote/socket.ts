@@ -18,7 +18,7 @@ export class RelaySocket {
     if (this.connecting) return this.connecting;
     if (Date.now() < this.retryAt) return Promise.reject(new Error("Relay reconnect backoff"));
     this.connecting = new Promise((resolve, reject) => {
-      const url = new URL(`${this.base}socket`, location.href);
+      const url = new URL(`${this.base}socket`, typeof location === "undefined" ? this.base : location.href);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("code", this.code);
       const ws = new WebSocket(url);

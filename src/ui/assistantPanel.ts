@@ -3,7 +3,7 @@ import { guideLines, guideReply, isGuideStart, plainSpeech } from "../assistant/
 import type { AssistantHost } from "../assistant/host";
 import { Watcher, suggestions, type Nudge } from "../assistant/proactive";
 import { ChatSession, type SessionEvent } from "../assistant/session";
-import { icon, withIcon, setLabel } from "./icons";
+import { icon, withIcon } from "./icons";
 import { KeyBox } from "./assistantKeyBox";
 import { Transcript } from "./assistantTranscript";
 

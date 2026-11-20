@@ -1,5 +1,7 @@
 import { applyH, boardToImage } from "./homography";
 import { CROP, extractCrops } from "./squareCrops";
+import { BoardCache, type BoardCnn } from "./boardCnn";
+import { BOARD_SIDE, extractBoard } from "./boardImage";
 import { blendReadings, SquareCache, type SquareCnn } from "./squareCnn";
 import { clamp, sigmoid, type GrayFrame, type Pt, type SquareObs } from "./types";
 
@@ -13,7 +15,7 @@ export interface SamplerConfig {
   grid: number; // sample points per axis in each square's centre patch
   patch: number; // fraction of the square sampled (0..1)
   /** "cnn" takes occupancy and colour from the trained square classifier (when loaded); motion, hands and picture quality still come from the brightness reader. */
-  engine?: "rules" | "cnn";
+  engine?: "rules" | "cnn" | "board";
 }
 
 export const defaultSamplerConfig = (): SamplerConfig => ({
@@ -58,6 +60,10 @@ export class BoardSampler {
   private tone: { w: [number, number][]; b: [number, number][] } | null = null;
   /** The trained square classifier, shared by every reader. Load it with `loadSquareCnn()` (squareModel.ts). */
   static cnn: SquareCnn | null = null;
+  /** The trained whole-board reader (engine "board"), shared by every reader. Load it with `loadBoardCnn()` (boardModel.ts). */
+  static boardNet: BoardCnn | null = null;
+  private boardCache: BoardCache | null = null;
+  private boardImg = new Float32Array(BOARD_SIDE * BOARD_SIDE);
   private cnnCache: SquareCache | null = null;
   private crops = new Float32Array(64 * CROP * CROP);
   private cnnCacheOf: SquareCnn | null = null;
@@ -75,6 +81,7 @@ export class BoardSampler {
     if (key === this.key) return;
     this.key = key;
     this.cnnCache?.reset();
+    this.boardCache?.reset();
     this.H = boardToImage(this.cfg.corners);
     this.lean();
     const { grid, patch } = this.cfg;
@@ -346,6 +353,12 @@ export class BoardSampler {
         if (Number.isFinite(edge)) this.rimRef[sq] += (edge - this.rimRef[sq]) * 0.01;
       }
       this.prev[sq] = v;
+    }
+    const bnet = this.cfg.engine === "board" ? BoardSampler.boardNet : null;
+    if (bnet && this.cfg.corners.length === 4) {
+      this.prepare();
+      if (this.boardCache?.net !== bnet) this.boardCache = new BoardCache(bnet);
+      blendReadings(occ, white, this.boardCache!.classify(extractBoard(frame, this.cfg.corners, this.boardImg)));
     }
     const net = this.cfg.engine === "cnn" ? BoardSampler.cnn : null;
     if (net && this.cfg.corners.length === 4) {

@@ -1,5 +1,5 @@
 import type { Graph } from "../core/graph";
-import { nodeIcon, paramIcon, portIcon } from "./icons";
+import { icon, nodeIcon, paramIcon, portIcon, withIcon } from "./icons";
 import { onPieceStyle, pieceImage } from "./pieceSets";
 import { pixelRatio, viewSettings } from "./viewSettings";
 import { registerContextMenu, type CtxItem } from "./contextMenu";
@@ -32,6 +32,7 @@ interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HT
 export class NodeEditor {
   root = h("div", "ne");
   private world = h("div", "ne-world");
+  private resetButton = h("button", "ne-reset-view", "Reset view");
   private svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   private views = new Map<string, NodeView>();
   private view: View = { x: 40, y: 30, k: 0.85 };
@@ -41,8 +42,11 @@ export class NodeEditor {
   private palette: HTMLElement;
   private lastWire = 0;
   private lastPrev = 0;
+  /** Simplified drawing for slow machines: previews and wires refresh less often and heat bars are not painted. */
+  lite = false;
   private lastHeat = 0;
   private heat = false;
+  private sections = new Map<string, boolean>();
   onChange: () => void = () => {};
   /** Called after the user pans or zooms, so the view can be remembered. */
   onView: () => void = () => {};
@@ -74,6 +78,12 @@ export class NodeEditor {
     });
     this.world.append(this.layer.el, this.svg);
     this.root.append(this.world);
+    this.resetButton.type = "button";
+    this.resetButton.hidden = true;
+    this.resetButton.addEventListener("pointerdown", e => e.stopPropagation());
+    this.resetButton.addEventListener("dblclick", e => e.stopPropagation());
+    this.resetButton.addEventListener("click", () => this.resetView());
+    this.root.append(this.resetButton);
     this.palette = h("div", "ne-palette"); this.palette.hidden = true; this.root.append(this.palette);
     this.bindInteraction();
     this.rebuild();
@@ -132,10 +142,42 @@ export class NodeEditor {
     const params = new Map<string, (v: any) => void>();
     if (spec.params?.length) {
       const box = h("div", "ne-params");
+      const groups = new Map<string, { defs: ParamDef[]; content: HTMLElement; summary: HTMLElement }>();
+      const section = (key: string, title: string, glyph: string) => {
+        let group = groups.get(key); if (group) return group;
+        const details = h("details", "ne-section"), summary = h("summary", "ne-section-head");
+        const ico = h("span", "ne-section-icon"); ico.innerHTML = icon(glyph, 16); ico.setAttribute("aria-hidden", "true");
+        const label = h("span", "ne-section-label"); label.append(h("strong", "", title));
+        const caption = h("span", "ne-section-caption"); label.append(caption); summary.append(ico, label);
+        const content = h("div", "ne-section-content"); details.append(summary, content);
+        const stateKey = `${n.id}:${key}`; details.open = this.sections.get(stateKey) ?? false;
+        details.addEventListener("toggle", () => { this.sections.set(stateKey, details.open); this.dirty = true; });
+        box.append(details); group = { defs: [], content, summary: caption }; groups.set(key, group); return group;
+      };
       let listed = false;
+      let provider: string | undefined;
       for (const p of spec.params) {
-        if ((p.kind === "bool" && p.optional) || (p.kind === "number" && p.group)) { if (!listed) { listed = true; box.append(this.optionalList(n, spec.params, params)); } continue; }
-        box.append(this.paramRow(n, p, params));
+        if (p.kind === "separator") { provider = p.label; continue; }
+        if ((p.kind === "bool" && p.optional) || (p.kind === "number" && p.group)) {
+          const group = section("optional", "Optional features", "plus"); group.defs.push(p);
+          if (!listed) { listed = true; group.content.append(this.optionalList(n, spec.params, params)); } continue;
+        }
+        let group: ReturnType<typeof section> | undefined;
+        if (provider) group = section(`provider:${provider}`, provider, "voice");
+        else if (p.kind === "text" && (p.secret || /url|endpoint|apiKey/i.test(p.id)) || /^(universe|port|host)$/.test(p.id)) group = section("connection", "Connection & access", "unlink");
+        else if (p.kind === "text" && p.quad || /^(autoCal|autoFind|follow|flagHour)$/.test(p.id)) group = section("calibration", "Calibration", "board");
+        else if (/threshold|weight|softness|hysteresis|stale|motion|margin|confirm|cost|conf|seed|poll|cooldown|delay|memory|average|patch|grid|collect|cnn/i.test(p.id)) group = section("tuning", "Advanced tuning", "setup");
+        if (group) group.defs.push(p);
+        (group?.content ?? box).append(this.paramRow(n, p, params));
+      }
+      for (const group of groups.values()) {
+        const update = () => {
+          const changed = group.defs.filter((p) => n.params[p.id] !== p.value && !(p.kind === "bool" && p.action)).length;
+          group.summary.textContent = `${group.defs.length} settings · ${changed ? `${changed} modified` : "Defaults"} · ${group.defs.slice(0, 2).map((p) => p.label).join(", ")}`;
+        };
+        group.content.addEventListener("input", update); group.content.addEventListener("change", update); group.content.addEventListener("click", update);
+        for (const p of group.defs) { const sync = params.get(p.id); if (sync) params.set(p.id, (v) => { sync(v); update(); }); }
+        update();
       }
       body.append(box);
     }
@@ -241,7 +283,7 @@ export class NodeEditor {
       sync.set(p.id, (v) => { if (document.activeElement !== r) { r.value = String(v); val.textContent = String(v); fill(); } });
       row.append(r, val);
     } else if (p.kind === "bool" && p.action) {
-      const b = h("button", "ne-action", p.label); b.type = "button"; b.setAttribute("aria-label", p.label);
+      const b = h("button", "ne-action", p.label); b.innerHTML = paramIcon(p.id, "action") + `<span></span>`; b.querySelector("span")!.textContent = p.label; b.classList.add("has-ic"); b.type = "button"; b.setAttribute("aria-label", p.label);
       b.onpointerdown = (e) => e.stopPropagation();
       b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); n.params[p.id] = true; this.onChange(); };
       pn.setAttribute("aria-hidden", "true"); row.append(b);
@@ -274,7 +316,7 @@ export class NodeEditor {
         queueMicrotask(() => draw());
       } else row.append(s);
       if (p.pick) {
-        const pick = p.pick, b = h("button", "ne-qbtn", "◫ Compare"); b.type = "button"; b.dataset.tip = "Compare options"; b.dataset.tipBody = "See each option's price per token on a chart and pick one.";
+        const pick = p.pick, b = withIcon(h("button", "ne-qbtn", "Compare"), "gauge", 13); b.type = "button"; b.dataset.tip = "Compare options"; b.dataset.tipBody = "See each option's price per token on a chart and pick one.";
         b.onpointerdown = (e) => e.stopPropagation();
         b.onclick = (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -286,7 +328,7 @@ export class NodeEditor {
       const t = h("input"); t.type = p.secret ? "password" : "text"; if (p.secret) { t.autocomplete = "off"; t.spellcheck = false; } t.setAttribute("aria-label", p.label); t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
       sync.set(p.id, (v) => { if (document.activeElement !== t) t.value = String(v); }); row.append(t);
       if (p.quad) {
-        const q = p.quad, b = h("button", "ne-qbtn", "⌖ Edit"); b.type = "button"; b.dataset.tip = "Edit corners"; b.dataset.tipBody = "Drag the corners on the live camera picture instead of typing numbers.";
+        const q = p.quad, b = withIcon(h("button", "ne-qbtn", "Edit"), "board", 13); b.type = "button"; b.dataset.tip = "Edit corners"; b.dataset.tipBody = "Drag the corners on the live camera picture instead of typing numbers.";
         b.onpointerdown = (e) => e.stopPropagation();
         b.onclick = (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -318,13 +360,33 @@ export class NodeEditor {
   get heatOn() { return this.heat; }
 
   /** Select a node and pan so it sits in the middle of the view. */
-  reveal(id: string) {
+  reveal(id: string, param?: string): HTMLElement | null {
     const n = this.graph.nodes.get(id), v = this.views.get(id);
-    if (!n || !v) return;
+    if (!n || !v) return null;
+    const target = param?.startsWith("section:")
+      ? [...v.el.querySelectorAll<HTMLElement>(".ne-section-label strong")].find(el => el.textContent === param.slice(8))
+      : param ? [...v.el.querySelectorAll<HTMLElement>("[data-param]")].find(el => el.dataset.param === param) : v.el;
+    // Optional features that are not enabled stay disabled: reveal their Add menu instead.
+    const found = target ?? v.el.querySelector<HTMLElement>(".ne-opt-add") ?? v.el;
+    for (let ancestor: HTMLElement | null = found; ancestor && ancestor !== v.el; ancestor = ancestor.parentElement) {
+      if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+    }
     this.selected.clear(); this.selected.add(id); this.refreshSel();
     this.view.x = this.root.clientWidth / 2 - (n.x + v.el.offsetWidth / 2) * this.view.k;
     this.view.y = this.root.clientHeight / 2 - (n.y + v.el.offsetHeight / 2) * this.view.k;
     this.applyView(); this.dirty = true; this.onView();
+    if (param) found.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    return found;
+  }
+
+  revealGroup(id: string): HTMLElement | null {
+    const g = this.graph.groups.find(g => g.id === id);
+    if (!g) return null;
+    this.view.k = Math.max(0.15, Math.min(1, (this.root.clientWidth - 80) / g.w, (this.root.clientHeight - 80) / g.h));
+    this.view.x = this.root.clientWidth / 2 - (g.x + g.w / 2) * this.view.k;
+    this.view.y = this.root.clientHeight / 2 - (g.y + g.h / 2) * this.view.k;
+    this.applyView(); this.dirty = true; this.onView();
+    return [...this.root.querySelectorAll<HTMLElement>("[data-g]")].find(el => el.dataset.g === id) ?? null;
   }
 
   private paintHeat(now: number) {
@@ -391,7 +453,7 @@ export class NodeEditor {
     return [
       { kind: "action", label: "Add node…", run: () => this.openPalette(ev.clientX, ev.clientY) },
       { kind: "action", label: "Select all", run: () => { this.selected = new Set(this.views.keys()); this.refreshSel(); } },
-      { kind: "action", label: "Reset view", run: () => { this.view.x = 0; this.view.y = 0; this.view.k = 1; this.applyView(); this.onView(); } },
+      { kind: "action", label: "Reset view", run: () => this.resetView() },
     ];
   }
 
@@ -403,7 +465,29 @@ export class NodeEditor {
     return n;
   }
 
-  private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; }
+  private resetView() {
+    cancelAnimationFrame(this.fling); this.fling = 0;
+    const n = this.graph.nodes.values().next().value;
+    const el = n && this.views.get(n.id)?.el;
+    this.view = n ? {
+      x: this.root.clientWidth / 2 - (n.x + (el?.offsetWidth || n.w || NODE_W) / 2) * 0.85,
+      y: this.root.clientHeight / 2 - (n.y + (el?.offsetHeight || n.h || NODE_H) / 2) * 0.85,
+      k: 0.85,
+    } : { x: 40, y: 30, k: 0.85 };
+    this.applyView(); this.dirty = true; this.onView();
+  }
+
+  private updateResetButton() {
+    const width = this.root.clientWidth, height = this.root.clientHeight;
+    const { x, y, k } = this.view;
+    this.resetButton.hidden = !width || !height || !this.graph.nodes.size || [...this.graph.nodes.values()].some(n => {
+      const el = this.views.get(n.id)?.el;
+      const left = n.x * k + x, top = n.y * k + y;
+      return left < width && top < height && left + (el?.offsetWidth || n.w || NODE_W) * k > 0 && top + (el?.offsetHeight || n.h || NODE_H) * k > 0;
+    });
+  }
+
+  private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; this.updateResetButton(); }
   /** Pan and zoom gestures change the view many times a frame; the transform is written once, on the next animation frame. */
   private viewRaf = 0;
   private scheduleView() { if (!this.viewRaf) this.viewRaf = requestAnimationFrame(() => { this.viewRaf = 0; this.applyView(); }); }
@@ -511,7 +595,8 @@ export class NodeEditor {
     this.root.addEventListener("dblclick", (e) => { if (!(e.target as HTMLElement).closest(".ne-node")) this.openPalette(e.clientX, e.clientY); });
     registerContextMenu(this.root, (e) => this.contextItems(e));
     window.addEventListener("keydown", (e) => {
-      if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "SELECT") return;
+      const target = e.target as HTMLElement;
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName) || target.isContentEditable || target.closest?.("[contenteditable=true]")) return;
       if (e.key === "Delete" || e.key === "Backspace") for (const id of [...this.selected]) this.removeNode(id);
     });
   }
@@ -612,7 +697,7 @@ export class NodeEditor {
       chips.replaceChildren();
       for (const c of ["", ...cats]) {
         if (!c && cats.length < 2) continue;
-        const b = h("button", "ne-chip" + (c === cat ? " on" : ""), c || "All"); b.style.setProperty("--cat", c ? CAT_COLOR[c] : "#9aa4b8");
+        const b = withIcon(h("button", "ne-chip" + (c === cat ? " on" : ""), c || "All"), "layers", 12); b.style.setProperty("--cat", c ? CAT_COLOR[c] : "#9aa4b8");
         b.onclick = () => { cat = c; paintChips(); fill(); q.focus(); };
         chips.append(b);
       }
@@ -692,7 +777,8 @@ export class NodeEditor {
 
   frame(now: number) {
     if (this.viewRaf) this.applyView();
-    if (this.dirty || now - this.lastWire > 400) {
+    this.updateResetButton();
+    if (this.dirty || now - this.lastWire > (this.lite ? 1000 : 400)) {
       this.lastWire = now; this.dirty = false;
       // Wires are reconciled in place rather than rebuilt: replacing the <path> elements would restart their CSS flow animation on every refresh (the visible back-and-forth jitter).
       const wanted = new Map<string, { d: string; stroke: string; cls: string; tip: string; style: string; e?: string }>();
@@ -715,7 +801,7 @@ export class NodeEditor {
       }
       this.reconcileWires(wanted);
     }
-    const doPrev = !this.moving && now - this.lastPrev > Math.max(66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
+    const doPrev = !this.moving && now - this.lastPrev > Math.max(this.lite ? 250 : 66, viewSettings().render.fps > 0 ? 1000 / viewSettings().render.fps : 0);
     if (doPrev) this.lastPrev = now;
     // Measure which previews are on screen before anything below writes to the DOM. Reading a node's size
     // after another node's stats were rewritten would force a fresh layout once per node, every frame.
@@ -767,7 +853,7 @@ export class NodeEditor {
         }
       }
     }
-    if (this.heat) this.paintHeat(now);
+    if (this.heat && !this.lite) this.paintHeat(now);
   }
 }
 

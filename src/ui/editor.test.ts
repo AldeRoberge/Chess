@@ -36,6 +36,45 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("NodeEditor rendering", () => {
+  it("offers reset when all nodes are off screen and brings a node back into view", () => {
+    const { ed, g } = setup();
+    Object.defineProperties(ed.root, { clientWidth: { value: 800 }, clientHeight: { value: 600 } });
+    const reset = ed.root.querySelector<HTMLButtonElement>(".ne-reset-view")!;
+    ed.setView({ x: 40, y: 30, k: 0.85 });
+    expect(reset.hidden).toBe(true);
+    ed.setView({ x: -10000, y: 0, k: 1 });
+    expect(reset.hidden).toBe(false);
+    // Recovery also works when the graph itself lives far from the origin.
+    for (const n of g.nodes.values()) { n.x += 20000; n.y -= 20000; }
+    const onView = vi.fn(); ed.onView = onView;
+    reset.click();
+    expect(reset.hidden).toBe(true);
+    expect(onView).toHaveBeenCalledOnce();
+    ed.setView({ x: 0, y: 100000, k: 0.3 });
+    expect(reset.hidden).toBe(false);
+    for (const id of [...g.nodes.keys()]) ed.removeNode(id);
+    ed.frame(0);
+    expect(reset.hidden).toBe(true);
+  });
+  it("folds advanced controls, updates summaries and remembers expanded sections across rebuilds", () => {
+    const r = new Registry();
+    r.register(spec({ type: "reader", params: [
+      { id: "online", kind: "bool", label: "Online", value: true },
+      { id: "threshold", kind: "number", label: "Sensitivity", min: 0, max: 1, value: 0.5 },
+      { id: "apiKey", kind: "text", label: "API key", value: "", secret: true },
+    ] }));
+    const g = new Graph(r), n = g.addNode("reader"), ed = new NodeEditor(g); document.body.append(ed.root);
+    const card = node(ed, n.id), sections = card.querySelectorAll("details");
+    expect(sections).toHaveLength(2); expect(sections[0].open).toBe(false);
+    expect(card.querySelector('[data-param="online"]')!.closest("details")).toBeNull();
+    const range = sections[0].querySelector("input")!;
+    range.value = "0.7"; range.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(n.params.threshold).toBe(0.7); expect(sections[0].querySelector("summary")!.textContent).toContain("1 modified");
+    expect(sections[1].textContent).not.toContain("0.7");
+    sections[0].open = true; sections[0].dispatchEvent(new Event("toggle")); ed.rebuild();
+    expect(node(ed, n.id).querySelector("details")!.open).toBe(true);
+    expect(node(ed, n.id).querySelector('input[type="password"]')).not.toBeNull();
+  });
   it("exposes a colour for every port type", () => { expect(Object.keys(PORT_COLOR).sort()).toEqual(["action", "any", "board", "clock", "event", "frame", "fx", "game", "obs", "player", "pointer", "pose", "scene", "seat", "text", "world"]); });
   it("draws one card per node with category colour, title, pins (typed, labelled), preview canvas and parameter widgets", () => {
     const { ed, a, b } = setup();
@@ -142,6 +181,8 @@ describe("node buttons, selection and dragging", () => {
     key("x"); expect(g.nodes.has(a.id)).toBe(true);
     const input = node(ed, a.id).querySelector("input")!; key("Delete", input); expect(g.nodes.has(a.id)).toBe(true);
     const sel = node(ed, a.id).querySelector("select")!; key("Backspace", sel); expect(g.nodes.has(a.id)).toBe(true);
+    const chat = document.createElement("textarea"); document.body.append(chat); key("Backspace", chat); key("Delete", chat); expect(g.nodes.has(a.id)).toBe(true);
+    const editable = document.createElement("div"); editable.setAttribute("contenteditable", "true"); document.body.append(editable); key("Backspace", editable); expect(g.nodes.has(a.id)).toBe(true);
     key("Delete"); expect(g.nodes.has(a.id)).toBe(false); expect(g.nodes.has(b.id)).toBe(true);
   });
 });
@@ -230,4 +271,18 @@ describe("wiring", () => {
     const { ed, g, a, b } = setup(); g.connect({ node: a.id, port: "o" }, { node: b.id, port: "i" }); ptr(node(ed, a.id).querySelector(".ne-head")!, "pointerdown"); ed.removeNode(a.id);
     expect(g.edges).toHaveLength(0); ed.addNodeAt("end", 100, 100); expect(ed.root.querySelectorAll(".ne-node")).toHaveLength(3);
   });
+});
+
+
+it("search expands a hidden parameter section and pans to it without editing the graph", () => {
+  const r = new Registry(); r.register(spec({ type: "searchable", params: [
+    { id: "threshold", kind: "number", label: "Threshold", min: 0, max: 1, value: 0.5 },
+  ] }));
+  const g = new Graph(r), n = g.addNode("searchable", 3000, -2000), ed = new NodeEditor(g);
+  document.body.append(ed.root); const before = JSON.stringify(g.toJSON());
+  expect(ed.root.querySelector("details")!.open).toBe(false);
+  const target = ed.reveal(n.id, "threshold");
+  expect(target?.dataset.param).toBe("threshold"); expect(ed.root.querySelector("details")!.open).toBe(true);
+  expect(ed.selection()).toEqual([n.id]); expect(JSON.stringify(g.toJSON())).toBe(before);
+  expect(ed.reveal("missing")).toBeNull();
 });

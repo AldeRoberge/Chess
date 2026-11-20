@@ -502,7 +502,12 @@ export class TablePanel {
 /** 3D simulation + projection mapping: scan import, projector rig, auto-calibration, output windows. */
 export class WorldPanel {
   root = el("div", "panel world");
-  view: WorldView;
+  /** Built on first use: until the 3D tab is opened there is no WebGL context at all. */
+  private _view: WorldView | null = null;
+  get view(): WorldView {
+    if (!this._view) { const v = this._view = new WorldView(this.cv, this.cfg); v.showFrusta = viewSettings().display.frusta; if (!this.showProjection) { v.showProjection = false; v.setMapping(this.cfg); } }
+    return this._view;
+  }
   cfg: MappingConfig = loadMapping();
   private cv = el("canvas", "world-cv");
   private status = el("div", "muted");
@@ -512,8 +517,8 @@ export class WorldPanel {
 
   constructor(private graph: Graph) {
     const bar = el("div", "bar");
-    const frusta = this.toggle("Projector frusta", viewSettings().display.frusta, (v) => { this.view.showFrusta = v; setDisplay({ frusta: v }); });
-    const proj = this.toggle("Projected content", true, (v) => { this.view.showProjection = v; this.view.setMapping(this.cfg); });
+    const frusta = this.toggle("Projector frusta", viewSettings().display.frusta, (v) => { setDisplay({ frusta: v }); if (this._view) this._view.showFrusta = v; });
+    const proj = this.toggle("Projected content", true, (v) => { this.showProjection = v; if (this._view) { this._view.showProjection = v; this._view.setMapping(this.cfg); } });
     const scan = withIcon(el("label", "btn", "Import room scan (.glb/.obj)"), "open"); scan.dataset.tip = "Import room scan"; scan.dataset.tipBody = "Loads a 3D scan of the room, finds the flat surfaces (table, walls, floor) and maps the projectors onto them."; scan.dataset.tipTag = "file .glb · .obj"; const file = el("input"); file.type = "file"; file.accept = ".glb,.gltf,.obj"; file.hidden = true; scan.append(file);
     file.onchange = () => file.files?.[0] && void this.importScan(file.files[0]);
     const reset = withIcon(el("button", "", "Default room"), "room"); reset.dataset.tip = "Default room"; reset.dataset.tipBody = "Forgets the imported scan and projector poses and goes back to the built-in room."; reset.dataset.tipTag = "resets mapping"; reset.onclick = () => { this.cfg = defaultMapping(); this.apply(); };
@@ -522,7 +527,6 @@ export class WorldPanel {
     bar.append(frusta, proj, scan, reset, blackout, allLive);
     const rig = el("div", "rig");
     this.root.append(bar, this.cv, rig, this.status);
-    this.view = new WorldView(this.cv, this.cfg);
     registerContextMenu(this.cv, () => viewMenu([
       { kind: "action", label: "Reset camera", run: () => this.view.resetCamera() },
       { kind: "action", label: "Default room", run: () => { this.cfg = defaultMapping(); this.apply(); } },
@@ -537,7 +541,8 @@ export class WorldPanel {
     l.dataset.tipBody = { "Projector frusta": "Draws the cone of light each projector throws, so you can see what it covers.", "Projected content": "Shows the overlay (move hints, clock, menu) as it lands on the table, as the projector would draw it." }[label] ?? ""; const c = el("input"); c.type = "checkbox"; c.checked = on; c.onchange = () => cb(c.checked); l.append(c, document.createTextNode(label)); return l;
   }
 
-  private apply() { saveMapping(this.cfg); this.view.setMapping(this.cfg); this.ch.postMessage({ type: "mapping" }); }
+  private showProjection = true;
+  private apply() { saveMapping(this.cfg); this._view?.setMapping(this.cfg); this.ch.postMessage({ type: "mapping" }); }
   private calib(cmd: CalibCmd) { this.ch.postMessage({ type: "calib", cmd }); }
 
   private renderRig(rig: HTMLElement) {

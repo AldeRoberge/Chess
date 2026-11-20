@@ -122,6 +122,22 @@ export class SetupWizard {
     if (i < 0 || i === this.step) return;
     this.step = i; this.focus = 0; this.zone = "steps"; this.enterStep(); this.render();
   }
+  /** Open only the ancestors of a search match, without activating any setting. */
+  revealSearch(step: string, path: number[]): HTMLElement | null {
+    this.setStep(step);
+    let items = STEPS[this.step].items({ ...this.ctx(), searchOnly: true });
+    let target: Item | undefined;
+    for (let depth = 0; depth < path.length; depth++) {
+      target = items[path[depth]];
+      if (!target) return null;
+      if (target.kind === "group") { target.set(true); items = target.children; }
+    }
+    this.renderList();
+    if (!path.length) return this.title;
+    const row = [...this.list.children].find(el => (el as HTMLElement).dataset.searchPath === path.join(".")) as HTMLElement | undefined;
+    row?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    return row ?? null;
+  }
   destroy() { document.getElementById("app")?.removeAttribute("inert"); window.removeEventListener("keydown", this.onKey); this.stopStream(); this.stopCamPreviews(); this.root.remove(); }
 
   // ---- context handed to the step definitions
@@ -148,15 +164,17 @@ export class SetupWizard {
 
   /** Nesting depth of each listed item (0 = top level). Open groups are flattened into the list, so focus and keys walk them like any row. */
   private depth = new WeakMap<Item, number>();
+  private searchPaths = new WeakMap<Item, string>();
   private items(): Item[] {
     const out: Item[] = [];
-    const walk = (list: Item[], d: number) => {
-      for (const it of list) {
-        out.push(it); this.depth.set(it, d);
-        if (it.kind === "group" && it.get()) walk(it.children, d + 1);
-      }
+    const walk = (list: Item[], d: number, path: number[]) => {
+      list.forEach((it, i) => {
+        const here = [...path, i];
+        out.push(it); this.depth.set(it, d); this.searchPaths.set(it, here.join("."));
+        if (it.kind === "group" && it.get()) walk(it.children, d + 1, here);
+      });
     };
-    walk(STEPS[this.step].items(this.ctx()), 0);
+    walk(STEPS[this.step].items(this.ctx()), 0, []);
     return out;
   }
   private focusables() { return this.items().map((it, i) => ({ it, i })).filter((x) => isFocusable(x.it)); }
@@ -531,7 +549,7 @@ export class SetupWizard {
       const action = cam.online ? "Turn off" : "Turn on";
       const on = el("button", `sys-act${cam.online ? "" : " hot"}`); on.type = "button";
       on.setAttribute("aria-label", `${action} camera ${cam.id}`);
-      on.innerHTML = `<span>${action}</span>`; on.dataset.tip = `${action} camera`; on.dataset.tipBody = cam.online ? "Stops this camera. The tracker ignores it until you turn it back on." : "Starts this camera so the tracker can use it again.";
+      on.innerHTML = `${icon(cam.online ? "stop" : "play", 14)}<span>${action}</span>`; on.dataset.tip = `${action} camera`; on.dataset.tipBody = cam.online ? "Stops this camera. The tracker ignores it until you turn it back on." : "Starts this camera so the tracker can use it again.";
       on.onclick = (e) => { e.stopPropagation(); cam.online = !cam.online; this.deps.sfx.play("tick"); this.render(); };
       wrap.append(on);
       if (st.action) {
@@ -691,6 +709,7 @@ export class SetupWizard {
     let k = -1;
     items.forEach((it, i) => {
       const li = el("li", `halo-item ${it.kind}`);
+      li.dataset.searchPath = this.searchPaths.get(it);
       if (isFocusable(it)) {
         k++;
         const idx = k;

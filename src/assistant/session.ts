@@ -88,8 +88,10 @@ export class ChatSession {
       choose: (question, options) => this.ask((answer) => this.d.emit({ type: "choice", question, options, answer }), ctl.signal, "(no answer: stopped)"),
     };
     try {
+      const news = this.d.watcher.take();
       await runAgent({
-        system: `${SYSTEM}\n\n${stateMessage(this.d.host, this.d.watcher.take())}`,
+        system: SYSTEM,
+        context: () => stateMessage(this.d.host, news),
         history: this.history, tools: (this.d.tools ?? buildTools)(this.d.host), opts: { apiKey, model }, signal: ctl.signal, ctx, doFetch: this.d.fetchImpl,
         emit: (event) => { if (event.type === "usage") { this.usage.prompt += event.prompt; this.usage.completion += event.completion; } this.d.emit({ type: "agent", event }); },
       });

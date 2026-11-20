@@ -3,6 +3,7 @@ import type { Registry } from "../../core/types";
 import { validateSetup } from "../../setup/config";
 import { SCENARIOS } from "../../sim/scenarios";
 import { catalog } from "../../workflows/ai";
+import { PARAM_DOCS } from "../../ui/paramDocs";
 import { redact } from "../host";
 import { problems, snapshot } from "../snapshot";
 import { SECRET, obj, str, type ToolGroup } from "./shared";
@@ -15,7 +16,7 @@ export function nodeTypes(reg: Registry, query = "", category = ""): string {
 }
 
 /** What a node's parameters accept, without the secret ones. */
-export const paramInfo = (reg: Registry, type: string) => (reg.get(type)?.params ?? []).filter((p) => p.kind !== "separator" && !SECRET.test(p.id)).map((p) => p.kind === "number" ? { id: p.id, kind: "number", min: p.min, max: p.max, default: p.value } : p.kind === "select" ? { id: p.id, kind: "select", options: p.options, default: p.value } : p.kind === "bool" ? { id: p.id, kind: "bool", default: p.value } : { id: p.id, kind: "text", default: p.value });
+export const paramInfo = (reg: Registry, type: string) => (reg.get(type)?.params ?? []).filter((p) => p.kind !== "separator" && !SECRET.test(p.id) && !(p.kind === "text" && p.secret)).map((p) => ({ label: p.label, about: PARAM_DOCS[`${type}.${p.id}`], ...(p.kind === "number" ? { id: p.id, kind: "number", min: p.min, max: p.max, default: p.value } : p.kind === "select" ? { id: p.id, kind: "select", options: p.options, default: p.value } : p.kind === "bool" ? { id: p.id, kind: "bool", default: p.value, action: !!p.action } : { id: p.id, kind: "text", default: p.value }) }));
 
 /** Read-only tools: nothing here changes the app. */
 export const inspectTools: ToolGroup = (h) => [
@@ -50,7 +51,8 @@ export const inspectTools: ToolGroup = (h) => [
     run: (a) => {
       const g = h.graph(), n = g.nodes.find((x) => x.id === a.id);
       if (!n) throw new Error(`No node "${a.id}". Use get_state to see the workflow.`);
-      return { id: n.id, type: n.type, bypass: !!n.bypass, params: redact(n.params), allowed: paramInfo(h.registry, n.type), wires_in: g.edges.filter((e) => e.to.node === n.id).map((e) => `${e.from.node}.${e.from.port} -> ${e.to.port}`), wires_out: g.edges.filter((e) => e.from.node === n.id).map((e) => `${e.from.port} -> ${e.to.node}.${e.to.port}`), error: h.nodeErrors().find((e) => e.node === n.id) ?? null };
+      const spec = h.registry.get(n.type);
+      return { id: n.id, type: n.type, title: spec?.title, description: spec?.desc, inputs: spec?.inputs, outputs: spec?.outputs, bypass: !!n.bypass, params: redact(n.params), allowed: paramInfo(h.registry, n.type), wires: g.edges.filter(e => e.from.node === n.id || e.to.node === n.id), wires_in: g.edges.filter((e) => e.to.node === n.id).map((e) => `${e.from.node}.${e.from.port} -> ${e.to.port}`), wires_out: g.edges.filter((e) => e.from.node === n.id).map((e) => `${e.from.port} -> ${e.to.node}.${e.to.port}`), error: h.nodeErrors().find((e) => e.node === n.id) ?? null };
     } },
 
   { name: "list_scenarios", risk: "read", label: { doing: "Listing demo games", done: "Listed demo games" }, description: "Scripted demo games that can be played without a camera (use update_setup demo.scenario / demo.autoplay).",

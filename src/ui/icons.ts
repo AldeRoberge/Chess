@@ -1,5 +1,6 @@
 /** Tiny stroke icons (24x24, currentColor). Static strings, never user input, so safe for innerHTML. */
 const P: Record<string, string> = {
+  wand: '<path d="m3 18 12-12 3 3L6 21zM12 9l3 3M5 3v4M3 5h4M18 2v4M16 4h4"/>',
   send: '<path d="M4 12 20 4l-5 16-3-7z"/><path d="m12 13 8-9"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   assistant: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/>',

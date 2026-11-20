@@ -26,3 +26,18 @@ python -I ml/train.py 24 all
 ```
 
 For the shipped model, rerun step 2 without `CNN_HOLDOUT` so every saved frame is used, then train again.
+
+## Whole-board reader
+
+`src/vision/boardCnn.ts` reads the whole board in one pass instead of 64 crops: the board is flattened to one 160x160 image
+with a square of margin (`boardImage.ts`) and a small fully convolutional net outputs all 64 squares. Same data pipeline with
+`CNN_BOARD=1` (files are written as `ml/data/board-*`), trained by `ml/train_board.py` (about 2.5 minutes on a GPU):
+
+```powershell
+$env:CNN_GEN=1; $env:CNN_BOARD=1; $env:CNN_N=4000; $env:CNN_SEED=1; $env:CNN_OUT="ml/data/board-train"; npx vitest run src/vision/cnnData.gen.test.ts -t "renders positions"
+$env:CNN_N=400; $env:CNN_SEED=2; $env:CNN_OUT="ml/data/board-val"; npx vitest run src/vision/cnnData.gen.test.ts -t "renders positions"
+$env:CNN_HOLDOUT=1; npx vitest run src/vision/cnnData.gen.test.ts -t "augments"   # drop CNN_HOLDOUT for the shipped model
+python -I ml/train_board.py 90 all
+```
+
+Turn it on with the Board Reader node's "Neural whole-board reader (beta)" switch.

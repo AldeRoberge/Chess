@@ -12,6 +12,14 @@ export interface AssistantHost {
   applySetup(cfg: SetupConfig, why: string): void;
   /** Replace the whole workflow. The app backs up what there was and makes it undoable. */
   applyGraph(g: GraphJSON, why: string): void;
+  /** Incremental, undoable edit. Existing nodes keep camera/game runtime state. */
+  editGraph?(g: GraphJSON): void;
+  /** Rendered UI semantics, never password values or assistant conversation text. */
+  ui?(): import("./uiContext").UIContext;
+  /** Focus an existing node in the editor. */
+  revealNode?(id: string): void;
+  /** Explicitly supported application commands, not arbitrary DOM clicks. */
+  appAction?(action: string): void;
   /** Set one node parameter (already validated). Returns false when the node does not exist. */
   setParam(nodeId: string, key: string, value: string | number | boolean): boolean;
   setBypass(nodeId: string, on: boolean): boolean;

@@ -27,6 +27,7 @@ import { Sfx } from "./ui/sfx";
 import { SetupWizard } from "./ui/wizard";
 import { NodeEditor } from "./ui/editor";
 import { alignAllBoards } from "./ui/alignAll";
+import { AlignProgressPanel } from "./ui/alignProgress";
 import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
@@ -50,7 +51,12 @@ import { speakAssistant } from "./assistant/voiceOut";
 import { AssistantPanel } from "./ui/assistantPanel";
 import { createAppHost } from "./assistant/appHost";
 import { profiler } from "./core/profiler";
+import { PerfAdvisor, type PerfSample, type TipAction } from "./core/perfAdvisor";
+import { showPerfToast } from "./ui/perfToast";
+import { onViewSettings, setQuality, setRender, viewSettings } from "./ui/viewSettings";
 import { CalibrationOverlay } from "./ui/calibrationOverlay";
+import { AppSearch, domSearchEntries, type SearchHit } from "./ui/search";
+import { settingSearchEntries } from "./ui/wizardSteps";
 import "./ui/perf.css";
 import type { GraphJSON } from "./core/types";
 import { STEPS } from "./ui/wizardSteps";
@@ -285,6 +291,20 @@ export function boot(root: HTMLElement): Boot {
     registry, graph, loadSetup,
     applySetup: (cfg, why) => { addBackup(why, graph.toJSON(), loadSetup(), true); saveSetup(cfg); buildGraphFromConfig(graph, cfg); editor.rebuild(); persist(); },
     applyGraph: (g, why) => restore(g, null, why),
+    refreshGraph: () => editor.rebuild(),
+    uiRoots: () => panels.map(([, panel]) => panel.root),
+    revealNode: (id) => { setSimple(false); editor.reveal(id); },
+    appAction: (action) => {
+      if (action === "show_nodes") setSimple(false);
+      else if (action === "hide_nodes") setSimple(true);
+      else if (action === "organize_nodes") editor.organize();
+      else if (action === "pause_demo") bus.scenarioPaused = true;
+      else if (action === "resume_demo") bus.scenarioPaused = false;
+      else if (action === "open_mixer") document.getElementById("mixer")?.click();
+      else if (action === "open_backups") document.getElementById("backups")?.click();
+      else if (action === "backup_now") document.getElementById("backupnow")?.click();
+      else throw new Error(`Unsupported app action: ${action}`);
+    },
     persist: () => persist(), toggleBypass: (id) => editor.toggleBypass(id), selection: () => editor.selection(),
     route: () => route, go: (r) => go(r), history: { get canUndo() { return edits.canUndo; }, get canRedo() { return edits.canRedo; } }, undo: () => undo(), redo: () => redo(),
     table: {
@@ -310,10 +330,12 @@ export function boot(root: HTMLElement): Boot {
   nodesBtn.onclick = () => setSimple(!document.body.classList.contains("simple"));
   const tabs = document.getElementById("tabs")!, dock = document.getElementById("dock")!;
   let active = 0;
-  const show = (i: number) => { active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
+  const show = (i: number) => { if (i === 1 && !viewSettings().display.world3d) i = 0; active = i; profiler.enabled = i === 3; patchPrefs({ tab: i }); dock.replaceChildren(panels[i][1].root); if (i === 4) tabs.children[4]?.classList.remove("ping"); [...tabs.children].forEach((b, k) => { b.classList.toggle("on", k === i); if (k === i) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }); };
   const TAB_INFO = ["The game: click a piece, then a square, or seat a player.", "3D board and projection-mapping preview.", "Live event and narration log.", "Frame timeline, flamegraph and per-node cost. Open it to start capturing.", "Chat with the AI: it sees the game, cameras and setup, and can change them for you."];
   const TAB_SHORT = ["Table", "3D", "Log", "Perf", "AI"]; // phone bar: icon over a one-word label
   panels.forEach(([name], i) => { const b = document.createElement("button"); b.setAttribute("aria-label", name); b.innerHTML = `${icon(["table", "world", "log", "perf", "assistant"][i])}<span class="tl">${name}</span><span class="ts" aria-hidden="true">${TAB_SHORT[i]}</span><kbd>${i + 1}</kbd>`; b.dataset.tip = name; b.dataset.tipBody = TAB_INFO[i]; b.onclick = () => go({ page: PAGES[i] }); tabs.append(b); });
+  const sync3d = () => { const on = viewSettings().display.world3d; (tabs.children[1] as HTMLElement).hidden = !on; if (!on && active === 1) go({ page: PAGES[0] }); };
+  onViewSettings(sync3d); sync3d();
   assistant.onNudge = () => { if (active !== 4) tabs.children[4]?.classList.add("ping"); };
   show(prefs.tab !== undefined && prefs.tab >= 0 && prefs.tab < panels.length ? prefs.tab : 0);
 
@@ -493,6 +515,28 @@ export function boot(root: HTMLElement): Boot {
   };
   let lastTick = 0, lastHud = 0, lastPost = 0, lastLine = "", lastFrame = 0, frameMs = 16.7, worstMs = 0;
   let lastBackup = 0, lastBeat = 0;
+  // ---- performance advisor: times the main parts of a frame and, when the page struggles, suggests the biggest win
+  const advisor = new PerfAdvisor();
+  let tickMs = 0, editorMs = 0, viewMs = 0;
+  const ema = (cur: number, v: number) => cur + (v - cur) * 0.1;
+  const perfActions: Record<TipAction, () => void> = {
+    "lite": () => { editor.lite = true; }, "hide-nodes": () => setSimple(true), "table-tab": () => go({ page: PAGES[0] }),
+    "quality-low": () => setQuality("low"), "quality-medium": () => setQuality("medium"), "fps-30": () => setRender({ fps: 30 }),
+    "heat-off": () => setHeat(false), "open-perf": () => go({ page: PAGES[3] }), "close-perf": () => go({ page: PAGES[0] }),
+  };
+  const perfCheck = (now: number) => {
+    const vs = viewSettings(), sample: PerfSample = { frameMs, tickMs, editorMs, viewMs, tab: active, simple: document.body.classList.contains("simple"), heat: editor.heatOn, lite: editor.lite, quality: vs.render.quality, scale: vs.render.scale, fps: vs.render.fps };
+    if (PerfAdvisor.struggling(sample)) {
+      let best: PerfSample["hot"];
+      for (const id of profiler.nodes.keys()) { const sm = profiler.summarize(id), n = graph.nodes.get(id); if (sm && n && (!best || sm.avg > best.avg)) best = { title: graph.registry.get(n.type)?.title ?? n.type, avg: sm.avg }; }
+      sample.hot = best;
+    }
+    const tip = advisor.feed(now, sample);
+    if (!tip) return;
+    const host = document.body, onMute = (id: string) => advisor.mute(id);
+    if (tip.auto) { perfActions[tip.actions[0].act](); showPerfToast(host, tip, (a) => perfActions[a](), { onMute, undo: () => { editor.lite = false; advisor.mute(tip.id); } }); }
+    else showPerfToast(host, tip, (a) => perfActions[a](), { onMute });
+  };
   let hudBarHtml = "", hudMenuHtml = "";
   // ---- phone remote: publishes the game to the relay in the dev server and plays the moves a phone sends
   const camFrames = () => [...graph.nodes.values()].flatMap((n) => {
@@ -536,11 +580,12 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("alignall")!.onclick = async (e) => {
     const btn = e.currentTarget as HTMLButtonElement; if (btn.disabled) return;
     const label = btn.querySelector("span")!, was = label.textContent; btn.disabled = true;
+    const panel = new AlignProgressPanel(btn); panel.start();
     try {
-      const r = await alignAllBoards(graph, (d, t) => { label.textContent = `Aligning ${d}/${t}`; });
+      const r = await alignAllBoards(graph, (d, t, info) => { label.textContent = `Aligning ${d}/${t}`; panel.update(d, t, info); });
       if (r.aligned) { editor.rebuild(); persist(); }
       notify(r.total ? `Aligned ${r.aligned} of ${r.total} board${r.total === 1 ? "" : "s"}, up to ${alignConcurrency()} at a time.` : "No camera with a live picture and a board grid was found.", [], r.aligned === r.total && r.total ? "info" : "warn", { title: "Align boards" });
-    } finally { label.textContent = was; btn.disabled = false; }
+    } finally { panel.stop(); label.textContent = was; btn.disabled = false; }
   };
   document.getElementById("phone")!.onclick = () => {
     if (remote.available === false) notify("The phone connection could not be opened. Reload this page to retry. If it still fails, the server’s phone bridge may be unavailable.", [], "warn", { title: "Phone remote is not running" });
@@ -565,13 +610,14 @@ export function boot(root: HTMLElement): Boot {
     profiler.beginFrame(now);
     if (now - lastBeat > 5000) { lastBeat = now; beatSession(); }
     if (now - lastBackup > 300000) { lastBackup = now; if (dirty) { dirty = false; addBackup("Autosave", graph.toJSON(), loadSetup(), true); } }
-    if (now - lastTick >= 1000 / 15) { lastTick = now; profiler.span("graph.tick", () => graph.tick(now)); }
+    if (now - lastTick >= 1000 / 15) { lastTick = now; const t0 = performance.now(); profiler.span("graph.tick", () => graph.tick(now)); tickMs = ema(tickMs, performance.now() - t0); }
     calWin.render(bus.calibration);
-    profiler.span("editor", () => editor.frame(now));
+    if (!document.body.classList.contains("simple")) { const t0 = performance.now(); profiler.span("editor", () => editor.frame(now)); editorMs = ema(editorMs, performance.now() - t0); } else editorMs = 0; // a hidden editor paints nothing
     if (calibrationDialog.open) drawCalibration();
     document.getElementById("calibrate")!.classList.toggle("on", !!calibrate.view);
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
+    const viewT0 = performance.now();
     profiler.span(["table", "world", "log", "perf", "assistant"][active], () => {
       if (active === 0) {
         table.frame(now);
@@ -587,6 +633,7 @@ export function boot(root: HTMLElement): Boot {
       else if (active === 2) log.frame();
       else if (active === 3) perf.frame(now);
     });
+    viewMs = ema(viewMs, performance.now() - viewT0);
     if (now - lastPost > 33 && bus.scene) {
       lastPost = now;
       const g = bus.game;
@@ -617,7 +664,7 @@ export function boot(root: HTMLElement): Boot {
       if (menuHtml !== hudMenuHtml) { hudMenuHtml = menuHtml; hudMenu.innerHTML = menuHtml; hudMenu.append(buildChips); }
       hudMore.disabled = quiet.length === 0; // stays in place, just grayed out, so nothing shifts
       if (!quiet.length) setHudMenu(false);
-      syncHistChips(); syncScenarioPause();
+      syncHistChips(); syncScenarioPause(); perfCheck(now);
       const l = bus.lines[bus.lines.length - 1];
       const text = l ? `${l.name}: ${l.text}` : "";
       if (text !== lastLine) { lastLine = text; sub.textContent = text; sub.className = l ? `A${l.speaker}` : ""; }
@@ -634,13 +681,13 @@ export function boot(root: HTMLElement): Boot {
   function apply(r: Route) {
     route = r;
     if (r.page === "settings") { openWizard(); if (r.step) wiz?.setStep(r.step); }
-    else { if (wiz && loadSetup()?.completed) closeWizard(); show(PAGES.indexOf(r.page)); }
+    else { if (wiz && (loadSetup()?.completed || r.page === "assistant")) closeWizard(); show(PAGES.indexOf(r.page)); }
     document.title = routeTitle(r, r.page === "settings" ? STEPS.find((x) => x.id === r.step)?.title : undefined);
     document.body.dataset.page = r.page;
   }
   /** Navigate: show it and push a history entry so Back works. */
   function go(r: Route, replace = false) {
-    if (r.page !== "settings" && !loadSetup()?.completed) r = { page: "settings", step: wiz?.stepId ?? stepIds[loadPrefs().draft?.step ?? 0] ?? stepIds[0] };
+    if (r.page !== "settings" && r.page !== "assistant" && !loadSetup()?.completed) r = { page: "settings", step: wiz?.stepId ?? stepIds[loadPrefs().draft?.step ?? 0] ?? stepIds[0] };
     if (sameRoute(r, route) && location.hash === formatRoute(r)) return;
     apply(r);
     const h = formatRoute(r);
@@ -697,6 +744,53 @@ export function boot(root: HTMLElement): Boot {
     wiz.mount(document.body);
   };
   const closeWizard = () => { wiz?.destroy(); wiz = null; };
+
+  const search = new AppSearch({
+    entries: (scope) => {
+      const everywhere = scope === "everywhere", hits: SearchHit[] = [];
+      const modal = document.querySelector<HTMLDialogElement>("dialog[open]");
+      if (!everywhere && modal) return domSearchEntries(modal, modal.getAttribute("aria-label") ?? "This dialog");
+      const revealEditor = () => { if (wiz) closeWizard(); setSimple(false); };
+      if (!wiz || everywhere) {
+        const header = root.querySelector<HTMLElement>("header")!;
+        hits.push(...domSearchEntries(header, "Top menu", () => setRibbonCollapsed(false)));
+        for (let i = 0; i < panels.length; i++) {
+          if (!everywhere && i !== active) continue;
+          hits.push(...domSearchEntries(panels[i][1].root, panels[i][0], () => go({ page: PAGES[i] })));
+        }
+      }
+      if (everywhere || (!wiz && !document.body.classList.contains("simple"))) {
+        for (const node of graph.nodes.values()) {
+          const spec = registry.get(node.type); if (!spec) continue;
+          hits.push({ id: `node:${node.id}`, label: spec.title, location: `Workflow / ${node.id}`, text: `${spec.type} ${spec.category} ${spec.desc ?? ""}`, reveal: () => { revealEditor(); return editor.reveal(node.id); } });
+          for (const param of spec.params ?? []) if (param.kind !== "separator") hits.push({ id: `param:${node.id}:${param.id}`, label: param.label, location: `Workflow / ${spec.title} / ${node.id}`, text: param.id, reveal: () => { revealEditor(); return editor.reveal(node.id, param.id); } });
+          const card = [...editor.root.querySelectorAll<HTMLElement>(".ne-node")].find(el => el.dataset.id === node.id);
+          for (const [i, section] of [...card?.querySelectorAll<HTMLElement>(".ne-section-label strong") ?? []].entries()) {
+            const title = section.textContent ?? "";
+            hits.push({ id: `section:${node.id}:${i}`, label: title, location: `Workflow / ${spec.title} / ${node.id}`, text: "section settings", reveal: () => { revealEditor(); return editor.reveal(node.id, `section:${title}`); } });
+          }
+        }
+        for (const group of graph.groups) hits.push({ id: `group:${group.id}`, label: group.title, location: "Workflow / Region", text: "section group region", reveal: () => { revealEditor(); return editor.revealGroup(group.id); } });
+      }
+      if (everywhere || wiz) {
+        const extra = wiz?.root.querySelector<HTMLElement>(".halo-extra");
+        if (extra) hits.push(...domSearchEntries(extra, `Settings / ${wiz?.stepId}`));
+        for (const entry of settingSearchEntries(wiz?.cfg ?? loadSetup() ?? defaultSetup(), wiz?.state)) {
+          if (!everywhere && entry.step !== wiz?.stepId) continue;
+          hits.push({ ...entry, id: `settings:${entry.step}:${entry.path.join(".")}`, reveal: () => { go({ page: "settings", step: entry.step }); return wiz?.revealSearch(entry.step, entry.path); } });
+        }
+      }
+      return hits;
+    },
+    ask: (query, scope, hits) => {
+      document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach(dialog => dialog.close());
+      go({ page: "assistant" });
+      assistant.submit(`Search ${scope === "window" ? "the window I was viewing" : "everywhere in this app"} for: ${query}\n\nLocal matches:\n${hits.slice(0, 30).map(h => `- ${h.label} (${h.location})`).join("\n") || "No exact local matches."}\n\nUse the app context and available tools to find relevant items. Explain where they are and how to get to them. Do not change settings unless I ask.`);
+    },
+  });
+  const searchButton = document.createElement("button"); searchButton.type = "button"; searchButton.className = "chip";
+  searchButton.textContent = "Search"; searchButton.title = "Search (Ctrl+F)"; searchButton.onclick = () => search.open();
+  document.getElementById("notifications")!.before(searchButton);
   document.getElementById("home")!.onclick = (e) => { e.preventDefault(); go({ page: PAGES[0] }); };
   document.getElementById("settings")!.onclick = () => go({ page: "settings", step: wiz?.stepId ?? stepIds[0] });
   fromUrl();

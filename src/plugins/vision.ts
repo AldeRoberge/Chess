@@ -4,6 +4,7 @@ import { cleanPool } from "../vision/cleanPool";
 import { Fusion } from "../vision/fusion";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
 import { collectFrame } from "../vision/collect";
+import { loadBoardCnn } from "../vision/boardModel";
 import { loadSquareCnn } from "../vision/squareModel";
 import { Stabilizer } from "../vision/stabilizer";
 import type { BoardBelief, GrayFrame, SquareObs } from "../vision/types";
@@ -124,6 +125,7 @@ const reader: NodeSpec<ReaderState> = {
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
     { id: "follow", kind: "bool", label: "Follow camera moves", value: true },
     { id: "cnn", kind: "bool", label: "Neural square reader (beta)", value: false },
+    { id: "board", kind: "bool", label: "Neural whole-board reader (beta, wins over the square reader)", value: false },
     { id: "collect", kind: "bool", label: "Save training frames (dev server only)", value: true },
     { id: "threshold", kind: "number", label: "Piece sensitivity", min: 0.15, max: 0.6, step: 0.01, value: 0.22 },
     { id: "shapeWeight", kind: "number", label: "Shape / texture evidence", min: 0.25, max: 2, step: 0.25, value: 1 },
@@ -198,8 +200,9 @@ const reader: NodeSpec<ReaderState> = {
     s.cfg.shapeWeight = Number(params.shapeWeight ?? 1); s.cfg.colorWeight = Number(params.colorWeight ?? 1);
     s.cfg.positionWeight = Number(params.positionWeight ?? 1); s.cfg.patch = Number(params.patch ?? 0.6);
     s.cfg.softness = Number(params.softness ?? 0.06); s.cfg.grid = Math.round(Number(params.grid ?? 6));
-    s.cfg.engine = params.cnn ? "cnn" : "rules";
-    if (params.cnn && !BoardSampler.cnn) void loadSquareCnn(); // reads fall back to the brightness reader until the model has loaded
+    s.cfg.engine = params.board ? "board" : params.cnn ? "cnn" : "rules";
+    if (params.board && !BoardSampler.boardNet) void loadBoardCnn();
+    else if (params.cnn && !BoardSampler.cnn) void loadSquareCnn(); // reads fall back to the brightness reader until the model has loaded
     if (!state.cleaned) { setFidelity(null); return { obs: null }; } // the first picture is still being cleaned
     const img = state.cleaned!;
     if (params.learn) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; state.readOf = null; }

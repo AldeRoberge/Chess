@@ -21,6 +21,18 @@ const post = (room: GameBridge, path: string, body: string, auth = token) =>
   room.fetch(new Request(`https://alderoberge.com/chess/remote/${path}`, { method: "POST", headers: { Authorization: `Bearer ${auth}` }, body }));
 
 describe("phone bridge", () => {
+  it("reports exhausted Cloudflare quotas and avoids repeatedly calling the object", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 120_000);
+    const fetch = vi.fn(async () => { throw new Error("Exceeded allowed volume of requests in Durable Objects free tier."); });
+    const env = { BRIDGE: { idFromName: (code: string) => code, get: () => ({ fetch }) } } as unknown as Env;
+    try {
+      for (let i = 0; i < 2; i++) {
+        const r = await worker.fetch(new Request("https://alderoberge.com/chess/remote/api/state?code=123456"), env);
+        expect(r.status).toBe(503); expect((await r.json()).error).toContain("quota");
+      }
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { clock.mockRestore(); }
+  });
   it("does not send reserved close codes back to a WebSocket peer", () => {
     const room = new GameBridge(memory(), {});
     const close = vi.fn();

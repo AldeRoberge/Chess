@@ -418,3 +418,17 @@ describe("briefing: build and CI chips", () => {
     expect(w.root.querySelectorAll(".halo-build .chip")[1].tagName).toBe("SPAN");
   });
 });
+
+
+it("search reveals the correct repeated nested setting and opens only its ancestors", async () => {
+  const { settingSearchEntries } = await import("./wizardSteps");
+  const { w } = make();
+  w.state.groups.corners = false; w.state.groups["corner.h1"] = false;
+  const match = settingSearchEntries(w.cfg, w.state).find(e => e.label === "Across (x)" && e.location.endsWith("h1"))!;
+  const before = JSON.stringify(w.cfg);
+  const row = w.revealSearch(match.step, match.path);
+  expect(w.stepId).toBe("board"); expect(w.state.groups.corners).toBe(true);
+  expect(w.state.groups["corner.h1"]).toBe(true); expect(row?.dataset.searchPath).toBe(match.path.join("."));
+  expect(row?.querySelector(".halo-label")?.textContent).toBe("Across (x)");
+  expect(JSON.stringify(w.cfg)).toBe(before); w.destroy();
+});

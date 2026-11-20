@@ -20,6 +20,20 @@ async function boot(opts: Parameters<typeof createRelay>[0] = { code: "4321", ad
 }
 
 describe("relay", () => {
+  it("backs off public bridge failures while continuing to serve the LAN game", async () => {
+    let attempts = 0, time = Date.now();
+    const pub = createServer((_req, res) => { attempts++; res.writeHead(503); res.end(); });
+    await new Promise<void>((r) => pub.listen(0, "127.0.0.1", r));
+    try {
+      const { call } = await boot({ code: "4321", bridge: `http://127.0.0.1:${(pub.address() as AddressInfo).port}/chess/remote/`, now: () => time });
+      for (let i = 0; i < 5; i++) expect((await call("/remote/host/state", { method: "POST", body: JSON.stringify(state()) })).status).toBe(200);
+      expect(attempts).toBe(1);
+      expect((await (await call("/remote/api/state?code=4321")).json()).state.phase).toBe("game");
+      time += 60_001;
+      await call("/remote/host/state", { method: "POST", body: JSON.stringify(state()) });
+      expect(attempts).toBe(2);
+    } finally { pub.close(); }
+  });
   it("tells the host its code, addresses and phones, and ignores URLs that are not under its prefix", async () => {
     const { call, port } = await boot();
     const info = await (await call("/remote/host/info")).json();
@@ -132,7 +146,7 @@ describe("relay", () => {
     await new Promise<void>((r) => pub.listen(0, "127.0.0.1", r));
     const pubPort = (pub.address() as AddressInfo).port;
     try {
-      const { call } = await boot({ code: "4321", addresses: () => ["10.0.0.5"], bridge: `http://127.0.0.1:${pubPort}/chess/remote/` });
+      const { call } = await boot({ code: "4321", addresses: () => ["10.0.0.5"], bridge: `http://127.0.0.1:${pubPort}/chess/remote/`, webSocket: false });
       expect((await (await call("/remote/host/info")).json()).urls).toContain("https://alderoberge.com/chess/#/remote?code=4321");
       await call("/remote/host/state", { method: "POST", body: JSON.stringify(state()) });
       expect(await (await room.fetch(new Request("https://alderoberge.com/chess/remote/api/state?code=4321&cid=phone&rev=-1"))).json()).toMatchObject({ state: { phase: "game" } });
