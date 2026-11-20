@@ -82,7 +82,7 @@ describe("NodeEditor rendering", () => {
     expect(node(ed, n.id).querySelector("details")!.open).toBe(true);
     expect(node(ed, n.id).querySelector('input[type="password"]')).not.toBeNull();
   });
-  it("exposes a colour for every port type", () => { expect(Object.keys(PORT_COLOR).sort()).toEqual(["action", "any", "board", "clock", "event", "flat", "frame", "fx", "game", "obs", "player", "pointer", "pose", "reading", "scene", "seat", "text", "world"]); });
+  it("exposes a colour for every port type", () => { expect(Object.keys(PORT_COLOR).sort()).toEqual(["action", "any", "board", "clock", "event", "flat", "frame", "fx", "game", "obs", "player", "pointer", "pose", "reading", "scene", "seat", "text", "view", "world"]); });
   it("draws one card per node with category colour, title, pins (typed, labelled), preview canvas and parameter widgets", () => {
     const { ed, a, b } = setup();
     expect(ed.root.querySelectorAll(".ne-node")).toHaveLength(3);
