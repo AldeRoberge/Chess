@@ -134,7 +134,7 @@ describe("openQuadEditor", () => {
     cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: W, height: H, right: W, bottom: H, x: 0, y: 0, toJSON() {} });
     const cx = c.reduce((a, p) => a + p.x, 0) / 4 * k, cy = c.reduce((a, p) => a + p.y, 0) / 4 * k;
     const mx = ((c[0].x + c[1].x) / 2) * k, my = ((c[0].y + c[1].y) / 2) * k, d = Math.hypot(mx - cx, my - cy);
-    const hx = mx + ((mx - cx) / d) * 40, hy = my + ((my - cy) / d) * 40; // the rotate handle
+    const hx = mx + ((mx - cx) / d) * 72, hy = my + ((my - cy) / d) * 72; // the rotate handle
     cv.dispatchEvent(ptr("pointerdown", hx, hy));
     const side = quadSideRatio(c);
     // drag the handle a quarter of the way round, in the board's own plane

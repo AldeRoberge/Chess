@@ -28,7 +28,7 @@ export interface QuadEditorOpts {
 }
 
 /** The rotate handle sits this far (canvas pixels) outside the middle of the a8-h8 edge, like the one on an image in Canva. */
-const ROT_OFF = 40, ROT_R = 16, ROT_COL = "#ffd23f";
+const ROT_OFF = 72, ROT_NEAR = 70, ROT_R = 16, ROT_COL = "#ffd23f";
 
 /** Corner marker colours: one scheme for all four corners (their labels tell them apart). */
 const CORNER_GOOD = "#35e07a", CORNER_WARN = "#ff9a3c", CORNER_IDLE = "#cfd8e3";
@@ -98,13 +98,15 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const sx = W / fw, sy = H / fh;
   let sel = 0, raf = 0, closed = false, levels: number[] | undefined, levelsAt = 0, ground: ReturnType<typeof readPerspective> = null, groundAt = 0;
   let coach: PieceMove[] = [], coachAt = 0;
+  let cursor: { x: number; y: number } | null = null; // the pointer on the canvas, to show the ROTATE label only when it comes near the handle
   let turning: { from: number; shown: number; mode: "3d" | "flat" } | null = null; // the rotate handle is being dragged: the angle turned so far (radians)
   /** Where the rotate handle is on the canvas: outside the middle of the first edge, away from the centre. */
   const rotHandle = () => {
     const c = pts.reduce((a, p) => ({ x: a.x + (p.x * sx) / 4, y: a.y + (p.y * sy) / 4 }), { x: 0, y: 0 });
     const m = { x: ((pts[0].x + pts[1].x) / 2) * sx, y: ((pts[0].y + pts[1].y) / 2) * sy };
     const dx = m.x - c.x, dy = m.y - c.y, d = Math.hypot(dx, dy) || 1;
-    return { c, m, h: { x: m.x + (dx / d) * ROT_OFF, y: m.y + (dy / d) * ROT_OFF } };
+    const pad = ROT_R + 4; // keep the whole disc on the canvas when the board's edge is near the picture's edge
+    return { c, m, h: { x: Math.min(W - pad, Math.max(pad, m.x + (dx / d) * ROT_OFF)), y: Math.min(H - pad, Math.max(pad, m.y + (dy / d) * ROT_OFF)) } };
   };
   const emit = () => o.change(fmtCorners(pts));
   const paint = () => {
@@ -200,7 +202,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
       ctx.strokeStyle = "#07090d"; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.arc(h.x, h.y, ir, a0, Math.PI * 1.35); ctx.stroke();
       const ax = h.x + Math.cos(a0) * ir, ay = h.y + Math.sin(a0) * ir;
       ctx.fillStyle = "#07090d"; ctx.beginPath(); ctx.moveTo(ax - 5, ay - 1); ctx.lineTo(ax + 5, ay - 1); ctx.lineTo(ax + 0.5, ay + 6); ctx.closePath(); ctx.fill();
-      if (!turning) { ctx.font = '700 11px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = ROT_COL; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.strokeText("ROTATE", h.x, h.y - ROT_R - 9); ctx.fillText("ROTATE", h.x, h.y - ROT_R - 9); }
+      if (!turning && cursor && Math.hypot(cursor.x - h.x, cursor.y - h.y) <= ROT_R + ROT_NEAR) { ctx.font = '700 11px "IBM Plex Mono",ui-monospace,monospace'; const left = h.x > W - 90; ctx.textAlign = left ? "right" : "left"; ctx.textBaseline = "middle"; ctx.fillStyle = ROT_COL; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.lineJoin = "round"; const lx = h.x + (left ? -1 : 1) * (ROT_R + 8); ctx.strokeText("ROTATE", lx, h.y); ctx.fillText("ROTATE", lx, h.y); }
       if (turning) { const deg = Math.round((turning.shown * 180) / Math.PI), t = `${deg > 0 ? "+" : ""}${deg}° ${turning.mode === "3d" ? "3D" : "flat"}`; ctx.font = '600 12px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.strokeStyle = "#07090d"; ctx.lineWidth = 3; ctx.strokeText(t, h.x + ROT_R + 8, h.y); ctx.fillText(t, h.x + ROT_R + 8, h.y); }
       ctx.restore();
     }
@@ -219,6 +221,8 @@ export function openQuadEditor(o: QuadEditorOpts) {
 
   const at = (e: PointerEvent) => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * fw, y: ((e.clientY - r.top) / r.height) * fh }; };
   const clamp = (p: Pt): Pt => ({ x: Math.min(fw, Math.max(0, p.x)), y: Math.min(fh, Math.max(0, p.y)) });
+  cv.addEventListener("pointermove", (e) => { const r = cv.getBoundingClientRect(); cursor = { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }; });
+  cv.addEventListener("pointerleave", () => { cursor = null; });
   cv.addEventListener("pointerdown", (e) => {
     if (o.grid > 1) { // the rotate handle turns the whole grid about its centre
       const r = cv.getBoundingClientRect(), cx = ((e.clientX - r.left) / r.width) * W, cy = ((e.clientY - r.top) / r.height) * H, { c, h } = rotHandle();
