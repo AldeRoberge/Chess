@@ -1,4 +1,4 @@
-import { withIcon, setLabel } from "./icons";
+import { withIcon, setLabel, setPressed } from "./icons";
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
@@ -48,7 +48,8 @@ export function openQuadEditor(o: QuadEditorOpts) {
   let negative = true;
   const neg = btn("Negative grid: on");
   neg.title = "Draw the grid as the inverse of the camera picture so it stays visible on light and dark squares";
-  neg.onclick = () => { negative = !negative; setLabel(neg, `Negative grid: ${negative ? "on" : "off"}`); };
+  setPressed(neg, negative);
+  neg.onclick = () => { negative = !negative; setPressed(neg, negative); setLabel(neg, `Negative grid: ${negative ? "on" : "off"}`); };
   bar.append(auto, reset, cancel, ok);
   const opts = document.createElement("div"); opts.className = "qe-bar"; opts.append(neg);
   // alignment readout: a bar and a sentence that go from orange to green as the grid settles onto the squares
@@ -68,10 +69,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const progRow = mkRow("Progress"), confRow = mkRow("Confidence"); autoBox.append(progRow.row, confRow.row);
   let follow = false; const followBtn = btn("Try following camera: off");
   followBtn.title = "When the camera is nudged, ease the grid so it stays on the board";
-  followBtn.onclick = () => { follow = !follow; setLabel(followBtn, `Try following camera: ${follow ? "on" : "off"}`); follower.unlock(); };
+  setPressed(followBtn, follow);
+  followBtn.onclick = () => { follow = !follow; setPressed(followBtn, follow); setLabel(followBtn, `Try following camera: ${follow ? "on" : "off"}`); follower.unlock(); };
   let matrix = true; const matrixBtn = btn("Matrix: on");
   matrixBtn.title = "Show the detected perspective lines as a transparent ground";
-  matrixBtn.onclick = () => { matrix = !matrix; setLabel(matrixBtn, `Matrix: ${matrix ? "on" : "off"}`); };
+  setPressed(matrixBtn, matrix);
+  matrixBtn.onclick = () => { matrix = !matrix; setPressed(matrixBtn, matrix); setLabel(matrixBtn, `Matrix: ${matrix ? "on" : "off"}`); };
   opts.append(followBtn, matrixBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1;
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";

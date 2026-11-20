@@ -79,12 +79,12 @@ export function looksLikeStart(b: { occ?: ArrayLike<number> | null; white?: Arra
 
 /** Per-square read-out used by drawBoard (exported so tests and tooltips can share the numbers). */
 export interface SquareRead { piece: string | null; seen: boolean; score: number; prior: boolean }
-export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, fen?: string, live = false): { reads: SquareRead[]; start: boolean } {
-  let pcs = fenPieces(fen);
+export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, fen?: string, live = false, presence = false): { reads: SquareRead[]; start: boolean } {
+  let pcs = presence ? [] : fenPieces(fen);
   const fenBoard = (fen ?? "").split(" ")[0];
   // A just-started game: the tracked position is still the start position, or nothing is tracked yet and the cameras see one.
   // A stale start FEN does not keep the assumption once the cameras have left that position, and an empty board with no reading is not assumed.
-  const start = (fenBoard === START_BOARD && (!b || looksLikeStart(b))) || (pcs.length === 0 && looksLikeStart(b));
+  const start = !presence && ((fenBoard === START_BOARD && (!b || looksLikeStart(b))) || (pcs.length === 0 && looksLikeStart(b)));
   if (!pcs.length && start) pcs = START_PIECES;
   const reads: SquareRead[] = [];
   for (let i = 0; i < 64; i++) {
@@ -122,12 +122,12 @@ export const lowConfAlpha = (score: number) => 0.06 + 0.94 * smoothstep(0.1, 0.6
  * confidence ring around it and the square's 0..100 confidence in the corner. Pieces seen but not identified show as "?".
  * Pieces expected but not seen are ghosted with a dashed red ring.
  */
-export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, opts: { diff?: number[]; lifted?: string; fen?: string; live?: boolean } = {}) {
+export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b: { occ: ArrayLike<number>; white: ArrayLike<number>; conf?: ArrayLike<number> } | null | undefined, opts: { diff?: number[]; lifted?: string; fen?: string; live?: boolean; presence?: boolean } = {}) {
   const th = boardTheme();
   ctx.fillStyle = th.surround; ctx.fillRect(0, 0, w, h);
   const s = Math.min(w, h) / 8;
   const ox = (w - s * 8) / 2;
-  const { reads, start } = readSquares(b, opts.fen, opts.live);
+  const { reads, start } = readSquares(b, opts.fen, opts.live, opts.presence);
   const labels = !!b && s >= 20;
   // per-square animation state lives with the canvas: everything eases toward its target instead of popping
   const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -172,7 +172,7 @@ export function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, b
       ctx.globalAlpha = an.da * (0.35 + 0.65 * an.score) * vis;
       ctx.fillStyle = an.white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = an.white ? "#3b3a37" : "#0d0d0d";
       ctx.beginPath(); ctx.arc(cx, cy, s * 0.26, 0, 7); ctx.fill(); ctx.stroke();
-      if (s >= 14) { ctx.fillStyle = an.white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02); }
+      if (s >= 14 && !opts.presence) { ctx.fillStyle = an.white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02); }
       ctx.globalAlpha = 1;
     }
     // confidence ring: a dim full circle, with a coloured arc sweeping clockwise from the top in proportion to the score
@@ -204,8 +204,8 @@ export interface TileRead { piece: string | null; occupied: boolean; white: bool
  * The raw reading of one camera (no start-position boost, no fusion): occupancy and colour per square.
  * The reader cannot tell piece types apart, so the type comes from the tracked game (or the start position) and only when its colour agrees.
  */
-export function readerTiles(o: { occ: ArrayLike<number>; white: ArrayLike<number> }, fen?: string): TileRead[] {
-  const known = fenPieces(fen), tracked = known.length ? known : looksLikeStart(o) ? START_PIECES : [];
+export function readerTiles(o: { occ: ArrayLike<number>; white: ArrayLike<number> }, fen?: string, presence = false): TileRead[] {
+  const known = presence ? [] : fenPieces(fen), tracked = presence ? [] : known.length ? known : looksLikeStart(o) ? START_PIECES : [];
   return Array.from({ length: 64 }, (_, i) => {
     const occ = o.occ[i], w = o.white[i], occupied = occ > 0.5, white = w > 0.5;
     const t = tracked[i] ?? null, piece = occupied && t && (t === t.toUpperCase()) === white ? t : null;
@@ -214,11 +214,11 @@ export function readerTiles(o: { occ: ArrayLike<number>; white: ArrayLike<number
 }
 
 /** Board of tiles for one camera's reading: the piece it thinks is on each square (or none) and its confidence in %. */
-export function drawReaderBoard(ctx: CanvasRenderingContext2D, w: number, h: number, o: { occ: ArrayLike<number>; white: ArrayLike<number> } | null | undefined, fen?: string) {
+export function drawReaderBoard(ctx: CanvasRenderingContext2D, w: number, h: number, o: { occ: ArrayLike<number>; white: ArrayLike<number> } | null | undefined, fen?: string, presence = false) {
   const th = boardTheme();
   ctx.fillStyle = th.surround; ctx.fillRect(0, 0, w, h);
   const s = Math.min(w, h) / 8, ox = (w - s * 8) / 2, oy = (h - s * 8) / 2;
-  const tiles = o ? readerTiles(o, fen) : null;
+  const tiles = o ? readerTiles(o, fen, presence) : null;
   for (let i = 0; i < 64; i++) {
     const x = ox + (i % 8) * s, y = oy + Math.floor(i / 8) * s, cx = x + s / 2, cy = y + s * 0.44;
     ctx.fillStyle = ((i % 8) + Math.floor(i / 8)) % 2 ? th.dark : th.light; ctx.fillRect(x, y, s, s);
@@ -232,7 +232,7 @@ export function drawReaderBoard(ctx: CanvasRenderingContext2D, w: number, h: num
       else {
         ctx.fillStyle = t.white ? "#fdfdfd" : "#262421"; ctx.strokeStyle = t.white ? "#3b3a37" : "#0d0d0d"; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(cx, cy, s * 0.22, 0, 7); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = t.white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02);
+        if (!presence) { ctx.fillStyle = t.white ? "#262421" : "#fdfdfd"; ctx.font = `600 ${s * 0.3}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", cx, cy + s * 0.02); }
       }
       ctx.globalAlpha = 1;
     }

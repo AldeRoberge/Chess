@@ -16,7 +16,7 @@ import type { GrayFrame } from "../vision/types";
 import { previewPoint, setPreviewPointer, setPreviewSize } from "./previewHover";
 
 export const PORT_COLOR: Record<PortType, string> = {
-  frame: "#5aa9ff", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
+  frame: "#5aa9ff", flat: "#8f9bff", reading: "#5be08a", obs: "#35e0b4", board: "#ffd35a", game: "#ff8a5a", pointer: "#c68bff", pose: "#ff6bd1",
   seat: "#a3e635", event: "#ff5a6e", text: "#7fd4ff", scene: "#8aff9c", clock: "#ffa94d", world: "#4fd1c5", player: "#f472b6", action: "#fde047", fx: "#5cf2ff", any: "#9aa4b8",
 };
 export const CAT_COLOR: Record<string, string> = {
@@ -154,6 +154,16 @@ export class NodeEditor {
       this.watchPreview(n.id, preview, w, hh);
     }
     const params = new Map<string, (v: any) => void>();
+    // Corner editing sits right under the picture, not folded into a section.
+    const quads = spec.preview ? (spec.params ?? []).filter((p): p is Extract<ParamDef, { kind: "text" }> => p.kind === "text" && !!p.quad) : [];
+    if (quads.length) {
+      const bar = h("div", "ne-calbar");
+      for (const p of quads) {
+        const b = this.cornersButton(n, p, (s) => { n.params[p.id] = s; params.get(p.id)?.(s); this.onChange(); }, quads.length > 1 ? `Adjust ${p.label.toLowerCase()}` : "Calibrate: adjust corners");
+        b.classList.add("ne-calbtn"); bar.append(b);
+      }
+      body.append(bar);
+    }
     if (spec.params?.length) {
       const box = h("div", "ne-params");
       const groups = new Map<string, { defs: ParamDef[]; content: HTMLElement; summary: HTMLElement }>();
@@ -173,21 +183,34 @@ export class NodeEditor {
       for (const p of spec.params) {
         if (p.kind === "separator") { provider = p.label; continue; }
         if ((p.kind === "bool" && p.optional) || (p.kind === "number" && p.group)) {
-          const group = section("optional", "Optional features", "plus"); group.defs.push(p);
+          const group = section("optional", "Simulate camera problems", "camera"); group.defs.push(p);
           if (!listed) { listed = true; group.content.append(this.optionalList(n, spec.params, params)); } continue;
         }
         let group: ReturnType<typeof section> | undefined;
         if (provider) group = section(`provider:${provider}`, provider, "voice");
-        else if (p.kind === "text" && (p.secret || /url|endpoint|apiKey/i.test(p.id)) || /^(universe|port|host)$/.test(p.id)) group = section("connection", "Connection & access", "unlink");
-        else if (p.kind === "text" && p.quad || /^(autoCal|autoFind|follow|flagHour)$/.test(p.id)) group = section("calibration", "Calibration", "board");
-        else if (/threshold|weight|softness|hysteresis|stale|motion|margin|confirm|cost|conf|seed|poll|cooldown|delay|memory|average|patch|grid|collect|cnn/i.test(p.id)) group = section("tuning", "Advanced tuning", "setup");
+        else if (p.kind === "text" && p.secret) group = section("keys", "Enter API keys", "gear");
+        else if (/^(dmx|dmxUrl|universe)$/.test(p.id)) group = section("dmx", "Set up DMX lighting", "scene");
+        else if (p.kind === "text" && /url|endpoint/i.test(p.id) || /^(port|host)$/.test(p.id)) group = section("connection", "Change server address", "unlink");
+        else if (p.kind === "text" && p.quad) group = section("corners", "Adjust image regions & corners", "board");
+        else if (/^(autoCal|autoFind|learn)$/.test(p.id)) group = section("learning", "Teach it the board", "board");
+        else if (/^(follow|cam1|cam2|cam3|seat)$/.test(p.id)) group = section("placement", "Set camera & seat placement", "camera");
+        else if (/^(cnn|board|collect)$/.test(p.id) && spec.category === "Vision") group = section("reader", "Choose neural readers & training", "frame");
+        else if (/^(memory|hysteresis|average|settleMs|holdOnHand|clean)$/.test(p.id)) group = section("stability", "Steady the readings", "setup");
+        else if (/^(staleMs|handMotion)$/.test(p.id)) group = section("feeds", "Tune feed freshness & hand movement", "camera");
+        else if (/^(margin|confirm|maxCost|minConf)$/.test(p.id)) group = section("confidence", "Tune when a reading is accepted", "setup");
+        else if (/threshold|weight|softness|patch|grid/i.test(p.id)) group = section("detection", "Tune piece detection", "search");
+        else if (/^(poll|cooldown|delay|fps)$/.test(p.id)) group = section("timing", "Adjust timing & FPS", "clock");
+        else if (p.id === "seed") group = section("random", "Set the random seed", "refresh");
+        else if (p.id === "flagHour") group = section("flag", "Set clock flag position", "clock");
         if (group) group.defs.push(p);
         (group?.content ?? box).append(this.paramRow(n, p, params));
       }
-      for (const group of groups.values()) {
+      for (const [key, group] of groups) {
+        if (key !== "optional" && group.defs.length < 2) { const d = group.content.parentElement!; d.replaceWith(...group.content.children); groups.delete(key); continue; } // never fold a single setting
         const update = () => {
           const changed = group.defs.filter((p) => n.params[p.id] !== p.value && !(p.kind === "bool" && p.action)).length;
-          group.summary.textContent = `${group.defs.length} settings · ${changed ? `${changed} modified` : "Defaults"} · ${group.defs.slice(0, 2).map((p) => p.label).join(", ")}`;
+          const names = group.defs.filter((p) => !(p.kind === "number" && p.group)).map((p) => p.label);
+          group.summary.textContent = changed ? `${names.length} settings · ${changed} changed` : `${names.length} settings`; // one short line, never the list of names
         };
         group.content.addEventListener("input", update); group.content.addEventListener("change", update); group.content.addEventListener("click", update);
         for (const p of group.defs) { const sync = params.get(p.id); if (sync) params.set(p.id, (v) => { sync(v); update(); }); }
@@ -278,6 +301,31 @@ export class NodeEditor {
     return wrap;
   }
 
+  /** Opens the drag-the-corners editor for a quad param. `apply` receives the corners in the stored 480×360 frame. */
+  private cornersButton(n: NodeInstance, p: Extract<ParamDef, { kind: "text" }>, apply: (stored: string) => void, text: string) {
+    const q = p.quad!, b = withIcon(h("button", "ne-qbtn", text), "board", 13); b.type = "button"; b.dataset.tip = "Adjust corners"; b.dataset.tipBody = "Drag the corners on the live camera picture, or let Auto detect find them.";
+    b.onpointerdown = (e) => e.stopPropagation();
+    b.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const live = () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null;
+      // The editor works in the picture's own pixels. Saved corners stay in the 480×360 reader frame, so a sharper camera does not move the grid.
+      const toView = (stored: string) => {
+        const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(stored);
+        return !pts || (sc.sx === 1 && sc.sy === 1) ? stored : fmtCorners(pts.map((pt) => ({ x: pt.x * sc.sx, y: pt.y * sc.sy })));
+      };
+      const toStored = (view: string) => {
+        const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(view);
+        return !pts || (sc.sx === 1 && sc.sy === 1) ? view : fmtCorners(pts.map((pt) => ({ x: pt.x / sc.sx, y: pt.y / sc.sy })));
+      };
+      openQuadEditor({
+        title: `${this.spec(n).title} — ${p.label}`, value: toView(String(n.params[p.id])), names: q.names, grid: q.grid,
+        frame: live,
+        change: (v) => apply(toStored(v)), done: () => {},
+      });
+    };
+    return b;
+  }
+
   private paramRow(n: NodeInstance, p: ParamDef, sync: Map<string, (v: any) => void>) {
     if (p.kind === "separator") { const sep = h("div", "ne-param-sep", p.label); sep.setAttribute("role", "separator"); sep.dataset.node = n.id; sep.dataset.param = p.id; return sep; }
     // A div, not a label: a checkbox inside a label is toggled when it is inserted, which cleared "Seated" on every new patch.
@@ -341,27 +389,8 @@ export class NodeEditor {
     } else {
       const t = h("input"); t.type = p.secret ? "password" : "text"; if (p.secret) { t.autocomplete = "off"; t.spellcheck = false; } t.setAttribute("aria-label", p.label); t.value = String(n.params[p.id]); t.onchange = () => commit(t.value); t.onpointerdown = (e) => e.stopPropagation();
       sync.set(p.id, (v) => { if (document.activeElement !== t) t.value = String(v); }); row.append(t);
-      if (p.quad) {
-        const q = p.quad, b = withIcon(h("button", "ne-qbtn", "Edit"), "board", 13); b.type = "button"; b.dataset.tip = "Edit corners"; b.dataset.tipBody = "Drag the corners on the live camera picture instead of typing numbers.";
-        b.onpointerdown = (e) => e.stopPropagation();
-        b.onclick = (e) => {
-          e.preventDefault(); e.stopPropagation();
-          const live = () => this.spec(n).frameOf?.(this.graph.states.get(n.id)) as GrayFrame | null ?? null;
-          // The editor works in the picture's own pixels. Saved corners stay in the 480×360 reader frame, so a sharper camera does not move the grid.
-          const toView = (stored: string) => {
-            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(stored);
-            return !pts || (sc.sx === 1 && sc.sy === 1) ? stored : fmtCorners(pts.map((pt) => ({ x: pt.x * sc.sx, y: pt.y * sc.sy })));
-          };
-          const toStored = (view: string) => {
-            const fr = live(), sc = fr ? frameScale(fr.width, fr.height) : { sx: 1, sy: 1 }, pts = parseCorners(view);
-            return !pts || (sc.sx === 1 && sc.sy === 1) ? view : fmtCorners(pts.map((pt) => ({ x: pt.x / sc.sx, y: pt.y / sc.sy })));
-          };
-          openQuadEditor({
-            title: `${this.spec(n).title} — ${p.label}`, value: toView(String(n.params[p.id])), names: q.names, grid: q.grid,
-            frame: live,
-            change: (v) => { const s = toStored(v); t.value = s; commit(s); }, done: () => {},
-          });
-        };
+      if (p.quad && !this.spec(n).preview) { // with a picture, the button under it does this
+        const b =this.cornersButton(n, p, (s) => { t.value = s; commit(s); }, "Adjust");
         pn.append(b);
       }
     }

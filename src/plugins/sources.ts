@@ -8,7 +8,7 @@ import { drawFrame, withDetail } from "./shared";
 import { frameHover } from "./hover";
 import { openStream } from "../setup/devices";
 
-interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string; status: string; debug: string; frames: number }
+interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string; status: string; debug: string; frames: number; dev?: string }
 const webcamStatus = (s: WebcamState) => s.err ? "Error" : s.starting || (s.stream && !s.frame) ? "Loading" : s.frame ? "Live" : "Offline";
 /** Capture sizes. The picture is kept at this size (or the camera's own size when that is smaller). The board reader averages it down to 480×360 to sample the squares. */
 const RESOLUTIONS: Record<string, [number, number]> = { "640x480": [640, 480], "960x720": [960, 720], "1280x960": [1280, 960] };
@@ -68,6 +68,7 @@ const webcam: NodeSpec<WebcamState> = {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const want = String(params.device);
           const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
+          state.dev = dev?.label || (want && !/^[0-9a-f]{20,}$/i.test(want) ? want : "") || "default camera";
           state.status = "Requesting camera stream";
           state.debug = `${devices.filter(d => d.kind === "videoinput").length} cameras; ${dev?.label || dev?.deviceId || "default device"}; ${capW}×${capH}. Awaiting getUserMedia (permission/device open; 6s timeout)`;
           const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: capW, height: capH } });
@@ -111,7 +112,7 @@ const webcam: NodeSpec<WebcamState> = {
         // Exposure: a gain on the picture; the Uint8ClampedArray store clips highlights (over) or shadows crush to black (under).
         const gain = params.over ? 1 + Number(params.overAmount) / 100 * 3 : params.under ? 1 - Number(params.underAmount) / 100 * 0.9 : 1;
         if (gain !== 1) span("apply exposure", () => { for (let i = 0; i < n; i++) g[i] = g[i] * gain; });
-        state.frame = { width: tw, height: th, data: g, t: now };
+        state.frame = { width: tw, height: th, data: g, t: now, source: state.dev };
         state.frames++;
         state.status = `Captured frame ${state.frames}`;
         state.debug = `${vw}×${vh} video → ${tw}×${th} pixels → ${ch}; gain ${gain.toFixed(2)}; ${params.fps} FPS target; t=${Math.round(now)} ms`;

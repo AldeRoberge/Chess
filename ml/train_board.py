@@ -7,7 +7,7 @@ Output: an 8x8 grid of 13 classes per square: 0 empty, 1-6 white pawn/knight/bis
 It is fully convolutional: four stride-2 stages bring the image down to one cell per square (10x10 with the margin),
 two more 3x3 layers let every cell look at its neighbours, then a 1x1 layer classifies. Batch norm is folded on export.
 """
-import base64, json, sys, time
+import base64, json, os, sys, time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -35,13 +35,16 @@ def f32(x):
 
 
 class Net(nn.Module):
-    SPEC = [(1, 8, 2), (8, 16, 2), (16, 32, 2), (32, 48, 2), (48, 48, 1), (48, 48, 1)]
+    WIDTH = int(sys.argv[3]) if len(sys.argv) > 3 else 48   # channels of the last stages; 48 = about 8M multiply-adds, 64 = about 19M
+    _w = WIDTH / 48
+    _c = [1, round(8 * _w), round(16 * _w), round(32 * _w), WIDTH, WIDTH, WIDTH]
+    SPEC = [(_c[0], _c[1], 2), (_c[1], _c[2], 2), (_c[2], _c[3], 2), (_c[3], _c[4], 2), (_c[4], _c[5], 1), (_c[5], _c[6], 1)]
 
     def __init__(self):
         super().__init__()
         self.convs = nn.ModuleList([nn.Conv2d(i, o, 3, stride=s, padding=1) for i, o, s in self.SPEC])
         self.bns = nn.ModuleList([nn.BatchNorm2d(o) for _, o, _ in self.SPEC])
-        self.head = nn.Conv2d(48, NC, 1)
+        self.head = nn.Conv2d(self.SPEC[-1][1], NC, 1)
         self.drop = nn.Dropout2d(0.1)
 
     def forward(self, x):
@@ -95,7 +98,9 @@ def pack(t):
     return base64.b64encode(t.detach().cpu().numpy().astype("<f4").tobytes()).decode()
 
 
-xt, yt = load("train")
+_parts = [load(n) for n in os.environ.get("TRAIN", "train").split(",")]   # e.g. TRAIN=train,train2
+xt, yt = torch.cat([p[0] for p in _parts]), torch.cat([p[1] for p in _parts])
+del _parts
 xv, yv = load("val")
 xr, yr = load("real")
 if REAL != "none":
@@ -134,7 +139,7 @@ layers = []
 for c, b in zip(net.convs, net.bns):
     w, bias = fold(c, b)
     layers.append({"k": 3, "in": c.in_channels, "out": c.out_channels, "stride": c.stride[0], "relu": True, "w": pack(w), "b": pack(bias)})
-layers.append({"k": 1, "in": 48, "out": NC, "stride": 1, "relu": False, "w": pack(net.head.weight), "b": pack(net.head.bias)})
+layers.append({"k": 1, "in": net.head.in_channels, "out": NC, "stride": 1, "relu": False, "w": pack(net.head.weight), "b": pack(net.head.bias)})
 sample = f32(xv[:2])
 with torch.no_grad():
     logits = net(sample)  # 2 x 3 x 8 x 8

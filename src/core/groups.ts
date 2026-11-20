@@ -7,7 +7,9 @@ export const NODE_W = 280;
 export const NODE_H = 300;
 /** Narrowest a node may be once organised; anything narrower is widened so its controls and labels breathe. */
 export const AMPLE_W = 360;
-const COL_W = 330, ROW_H = 800, PAD = 24, HEAD = 40, GAP = 56, WRAP = 3; // ROW_H is the step: cards are taller than NODE_H, and a short step paints them on top of each other
+/** Card height assumed when the real one is not known (a layout built without a screen). Cards are taller than NODE_H, and a short guess paints them on top of each other. */
+const EST_H = 520;
+const COL_GAP = 32, ROW_GAP = 32, PAD = 24, HEAD = 40, GAP = 40, WRAP = 3;
 
 /** What a node is for. Sections follow this when the patch is organised. */
 const ROLES: { title: string; color: string; match: RegExp }[] = [
@@ -37,7 +39,7 @@ export function depths(g: GraphJSON): Map<string, number> {
  */
 export function organize(g: GraphJSON, size?: (id: string) => { w: number; h: number } | null): void {
   const depth = depths(g), groups: GroupDef[] = [];
-  const dims = (x: GraphJSON["nodes"][number]) => { const m = size?.(x.id); return { w: Math.max(x.w ?? 0, m?.w ?? 0, AMPLE_W), h: Math.max(x.h ?? 0, m?.h ?? 0, NODE_H) }; };
+  const dims = (x: GraphJSON["nodes"][number]) => { const m = size?.(x.id); return { w: Math.max(x.w ?? 0, m?.w ?? 0, AMPLE_W), h: Math.max(x.h ?? 0, m?.h ?? 0) || EST_H }; };
   let y = 30, n = 0;
   for (const role of [...ROLES, OTHER]) {
     const nodes = g.nodes.filter((x) => roleOf(x.type) === role);
@@ -46,13 +48,13 @@ export function organize(g: GraphJSON, size?: (id: string) => { w: number; h: nu
     const ordered = nodes.map((x, i) => ({ x, i })).sort((a, b) => (depth.get(a.x.id) ?? 0) - (depth.get(b.x.id) ?? 0) || a.i - b.i).map((o) => o.x);
     const cols = Math.min(WRAP, ordered.length), rows = Math.ceil(ordered.length / WRAP);
     // column widths and row heights follow the largest node in them, so tall or resized nodes never spill out
-    const cw = Array<number>(cols).fill(NODE_W), rh = Array<number>(rows).fill(NODE_H);
+    const cw = Array<number>(cols).fill(0), rh = Array<number>(rows).fill(0);
     // nodes narrower than AMPLE_W are widened here, so the new width is kept with the patch
     ordered.forEach((node, i) => { const d = dims(node); node.w = d.w; cw[i % WRAP] = Math.max(cw[i % WRAP], d.w); rh[Math.floor(i / WRAP)] = Math.max(rh[Math.floor(i / WRAP)], d.h); });
-    const colX = cw.map((_, c) => 20 + PAD + cw.slice(0, c).reduce((t, v) => t + v + (COL_W - NODE_W), 0));
-    const rowY = rh.map((_, r) => y + HEAD + PAD + rh.slice(0, r).reduce((t, v) => t + v + (ROW_H - NODE_H), 0));
+    const colX = cw.map((_, c) => 20 + PAD + cw.slice(0, c).reduce((t, v) => t + v + COL_GAP, 0));
+    const rowY = rh.map((_, r) => y + HEAD + PAD + rh.slice(0, r).reduce((t, v) => t + v + ROW_GAP, 0));
     ordered.forEach((node, i) => { node.x = colX[i % WRAP]; node.y = rowY[Math.floor(i / WRAP)]; });
-    const w = colX[cols - 1] + cw[cols - 1] + PAD - 20, h = rowY[rows - 1] + Math.max(rh[rows - 1], ROW_H) + PAD - y;
+    const w = colX[cols - 1] + cw[cols - 1] + PAD - 20, h = rowY[rows - 1] + rh[rows - 1] + PAD - y;
     groups.push({ id: `g${++n}`, title: role.title, color: role.color, x: 20, y, w, h });
     y += h + GAP;
   }

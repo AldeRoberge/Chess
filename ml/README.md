@@ -37,7 +37,7 @@ with a square of margin (`boardImage.ts`) and a small fully convolutional net ou
 $env:CNN_GEN=1; $env:CNN_BOARD=1; $env:CNN_N=4000; $env:CNN_SEED=1; $env:CNN_OUT="ml/data/board-train"; npx vitest run src/vision/cnnData.gen.test.ts -t "renders positions"
 $env:CNN_N=400; $env:CNN_SEED=2; $env:CNN_OUT="ml/data/board-val"; npx vitest run src/vision/cnnData.gen.test.ts -t "renders positions"
 $env:CNN_HOLDOUT=1; npx vitest run src/vision/cnnData.gen.test.ts -t "augments"   # drop CNN_HOLDOUT for the shipped model
-python -I ml/train_board.py 90 all
+TRAIN=train,train2 python -I ml/train_board.py 45 all 72   # more boards: a second set with CNN_N=14000 CNN_SEED=5 CNN_OUT=ml/data/board-train2
 ```
 
-Turn it on with the Board Reader node's "Neural whole-board reader (beta)" switch.
+The model outputs 13 classes per square (empty, then pawn to king for white and for black); the tracker uses the colours, and `BoardSampler.pieceTypes` exposes the piece types (not used by the tracker yet). Turn it on with the Board Reader node's "Neural whole-board reader (beta)" switch.

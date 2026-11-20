@@ -121,7 +121,7 @@ export const paramIcon = (id: string, kind: string, size = 13): string => icon(P
 /** Icon per node type, falling back to its category. */
 const NODE_ICON: Record<string, string> = {
   "source.webcam": "webcam", "source.synthetic": "vcam",
-  "vision.boardReader": "eye", "vision.fuse": "fuse", "vision.stabilize": "wave",
+  "vision.boardReader": "eye", "vision.clean": "sun", "vision.flatten": "grid", "vision.brightness": "contrast", "vision.neuralBoard": "brain", "vision.neuralSquares": "brain", "vision.blend": "fuse", "vision.observe": "eye", "vision.fuse": "fuse", "vision.stabilize": "wave",
   "game.tracker": "board", "game.engine": "knight", "game.chesscom": "knight",
   "narration.narrator": "chat", "narration.ai": "brain", "narration.speech": "voice",
   "scene.cues": "lamp", "scene.output": "speaker",
@@ -133,7 +133,7 @@ export const nodeIcon = (type: string, category: string, size = 16): string => i
 
 /** Icon per port type, shown inside each node input/output pin. */
 const PORT_ICON: Record<string, string> = {
-  frame: "frame", obs: "eye", board: "board", game: "knight", pointer: "hand", pose: "people", seat: "opponent", event: "bolt",
+  frame: "frame", flat: "grid", reading: "eye", obs: "eye", board: "board", game: "knight", pointer: "hand", pose: "people", seat: "opponent", event: "bolt",
   text: "text", scene: "scene", clock: "clock", world: "cube", player: "pawn", action: "play", fx: "spark", any: "fuse",
 };
 export const portIcon = (type: string, size = 10): string => icon(PORT_ICON[type] ?? "fuse", size);
@@ -160,6 +160,8 @@ export const BUTTON_ICON: Record<string, string> = {
 };
 
 /** Changes a button's text, keeping its icon. */
+/** Marks a button as a toggle and sets its state: aria-pressed drives the shared switch look (see `[aria-pressed]` in style.css). */
+export function setPressed(b: HTMLElement, on: boolean) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
 export function setLabel(b: HTMLElement, text: string) { const l = b.querySelector(".lbl"); if (l) l.textContent = text; else b.textContent = text; }
 
 export const icon = (name: string, size = 16): string =>
