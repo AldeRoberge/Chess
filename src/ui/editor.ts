@@ -117,11 +117,11 @@ export class NodeEditor {
     const ico = h("span", "ne-ico"); ico.innerHTML = nodeIcon(n.type, spec.category, 18);
     head.append(ico, h("span", "ne-title", spec.title));
     const fid = h("span", "ne-fid", ""), ms = h("span", "ne-ms", "");
-    const byp = h("button", "ne-btn", "⏻"); byp.type = "button"; byp.setAttribute("aria-label", "Bypass"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
+    const byp = h("button", "ne-btn byp"); byp.innerHTML = icon("bypass", 16); byp.type = "button"; byp.setAttribute("aria-label", "Bypass"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
     byp.onclick = (e) => { e.stopPropagation(); n.bypass = !n.bypass; el.classList.toggle("bypass", !!n.bypass); this.onChange(); };
-    const del = h("button", "ne-btn", "✕"); del.type = "button"; del.setAttribute("aria-label", "Delete node"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "#ff7070";
+    const del = h("button", "ne-btn del"); del.innerHTML = icon("trash", 16); del.type = "button"; del.setAttribute("aria-label", "Delete node"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "var(--bad)";
     del.onclick = (e) => { e.stopPropagation(); this.removeNode(n.id); };
-    const exp = h("button", "ne-btn", "⤢"); exp.type = "button"; exp.setAttribute("aria-label", "Expand"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
+    const exp = h("button", "ne-btn exp"); exp.innerHTML = icon("expand", 16); exp.type = "button"; exp.setAttribute("aria-label", "Expand"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
     exp.onclick = (e) => { e.stopPropagation(); if (n.w || n.h) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); };
     const acts = h("span", "ne-acts"); acts.append(byp, del, exp);
     head.append(fid, acts);
@@ -242,7 +242,7 @@ export class NodeEditor {
   private applySize(n: NodeInstance) {
     const el = this.views.get(n.id)?.el; if (!el) return;
     el.style.width = n.w ? n.w + "px" : ""; el.style.height = n.h ? n.h + "px" : "";
-    el.classList.toggle("sized", !!n.h); el.classList.toggle("wide", (n.w ?? 0) >= 480);
+    el.classList.toggle("sized", !!n.h); const eb = el.querySelector<HTMLElement>(".ne-btn.exp"); if (eb) { eb.innerHTML = icon(n.h || n.w ? "collapse" : "expand", 16); eb.dataset.tip = n.h || n.w ? "Collapse" : "Expand"; eb.setAttribute("aria-label", eb.dataset.tip); } el.classList.toggle("wide", (n.w ?? 0) >= 480);
     const v = this.views.get(n.id)!;
     if (n.h && !v.preview && !this.spec(n).preview) { // a node without a preview gets a live readout of its outputs once it is expanded
       v.preview = h("canvas", "ne-preview"); v.generic = true; v.preview.width = 160; v.preview.height = 100; this.watchPreview(n.id, v.preview, 160, 100);

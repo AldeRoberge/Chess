@@ -9,7 +9,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") 
 const ms = (v: number) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + " ms";
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-const ROW = 20;
+const ROW = 28; // flamegraph row pitch in CSS px; the filled bar is ROW - 3 tall
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 /** A rounded card with a title row; `tools` sit on the right of the title. */
 const card = (title: string, tools: HTMLElement | null, ...body: HTMLElement[]) => {
@@ -368,7 +368,7 @@ export class PerfPanel {
   }
 
   private drawTimeline() {
-    const { g, w, h } = this.fit(this.timeline, 84);
+    const { g, w, h } = this.fit(this.timeline, 112);
     g.clearRect(0, 0, w, h);
     const fr = this.frames(), cap = profiler.maxFrames, bw = w / cap;
     const top = Math.max(33.4, percentile(fr.map((f) => f.dur), 0.98) * 1.15);
@@ -388,7 +388,7 @@ export class PerfPanel {
       if (this.tlOver === i) { g.fillStyle = "rgba(255,255,255,.18)"; g.fillRect(x - 1, 2, bw + 2, h - 14); }
       if (this.selected === i) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(x - 0.5, 2, bw + 1, h - 14); }
     });
-    g.font = "10px IBM Plex Mono, monospace"; g.textBaseline = "bottom";
+    g.font = "12px IBM Plex Mono, monospace"; g.textBaseline = "bottom";
     for (const [v, c] of [[16.7, "#35e0b4"], [33.3, "#ffb340"]] as const) {
       if (v > top) continue;
       g.strokeStyle = c; g.globalAlpha = 0.5; g.setLineDash([3, 4]); g.beginPath(); g.moveTo(0, y(v)); g.lineTo(w, y(v)); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
@@ -419,37 +419,38 @@ export class PerfPanel {
   private drawFlame() {
     const vis = this.boxes.filter((b) => b.depth <= this.depth);
     const rows = vis.reduce((a, b) => Math.max(a, b.depth), 0) + 1;
-    const { g, w, h } = this.fit(this.flame, rows * ROW + 4);
+    const { g, w, h } = this.fit(this.flame, Math.max(rows, 4) * ROW + 6); // keep a sensible minimum height while a capture is shallow or empty
     g.clearRect(0, 0, w, h);
     this.hits = [];
     // the visible window in ms: boxes outside it are culled, so zooming keeps the frame cheap
     const span = this.total || 1, x0 = this.view.a * span, vs = this.view.w * span;
     const q = this.search.value.trim().toLowerCase();
-    g.font = "11px IBM Plex Mono, monospace"; g.textBaseline = "middle";
+    g.font = "600 13px IBM Plex Mono, monospace"; g.textBaseline = "middle";
+    const barH = ROW - 3, rr = (x: number, y: number, bw: number, bh: number) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, bw, bh, Math.min(4, bw / 2)); else g.rect(x, y, bw, bh); };
     for (const b of vis) {
       if (b.x + b.w < x0 || b.x > x0 + vs) continue;
       const x = ((b.x - x0) / vs) * w, bw = (b.w / vs) * w;
       if (bw < 0.6) continue;
-      const y = b.depth * ROW;
+      const y = b.depth * ROW + 1;
       const dim = q && !b.name.toLowerCase().includes(q);
-      const hot = b.node ? 58 : 46;
       g.globalAlpha = dim ? 0.25 : 1;
-      g.fillStyle = `hsl(${hueOf(b.node ? b.name.replace(/ preview$/, "") : b.name)} ${b.node ? 55 : 38}% ${hot}%)`;
-      g.fillRect(x, y, Math.max(0.6, bw - 1), ROW - 2);
-      if (bw > 38) {
+      // light, fairly saturated bars with near-black text: roughly 7:1 contrast or better on every hue
+      g.fillStyle = `hsl(${hueOf(b.node ? b.name.replace(/ preview$/, "") : b.name)} ${b.node ? 62 : 45}% ${b.node ? 68 : 72}%)`;
+      rr(x, y, Math.max(0.6, bw - 1.5), barH); g.fill();
+      if (bw > 44) {
         // labels stay readable when the box starts off-screen to the left
-        const cx = Math.max(x, 0), cw = Math.min(x + bw, w) - cx - 4;
-        g.fillStyle = "#04101c"; g.save(); g.beginPath(); g.rect(cx, y, cw, ROW); g.clip(); g.fillText(`${b.name}  ${ms(b.w)}`, cx + 4, y + ROW / 2 - 1); g.restore();
+        const cx = Math.max(x, 0), cw = Math.min(x + bw, w) - cx - 10;
+        g.fillStyle = "#06101d"; g.save(); g.beginPath(); g.rect(cx, y, cw + 4, barH); g.clip(); g.fillText(`${b.name}  ${ms(b.w)}`, cx + 7, y + barH / 2 + 0.5); g.restore();
       }
-      if (b === this.over) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(x + 0.5, y + 0.5, Math.max(0.6, bw - 2), ROW - 3); }
+      if (b === this.over) { g.strokeStyle = "#fff"; g.lineWidth = 2; rr(x + 1, y + 1, Math.max(0.6, bw - 3.5), barH - 2); g.stroke(); }
       g.globalAlpha = 1;
-      this.hits.push({ x, y, w: bw, box: b });
+      this.hits.push({ x, y: b.depth * ROW, w: bw, box: b });
     }
   }
 
   /** Overview strip: every top-level section, with the part of the graph currently in view bright and the rest dimmed. Drag it to pan. */
   private drawMini() {
-    const { g, w, h } = this.fit(this.mini, 22);
+    const { g, w, h } = this.fit(this.mini, 30);
     g.clearRect(0, 0, w, h);
     const span = this.total || 1;
     for (const b of this.boxes) {
