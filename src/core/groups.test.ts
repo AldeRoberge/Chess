@@ -5,13 +5,17 @@ import { createRegistry } from "../plugins";
 import { WORKFLOWS } from "../workflows";
 
 describe("organize", () => {
-  it("puts every node in exactly one section, by role, top to bottom, with titles and colours", () => {
+  it("puts every node in exactly one section: a row per camera, merging into game state on the right, then bands by role", () => {
     const g = new Graph(createRegistry()); g.load(WORKFLOWS[1].graph);
     const json = g.toJSON(); organize(json);
     const titles = json.groups!.map((s) => s.title);
-    expect(titles).toEqual(["Demo & input", "Analysis", "Game & experience", "Output: sound & narration"]);
-    expect(json.groups!.map((s) => s.color)).toEqual(GROUP_COLORS.slice(0, 4));
-    for (let i = 1; i < json.groups!.length; i++) expect(json.groups![i].y).toBeGreaterThan(json.groups![i - 1].y + json.groups![i - 1].h - 1);
+    expect(titles.filter((t) => t.startsWith("Camera"))).toEqual(["Camera 1", "Camera 2", "Camera 3"]);
+    const cams = json.groups!.filter((s) => s.title.startsWith("Camera")), merge = json.groups!.find((s) => s.title === "Merge into game state")!;
+    for (let i = 1; i < cams.length; i++) expect(cams[i].y).toBeGreaterThan(cams[i - 1].y + cams[i - 1].h - 1); // stacked
+    for (const c of cams) expect(merge.x).toBeGreaterThanOrEqual(c.x + c.w); // merge reads to the right of every camera
+    const rest = json.groups!.filter((s) => !s.title.startsWith("Camera") && s !== merge);
+    expect(rest.map((s) => s.title)).toEqual(["Demo & input", "Analysis", "Game & experience", "Output: sound & narration"].filter((t) => rest.some((s) => s.title === t)));
+    for (let i = 1; i < rest.length; i++) expect(rest[i].y).toBeGreaterThan(rest[i - 1].y + rest[i - 1].h - 1);
     const owner = new Map<string, string[]>();
     for (const s of json.groups!) for (const id of nodesInside(json, s)) owner.set(id, [...(owner.get(id) ?? []), s.title]);
     expect(owner.size).toBe(json.nodes.length);
@@ -19,8 +23,8 @@ describe("organize", () => {
     const type = (id: string) => json.nodes.find((n) => n.id === id)!.type;
     for (const [id, [title]] of owner) {
       if (type(id).startsWith("narration.") || type(id).startsWith("scene.")) expect(title).toMatch(/^Output/);
-      if (type(id).startsWith("vision.")) expect(title).toBe("Analysis");
-      if (type(id).startsWith("sim.") || type(id).startsWith("source.")) expect(title).toBe("Demo & input");
+      if (type(id) === "vision.boardReader") expect(title).toMatch(/^Camera/);
+      if (type(id) === "vision.fuse" || type(id) === "game.tracker") expect(title).toBe("Merge into game state");
     }
   });
   it("keeps pipeline order left to right and wraps long bands; unknown nodes go to Other", () => {
