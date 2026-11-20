@@ -1,6 +1,7 @@
 import type { HoverInfo, NodeSpec, ParamDef, Plugin } from "../core/types";
 import { bus } from "../core/bus";
 import { boardTheme } from "../ui/boardThemes";
+import { pieceImage } from "../ui/pieceSets";
 import type { TipRow } from "../ui/tooltip";
 import { BoardCache, type BoardCnn } from "../vision/boardCnn";
 import { BOARD_MARGIN, BOARD_PX, BOARD_SIDE, extractBoard } from "../vision/boardImage";
@@ -80,13 +81,19 @@ function drawPresence(ctx: CanvasRenderingContext2D, w: number, h: number, r: Re
     const x = ox + (i % 8) * s, y = Math.floor(i / 8) * s, cx = x + s / 2, cy = y + s / 2, occ = r.occ[i];
     if (occ > 0.5) {
       const white = r.white[i] > 0.5, c = squareConf(r, i);
+      const letter = o.types ? pieceLetter(o.types, i, white) : null;
+      // the piece the model says it is, drawn as the piece itself; a disc with its letter while the picture loads
+      const icon = letter ? pieceImage((white ? "w" : "b") + letter.toLowerCase()) : null;
       ctx.globalAlpha = 0.3 + 0.7 * c;
-      ctx.fillStyle = white ? WHITE : BLACK; ctx.strokeStyle = white ? "#3b3a37" : "#e8e8e8"; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.arc(cx, cy, s * 0.3, 0, 7); ctx.fill(); ctx.stroke();
+      if (icon) ctx.drawImage(icon, cx - s * 0.42, cy - s * 0.46, s * 0.84, s * 0.84);
+      else {
+        ctx.fillStyle = white ? WHITE : BLACK; ctx.strokeStyle = white ? "#3b3a37" : "#e8e8e8"; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(cx, cy, s * 0.3, 0, 7); ctx.fill(); ctx.stroke();
+      }
       ctx.globalAlpha = 1;
-      if (o.types && s >= 14) { // the piece the model says it is, in the disc
+      if (letter && !icon && s >= 14) {
         ctx.font = `700 ${Math.max(8, s * 0.36)}px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillStyle = white ? "#1f1d1b" : "#fdfdfd"; ctx.fillText(pieceLetter(o.types, i, white), cx, cy + s * 0.02);
+        ctx.fillStyle = white ? "#1f1d1b" : "#fdfdfd"; ctx.fillText(letter, cx, cy + s * 0.02);
       }
       if (s >= 18) {
         const t = String(Math.round(c * 100));
@@ -343,7 +350,7 @@ const neuralBoard: NodeSpec<BoardNetState> = {
   dispose(s) { netPool().forget(s.key); },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { flat: s.flat, types: s.types, note: s.loaded ? "no board yet" : "loading the model…" }), () => [
-      ...counts(s.reading), ...(s.types ? [["piece types", "read by the model (letters on the discs)"] as DetailRow] : []), ["model", s.loaded ? "loaded" : "loading"], ["ran last read", s.ran ? "yes" : "no, picture unchanged"], ["last run", `${s.ms.toFixed(1)} ms`], ["where", netPool().supported ? "background worker" : "main thread"]]);
+      ...counts(s.reading), ...(s.types ? [["piece types", "read by the model (shown as piece icons)"] as DetailRow] : []), ["model", s.loaded ? "loaded" : "loading"], ["ran last read", s.ran ? "yes" : "no, picture unchanged"], ["last run", `${s.ms.toFixed(1)} ms`], ["where", netPool().supported ? "background worker" : "main thread"]]);
   },
   hover(p, w, h, s) { return squareHover(p, w, h, s.reading, "Neural Board Reader", "The network sees the whole flattened board, so a tall piece leaning over its neighbour or a hand on the board is read in context. Its probabilities are tempered so a camera it has never seen cannot shout."); },
 };
