@@ -10,7 +10,7 @@ const commit = (() => { try { return execSync("git rev-parse HEAD", { stdio: ["i
 export default defineConfig(({ command }) => ({
   base: command === "build" ? "/chess/" : "/",
   // Listen on the network so a phone on the same Wi-Fi can open the remote page (the join code guards it; see src/remote/relay.ts).
-  server: { host: true },
+  server: { host: true, port: 24377 },
   plugins: [remotePlugin(), collectPlugin()],
   define: { __APP_VERSION__: JSON.stringify(version), __BUILD_TIME__: JSON.stringify(new Date().toISOString()), __BUILD_COMMIT__: JSON.stringify(commit) },
   build: { target: "es2022", chunkSizeWarningLimit: 900, outDir: "dist/chess", emptyOutDir: true },

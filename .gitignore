@@ -7,3 +7,6 @@ public/stockfish/
 ml/data/
 ml/__pycache__/
 ml/real/
+ml/.venv-render/
+ml/assets/*/
+ml/renders/

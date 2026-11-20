@@ -38,6 +38,25 @@ function randomRig(rand: () => number, i: number): CameraRig {
 }
 
 describe.skipIf(!process.env.CNN_GEN)("square CNN training data", () => {
+  it.skipIf(!process.env.CNN_GLTF)("imports labeled glTF renders", () => {
+    const dir = process.env.CNN_GLTF!;
+    const files = readdirSync(dir).filter(n => n.endsWith(".json")).sort();
+    if (!files.length) throw new Error(`No labeled renders in ${dir}`);
+    const out = process.env.CNN_OUT ?? `${PRE}gltf-train`;
+    const xs = new Uint8Array(files.length * UNIT), ys = new Uint8Array(files.length * 64);
+    files.forEach((file, at) => {
+      const meta = JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
+      const data = new Uint8ClampedArray(readFileSync(`${dir}/${file.replace(/\.json$/, ".gray")}`));
+      if (data.length !== meta.width * meta.height || meta.corners?.length !== 4) throw new Error(`Invalid render ${file}`);
+      const game = new Chess(meta.fen);
+      const crops = cut({ width: meta.width, height: meta.height, data, t: at }, meta.corners);
+      for (let i = 0; i < crops.length; i++) xs[at * UNIT + i] = Math.min(255, Math.round(crops[i] * 127.5));
+      ys.set(label(game), at * 64);
+    });
+    mkdirSync("ml/data", { recursive: true });
+    writeFileSync(`${out}.x`, xs); writeFileSync(`${out}.y`, ys);
+    console.info(`Imported ${files.length} textured glTF renders into ${out}.x/.y`);
+  });
   it("renders positions and cuts them into square crops", () => {
     const N = Number(process.env.CNN_N ?? 600), rand = rng(Number(process.env.CNN_SEED ?? 1) * 7919 + 13), out = process.env.CNN_OUT ?? "ml/data/train";
     const xs = new Uint8Array(N * 2 * UNIT), ys = new Uint8Array(N * 2 * 64);

@@ -5,6 +5,7 @@ import type { TipRow } from "../ui/tooltip";
 import { BoardCache, type BoardCnn } from "../vision/boardCnn";
 import { BOARD_MARGIN, BOARD_PX, BOARD_SIDE, extractBoard } from "../vision/boardImage";
 import { loadBoardCnn } from "../vision/boardModel";
+import { netPool, type NetResult } from "../vision/netPool";
 import { collectFrame } from "../vision/collect";
 import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
@@ -273,30 +274,53 @@ const RATE: ParamDef = { id: "maxRate", kind: "number", label: "Reads per second
 /** True when the last reading is still fresh enough to reuse for this picture. */
 const reuse = (st: { reading: Reading | null; lastRun: number; shape: string }, f: FlatBoard, now: number, rate: number) =>
   !!st.reading && st.shape === JSON.stringify(f.corners) && now - st.lastRun < 1000 / Math.max(1, rate);
-const neuralBoard: NodeSpec<NetState<BoardCnn, BoardCache>> = {
+/** The board reader's state: the network runs in a worker when the browser has one, inline otherwise (tests). */
+interface BoardNetState extends NetState<BoardCnn, BoardCache> { loaded: boolean; inflight: number; epoch: number; arrived: NetResult | null; probs: Float32Array | null; key: string }
+let boardSeq = 0;
+const neuralBoard: NodeSpec<BoardNetState> = {
   type: "vision.neuralBoard", title: "Neural Board Reader", category: "Vision",
-  desc: "A small trained network that looks at the whole flattened board at once and says, for every square, whether a piece stands there and which colour. Runs on your device; a still board costs almost nothing.",
+  desc: "A small trained network that looks at the whole flattened board at once and says, for every square, whether a piece stands there and which colour. Runs on your device in the background, so it never stalls the picture; a still board costs almost nothing.",
   inputs: [{ id: "flat", type: "flat" }], outputs: [{ id: "reading", type: "reading" }],
   params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }, RATE],
   previewSize: BASE,
-  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "" }),
+  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "", loaded: false, inflight: 0, epoch: 0, arrived: null, probs: null, key: `neural${++boardSeq}` }),
   process({ flat }, { params, state, setFidelity, now }) {
-    const f = flat as FlatBoard | null | undefined;
-    if (!state.net && !state.loading) { state.loading = true; void loadBoardCnn().then((n) => { state.net = n; }).catch(() => { state.loading = false; }); }
-    if (!f || !state.net) { state.reading = null; state.flat = f ?? null; setFidelity(null); return { reading: null }; }
-    state.flat = f;
-    if (reuse(state, f, now, Number(params.maxRate))) { state.ran = false; state.reading = { ...state.reading!, t: f.t }; return { reading: state.reading }; }
+    const f = flat as FlatBoard | null | undefined, T = Number(params.temperature), rate = Number(params.maxRate);
+    state.flat = f ?? null;
+    const pool = netPool();
+    if (!pool.supported && !state.net && !state.loading) { state.loading = true; void loadBoardCnn().then((n) => { state.net = n; }).catch(() => { state.loading = false; }); } // load while there is nothing to read yet
+    if (!f) { state.reading = null; state.probs = null; state.arrived = null; state.epoch++; state.inflight = 0; setFidelity(null); return { reading: null }; }
+    const shape = JSON.stringify(f.corners);
+    if (pool.supported) {
+      // an answer from the worker arrives between ticks; ask for the next one when it is time (at once if the corners moved)
+      if (state.arrived) { state.probs = state.arrived.probs; state.ran = state.arrived.ran; if (state.ran) state.ms = state.arrived.ms; state.loaded = true; state.arrived = null; }
+      const t = performance.now();
+      if (state.inflight && t - state.inflight > 3000) { state.epoch++; state.inflight = 0; } // a lost answer must never stall the reader
+      if (!state.inflight && (shape !== state.shape || now - state.lastRun >= 1000 / Math.max(1, rate))) {
+        state.inflight = t; state.lastRun = now; state.shape = shape;
+        const epoch = state.epoch;
+        void pool.read(state.key, f.img).then((r) => { if (epoch === state.epoch) { state.inflight = 0; state.arrived = r; } });
+      }
+      if (!state.probs) { state.reading = null; setFidelity(null); return { reading: null }; }
+      state.reading = readingFromProbs(f.cam, f.t, "neural board", state.probs, T);
+      setFidelity(meanConf(state.reading));
+      return { reading: state.reading };
+    }
+    if (!state.net) { state.reading = null; setFidelity(null); return { reading: null }; }
+    state.loaded = true;
+    if (reuse(state, f, now, rate)) { state.ran = false; state.reading = { ...state.reading!, t: f.t }; return { reading: state.reading }; }
     if (state.cacheOf !== state.net) { state.cache = new BoardCache(state.net); state.cacheOf = state.net; }
     const t0 = performance.now(), probs = state.cache!.classify(f.img);
     state.ran = state.cache!.ran; if (state.ran) state.ms = performance.now() - t0;
-    state.lastRun = now; state.shape = JSON.stringify(f.corners);
-    state.reading = readingFromProbs(f.cam, f.t, "neural board", probs, Number(params.temperature));
+    state.lastRun = now; state.shape = shape;
+    state.reading = readingFromProbs(f.cam, f.t, "neural board", probs, T);
     setFidelity(meanConf(state.reading));
     return { reading: state.reading };
   },
+  dispose(s) { netPool().forget(s.key); },
   preview(ctx, w, h, s) {
-    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { flat: s.flat, note: s.net ? "no board yet" : "loading the model…" }), () => [
-      ...counts(s.reading), ["model", s.net ? "loaded" : "loading"], ["ran this tick", s.ran ? "yes" : "no, picture unchanged"], ["last run", `${s.ms.toFixed(1)} ms`]]);
+    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { flat: s.flat, note: s.loaded ? "no board yet" : "loading the model…" }), () => [
+      ...counts(s.reading), ["model", s.loaded ? "loaded" : "loading"], ["ran last read", s.ran ? "yes" : "no, picture unchanged"], ["last run", `${s.ms.toFixed(1)} ms`], ["where", netPool().supported ? "background worker" : "main thread"]]);
   },
   hover(p, w, h, s) { return squareHover(p, w, h, s.reading, "Neural Board Reader", "The network sees the whole flattened board, so a tall piece leaning over its neighbour or a hand on the board is read in context. Its probabilities are tempered so a camera it has never seen cannot shout."); },
 };

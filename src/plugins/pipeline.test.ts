@@ -5,6 +5,9 @@ import { RIGS, rigCorners } from "../sim/rigs";
 import { node, shoot, tick } from "../test/helpers";
 import { blendReadings, pieceCount, type Reading } from "../vision/readings";
 import { fmtCorners } from "./shared";
+import { NetPool } from "../vision/netPool";
+import { handle, type NetReq } from "../vision/netWorker";
+import { extractBoard } from "../vision/boardImage";
 
 const truthOf = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : p.color === "w" ? 1 : 2));
 const reading = (pieces: number[], source = "x", white = 1): Reading => ({ cam: "A", t: 0, source, occ: Float32Array.from({ length: 64 }, (_, i) => (pieces.includes(i) ? 0.95 : 0.05)), white: new Float32Array(64).fill(white ? 0.9 : 0.1) });
@@ -80,6 +83,19 @@ describe("detection pipeline nodes", () => {
     flat.params.corners = fmtCorners(rigCorners(RIGS.B));
     const f3 = flat.run({ frame: shoot(table, "A", 400, 6, 3) })!.flat;
     neural.run({ flat: f3 }, 310); expect(neural.state.lastRun).toBe(310); // corners moved: no waiting
+  });
+
+  it("the network worker answers per reader, skips an unchanged board, and forgets a reader", async () => {
+    const table = new VirtualTable(), frame = shoot(table, "A"), img = extractBoard(frame, rigCorners(RIGS.A));
+    // a stand-in worker that runs the real handler
+    const fake: any = { onmessage: null, postMessage(req: NetReq) { const r = handle(req); if (r) setTimeout(() => fake.onmessage({ data: r }), 0); }, terminate() {} };
+    const pool = new NetPool(() => fake);
+    expect(pool.supported).toBe(true);
+    const a = await pool.read("r1", img), b = await pool.read("r1", img), c = await pool.read("r2", img);
+    expect(a.probs).toHaveLength(64 * 13 === a.probs.length ? 64 * 13 : 192); expect(a.ran).toBe(true); expect(b.ran).toBe(false); expect(c.ran).toBe(true); // r2 has its own cache
+    pool.forget("r1"); expect((await pool.read("r1", img)).ran).toBe(true);
+    expect(new NetPool().supported).toBe(false); // jsdom has no Worker
+    pool.dispose();
   });
 
   it("flatten gives nothing for bad corners and caches the picture it already cut", () => {

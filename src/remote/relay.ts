@@ -110,7 +110,7 @@ export function createRelay(opts: RelayOptions = {}) {
     if (route.startsWith("host/")) {
       if (!LOOPBACK.has(req.socket.remoteAddress ?? "")) { send(res, 403, { error: "Open the app on this computer as localhost to host a game." }); return true; }
       if (route === "host/info" && method === "GET") {
-        const port = req.socket.localPort ?? 5173;
+        const port = req.socket.localPort ?? 24377;
         const urls = addresses().map((a) => joinUrl(`http://${a}:${port}`, code, prefix.replace(/remote\/$/, "")));
         if (bridge) urls.push(joinUrl("https://alderoberge.com", code, "/chess/"));
         send(res, 200, { code, clients: phones(), urls });
@@ -173,7 +173,7 @@ export function remotePlugin(opts: RelayOptions = {}) {
   const mount = (server: { middlewares: { use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void } }) =>
     server.middlewares.use((req, res, next) => { void relay.handle(req, res, prefix).then((done) => { if (!done) next(); }); });
   const announce = (port?: number) => {
-    const p = port ?? 5173;
+    const p = port ?? 24377;
     const urls = (opts.addresses ?? lanAddresses)().map((a) => joinUrl(`http://${a}:${p}`, relay.code, prefix.replace(/remote\/$/, "")));
     const away = joinUrl("https://alderoberge.com", relay.code, "/chess/");
     console.log(`\n  Phone remote: join code ${relay.code}${urls.length ? `\n  Open on a phone on the same Wi-Fi: ${urls[0]}` : "\n  No network address found: connect this computer to Wi-Fi first."}\n  Or from anywhere: ${away}\n`);
