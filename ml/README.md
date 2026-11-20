@@ -92,3 +92,31 @@ These synthetic validation scores are not real-camera accuracy. Test on separate
 manually checked real sessions; the current saved real frames contain only one
 position. A further model-set holdout (e.g. train on two sets, evaluate the third)
 can measure transfer to an unseen piece design.
+
+### Lighting-aware retraining controls
+
+The renderer cycles evenly through `daylight`, `dim`, `bright`, `warm`, `cool`,
+`side-lit`, `hard-shadow`, and `uneven` illumination. It changes light positions,
+colours, energy, source size, ambient light and exposure, and records those values
+in each frame's JSON. It uses denoised Cycles renders without extra pixel noise.
+`--exclude <validation-folder> <test-folder>` prevents those positions from entering
+training. `--resume` skips complete PNG/gray/JSON triples, and `--only-sets <name>`
+allows independent render processes to share one run without changing its seeds or
+frame indices. Keep the same `--sets`, seed, count and exclusions for every process.
+
+Both trainers now support `TRAIN_WEIGHTS` (one positive weight per source dataset)
+and `EPOCH_SAMPLES` to balance new glTF frames against larger legacy datasets without
+duplicating tensors. `INIT` warm-starts from an exported model of the same architecture;
+`MAX_LR` sets the peak learning rate. `OUT`, `CHECK`, and `STATS` let a candidate write
+weights, reference logits and metrics separately from the shipped files. The best
+validation checkpoint is exported, rather than automatically using the last epoch.
+When weights are specified, put `realaug` in `TRAIN` explicitly and use `none` for
+the positional real-data argument.
+
+`python ml/evaluate_models.py --model <weights.json> --data <dataset-prefix>
+--metadata <render-folder> --out <report.json>` evaluates an exported model, including
+occupancy/colour accuracy and exact-board accuracy, broken down by lighting and set.
+Whole-board colour predictions sum the piece-type probabilities, as the browser does.
+Use the same evaluation frames for old and new models, and keep the test frames out
+of checkpoint selection. Stored real frames are still regression checks, not evidence
+of real-camera generalization, when those positions were also used in training.

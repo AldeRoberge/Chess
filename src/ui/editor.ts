@@ -30,7 +30,10 @@ const portDot = (dot: HTMLElement, hex: string) => { dot.style.background = port
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
 interface View { x: number; y: number; k: number }
-interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HTMLElement }; el: HTMLElement; preview?: HTMLCanvasElement; generic?: boolean; fid: HTMLElement; ms: HTMLElement; err: HTMLElement; params: Map<string, (v: any) => void>; statKey?: string; seen?: Map<string, unknown>; pins: Map<string, HTMLElement> }
+interface NodeView { heat: { bar: HTMLElement; spark: HTMLCanvasElement; txt: HTMLElement }; el: HTMLElement; preview?: HTMLCanvasElement; generic?: boolean; fid: HTMLElement; ms: HTMLElement; err: HTMLElement; params: Map<string, (v: any) => void>; statKey?: string; seen?: Map<string, unknown>; pins: Map<string, HTMLElement>; paint?: { outs: unknown[]; extra: string; at: number } }
+
+/** A preview may repaint at least this often even when nothing it shows seems to have changed (status text, theme, animations). */
+const PREVIEW_REFRESH_MS = 500;
 
 /** Blueprint / TouchDesigner style graph editor on plain DOM + SVG (no framework, no canvas layout cost). */
 export class NodeEditor {
@@ -890,6 +893,14 @@ export class NodeEditor {
         const ctx = v.preview.getContext("2d")!; ctx.setTransform(k, 0, 0, k, 0, 0);
         const outs = this.graph.outputs.get(id) ?? {};
         setPreviewSize(id, lw, lh);
+        // Nothing changed since the last paint (same picture / reading objects, params, size, pointer): the pixels on the canvas are still right.
+        // Skipped for nodes that animate or show only state, i.e. without a live output value.
+        if (!v.generic) {
+          const hover = spec.hover && previewPoint(id), values = Object.values(outs);
+          const extra = `${bw}x${bh}|${hover ? `${hover.p.x},${hover.p.y}` : ""}|${JSON.stringify(n.params)}`, last = v.paint;
+          if (last && values.length && values.every((x) => x != null) && last.extra === extra && last.outs.length === values.length && values.every((x, i) => x === last.outs[i]) && now - last.at < PREVIEW_REFRESH_MS) continue;
+          v.paint = { outs: values, extra, at: now };
+        } else v.paint = undefined;
         if (v.generic) { ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, lw, lh); drawRows(ctx, 0, 0, lw, lh, objRows(outs).length ? objRows(outs) : [["outputs", "none yet"]]); }
         else {
           profiler.span(`${spec.title} preview`, () => spec.preview!(ctx, lw, lh, this.graph.states.get(id), outs), id);

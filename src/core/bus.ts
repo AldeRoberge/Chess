@@ -44,6 +44,8 @@ export const bus = {
   calibrationDismiss: false,
   /** Explicit approval from the top-menu suggestion. */
   calibrationAccept: false,
+  /** The Board Reader's "Split" button: the app loop replaces every Board Reader with the detector nodes. */
+  splitReaders: false,
 };
 
 export function pushLog<T>(arr: T[], items: T[], max = 60) {

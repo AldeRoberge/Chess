@@ -257,7 +257,8 @@ const brightness: NodeSpec<BrightState> = {
     }
     if (img !== state.of || !state.obs) { const t0 = performance.now(); state.of = img; state.obs = s.read(img, 1); state.ms = performance.now() - t0; }
     const o = state.obs;
-    state.reading = { cam: f.cam, t: f.t, source: "brightness", occ: o.occ, white: o.white, quality: o.quality, motion: o.motion, handSquares: o.handSquares };
+    // the reading only changes with a new picture: keep the same object so downstream nodes and previews can tell nothing changed
+    if (!state.reading || state.reading.occ !== o.occ || state.reading.t !== f.t) state.reading = { cam: f.cam, t: f.t, source: "brightness", occ: o.occ, white: o.white, quality: o.quality, motion: o.motion, handSquares: o.handSquares };
     setFidelity(o.quality * (1 - Math.min(1, o.motion * 4)));
     return { reading: state.reading };
   },
@@ -283,7 +284,7 @@ const RATE: ParamDef = { id: "maxRate", kind: "number", label: "Reads per second
 const reuse = (st: { reading: Reading | null; lastRun: number; shape: string }, f: FlatBoard, now: number, rate: number) =>
   !!st.reading && st.shape === JSON.stringify(f.corners) && now - st.lastRun < 1000 / Math.max(1, rate);
 /** The board reader's state: the network runs in a worker when the browser has one, inline otherwise (tests). */
-interface BoardNetState extends NetState<BoardCnn, BoardCache> { loaded: boolean; inflight: number; epoch: number; arrived: NetResult | null; probs: Float32Array | null; key: string }
+interface BoardNetState extends NetState<BoardCnn, BoardCache> { loaded: boolean; inflight: number; epoch: number; arrived: NetResult | null; probs: Float32Array | null; key: string; readOf: Float32Array | null; readT: number }
 let boardSeq = 0;
 const neuralBoard: NodeSpec<BoardNetState> = {
   type: "vision.neuralBoard", title: "Neural Board Reader", category: "Vision",
@@ -291,7 +292,7 @@ const neuralBoard: NodeSpec<BoardNetState> = {
   inputs: [{ id: "flat", type: "flat" }], outputs: [{ id: "reading", type: "reading" }],
   params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }, RATE],
   previewSize: BASE,
-  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "", loaded: false, inflight: 0, epoch: 0, arrived: null, probs: null, key: `neural${++boardSeq}` }),
+  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "", loaded: false, inflight: 0, epoch: 0, arrived: null, probs: null, key: `neural${++boardSeq}`, readOf: null, readT: 0 }),
   process({ flat }, { params, state, setFidelity, now }) {
     const f = flat as FlatBoard | null | undefined, T = Number(params.temperature), rate = Number(params.maxRate);
     state.flat = f ?? null;
@@ -310,8 +311,8 @@ const neuralBoard: NodeSpec<BoardNetState> = {
         void pool.read(state.key, f.img).then((r) => { if (epoch === state.epoch) { state.inflight = 0; state.arrived = r; } });
       }
       if (!state.probs) { state.reading = null; setFidelity(null); return { reading: null }; }
-      state.reading = readingFromProbs(f.cam, f.t, "neural board", state.probs, T);
-      setFidelity(meanConf(state.reading));
+      if (state.probs !== state.readOf || T !== state.readT || f.t !== state.reading?.t) { state.reading = readingFromProbs(f.cam, f.t, "neural board", state.probs, T); state.readOf = state.probs; state.readT = T; }
+      setFidelity(meanConf(state.reading!));
       return { reading: state.reading };
     }
     if (!state.net) { state.reading = null; setFidelity(null); return { reading: null }; }

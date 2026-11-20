@@ -156,9 +156,11 @@ def setup_scene(rand, width, height, samples):
         prefs.compute_device_type = 'CUDA'; prefs.get_devices()
         gpu = [d for d in prefs.devices if d.type == 'CUDA']
         for device in prefs.devices: device.use = device.type == 'CUDA'
-        if gpu: scene.cycles.device = 'GPU'
+        if gpu:
+            scene.cycles.device = 'GPU'
     except (KeyError, TypeError, RuntimeError):
         pass
+    print('Render device:',scene.cycles.device,'denoiser:',scene.cycles.denoiser,flush=True)
     scene.render.resolution_x = width
     scene.render.resolution_y = height
     scene.render.resolution_percentage = 100
@@ -198,13 +200,15 @@ def main():
     p.add_argument('--samples',type=int,default=32)
     p.add_argument('--width',type=int,default=960)
     p.add_argument('--height',type=int,default=720)
-    p.add_argument('--exclude',type=Path,help='Folder whose labeled positions must not appear in this run')
+    p.add_argument('--exclude',type=Path,nargs='+',help='Folders whose labeled positions must not appear in this run')
     p.add_argument('--resume',action='store_true',help='Skip complete existing frames')
+    p.add_argument('--only-sets',nargs='+',help='Render only these entries of --sets, keeping the same frame indices and seeds')
     args = p.parse_args()
     args.out.mkdir(parents=True,exist_ok=True)
-    excluded = {json.loads(f.read_text())['fen'].split()[0] for f in args.exclude.glob('*.json')} if args.exclude else set()
+    excluded = {json.loads(f.read_text())['fen'].split()[0] for folder in (args.exclude or []) for f in folder.glob('*.json')}
     rand = random.Random(args.seed)
     for si, pack in enumerate(args.sets):
+        if args.only_sets and pack not in args.only_sets: continue
         bpy.ops.wm.read_factory_settings(use_empty=True)
         templates = load_templates(args.assets/pack/'scene.gltf')
         scene,camera,light,dark = setup_scene(rand,args.width,args.height,args.samples)

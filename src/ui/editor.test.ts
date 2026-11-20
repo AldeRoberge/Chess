@@ -121,8 +121,9 @@ describe("live frame updates", () => {
   });
   it("throttles previews to ~15 fps and skips bypassed nodes", () => {
     const { g, ed, a, painted } = setup(); g.tick(0);
-    ed.frame(1000); const n = painted.mock.calls.length; ed.frame(1010); expect(painted.mock.calls.length).toBe(n); ed.frame(1100); expect(painted.mock.calls.length).toBeGreaterThan(n);
-    a.bypass = true; const m = painted.mock.calls.length; ed.frame(1300); expect(painted.mock.calls.length).toBe(m + 1); // only the unbypassed preview node
+    ed.frame(1000); const n = painted.mock.calls.length; ed.frame(1010); expect(painted.mock.calls.length).toBe(n);
+    g.tick(1100); ed.frame(1100); expect(painted.mock.calls.length).toBeGreaterThan(n); // new output, after the preview throttle interval
+    a.bypass = true; const m = painted.mock.calls.length; g.tick(1300); ed.frame(1300); expect(painted.mock.calls.length).toBe(m + 1); // only the unbypassed preview node
   });
   it("skips wires whose endpoints have no card, and nodes that have not run yet", () => {
     const { g, ed, a, b } = setup(); g.connect({ node: a.id, port: "o" }, { node: b.id, port: "i" });

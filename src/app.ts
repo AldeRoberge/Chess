@@ -29,6 +29,7 @@ import { NodeEditor } from "./ui/editor";
 import { alignAllBoards } from "./ui/alignAll";
 import { AlignProgressPanel } from "./ui/alignProgress";
 import { migrateCameraBot } from "./workflows/cameraBot";
+import { splitBoardReaders } from "./workflows/splitReader";
 import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
@@ -542,9 +543,9 @@ export function boot(root: HTMLElement): Boot {
   let hudBarHtml = "", hudMenuHtml = "";
   // ---- phone remote: publishes the game to the relay in the dev server and plays the moves a phone sends
   const camFrames = () => [...graph.nodes.values()].flatMap((n) => {
-    if (n.type !== "vision.boardReader") return [];
+    if (n.type !== "vision.boardReader" && n.type !== "vision.flatten") return [];
     const f = registry.get(n.type)?.frameOf?.(graph.states.get(n.id)) as GrayFrame | null | undefined;
-    const cam = (graph.states.get(n.id) as { sampler?: { cam?: string } } | undefined)?.sampler?.cam;
+    const cam = n.type === "vision.flatten" ? String(n.params.cam ?? "A") : (graph.states.get(n.id) as { sampler?: { cam?: string } } | undefined)?.sampler?.cam;
     return f && cam ? [{ id: cam, frame: f }] : [];
   });
   const virtualBoard = () => {
@@ -607,6 +608,7 @@ export function boot(root: HTMLElement): Boot {
   installJoinBadge(remote, () => document.getElementById("buildchips"));
   const step = (now: number) => {
     remote.tick(now);
+    if (bus.splitReaders) { bus.splitReaders = false; const g = splitBoardReaders(graph.toJSON()); if (g.nodes.length) { graph.load(g); editor.rebuild(); editor.organize(); persist(); } } // the Board Reader's "Split" button
     if (lastFrame) { const d = now - lastFrame; if (d < 1000) { frameMs += (d - frameMs) * 0.1; worstMs = Math.max(worstMs, d); } }
     lastFrame = now;
     profiler.beginFrame(now);
