@@ -23,6 +23,10 @@ export const CAT_COLOR: Record<string, string> = {
   Source: "#4a8fd9", Vision: "#3fb59a", Game: "#d98c4a", Narration: "#4fb0d0", Scene: "#62c27a", Output: "#7c8aa0", Tracking: "#c76fb0", Experience: "#9a78e0", Effects: "#2fd3e6",
 };
 
+/** Dark disc of a port's colour (about 20% of it over near-black), so the bright icon and ring stand out against it. */
+const portDisc = (hex: string): string => { const n = parseInt(hex.slice(1), 16), k = 0.2, m = (c: number, base: number) => Math.round(base + (c - base) * k); return `rgb(${m(n >> 16, 11)},${m((n >> 8) & 255, 15)},${m(n & 255, 20)})`; };
+const portDot = (dot: HTMLElement, hex: string) => { dot.style.background = portDisc(hex); dot.style.setProperty("--pc", hex); };
+
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
 interface View { x: number; y: number; k: number }
@@ -133,11 +137,11 @@ export class NodeEditor {
     const ins = h("div", "ne-col"), outs = h("div", "ne-col right");
     const pins = new Map<string, HTMLElement>();
     for (const p of spec.inputs) {
-      const row = h("div", "ne-pin in"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "in"; dot.innerHTML = portIcon(p.type);
+      const row = h("div", "ne-pin in"), dot = h("span", "ne-dot"); portDot(dot, PORT_COLOR[p.type]); dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "in"; dot.innerHTML = portIcon(p.type, 15);
       row.append(dot, h("span", "ne-pl", p.label ?? p.id)); ins.append(row); pins.set("in:" + p.id, dot);
     }
     for (const p of spec.outputs) {
-      const row = h("div", "ne-pin out"), dot = h("span", "ne-dot"); dot.style.background = PORT_COLOR[p.type]; dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "out"; dot.innerHTML = portIcon(p.type);
+      const row = h("div", "ne-pin out"), dot = h("span", "ne-dot"); portDot(dot, PORT_COLOR[p.type]); dot.dataset.node = n.id; dot.dataset.port = p.id; dot.dataset.dir = "out"; dot.innerHTML = portIcon(p.type, 15);
       row.append(h("span", "ne-pl", p.label ?? p.id), dot); outs.append(row); pins.set("out:" + p.id, dot);
     }
     pinsRow.append(ins, outs); body.append(pinsRow);
