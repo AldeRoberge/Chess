@@ -80,7 +80,7 @@ describe("returning launch", () => {
     history.replaceState(null, "", "#"); document.body.innerHTML = '<div id="app"></div>'; root = document.getElementById("app")!; localStorage.setItem("cx.graph.v1", "{{{");
     expect(boot(root).graph.nodes.size).toBeGreaterThan(10);
   });
-  it("falls back to defaults when storage is unreadable", () => { finishSetup(); vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); }); expect(boot(root).graph.nodes.size).toBeGreaterThan(10); });
+  it("falls back to defaults when storage is unreadable", () => { finishSetup(); vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); }); expect(boot(root).graph.nodes.size).toBeGreaterThanOrEqual(10); }); // the first-run modular demo
   it("survives storage that refuses writes", () => {
     finishSetup(); const app = boot(root); vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("full"); });
     app.editor.onChange(); // autosave fails quietly
@@ -293,7 +293,7 @@ describe("workflows", () => {
     finishSetup(); const app = boot(root); const before = app.graph.nodes.size;
     (document.getElementById("workflows") as HTMLButtonElement).click();
     expect(document.querySelectorAll(".wf-row")).toHaveLength(WORKFLOWS.length);
-    (document.querySelector(".wf-row button") as HTMLButtonElement).click();
+    [...document.querySelectorAll<HTMLElement>(".wf-row")].find((r) => r.querySelector("b")!.textContent === WORKFLOWS[0].name)!.querySelector("button")!.click(); // the modular demo is listed first, so pick by name
     expect(app.graph.nodes.size).toBe(11); expect(listBackups()[0].reason).toContain("Before workflow");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })); expect(app.graph.nodes.size).toBe(before);
   });
@@ -369,7 +369,7 @@ describe("phone remote", () => {
       return { ok: true, json: async () => ({}) };
     }));
     const copy = vi.fn(async () => {}); Object.defineProperty(navigator, "clipboard", { value: { writeText: copy }, configurable: true });
-    const app = boot(root); finishSetup(); app.step(0); await new Promise((r) => setTimeout(r, 10));
+    finishSetup(); const app = boot(root); app.step(0); await new Promise((r) => setTimeout(r, 10)); // a saved setup, so the game runs on virtual cameras
     root.querySelector<HTMLElement>("#phone")!.click();
     expect(document.querySelector(".notice-title")!.textContent).toBe("This PC’s join code: 4321"); expect(document.querySelector(".notice-msg")!.textContent).toContain("4321"); expect(document.querySelector(".notice-details")!.textContent).toContain("10.0.0.5");
     [...document.querySelectorAll<HTMLElement>(".notice button")].find((b) => b.textContent === "Copy address")!.click(); expect(copy).toHaveBeenCalledWith("http://10.0.0.5:5173/#/remote?code=4321");

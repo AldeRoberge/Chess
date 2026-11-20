@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
-import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, drawMatrixGround, edgeIcons, readPerspective, scoreAlignment, snapLevel, traceSquareGuide } from "./boardGuide";
+import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, drawMatrixGround, edgeIcons, pieceSides, piecesLookTurned, readPerspective, scoreAlignment, snapLevel, traceSquareGuide } from "./boardGuide";
 import { squareToQuad } from "./quadEditor";
 
 /** A flat checkerboard: squares of `sq` px with the board's a8 corner at (x0, y0). a1 is dark unless `flip`. */
@@ -22,6 +22,23 @@ function blur(f: GrayFrame, r: number): GrayFrame {
 }
 const corners = (sq = 40, x0 = 80, y0 = 20, dx = 0, dy = 0): Pt[] => [{ x: x0 + dx, y: y0 + dy }, { x: x0 + 8 * sq + dx, y: y0 + dy }, { x: x0 + 8 * sq + dx, y: y0 + 8 * sq + dy }, { x: x0 + dx, y: y0 + 8 * sq + dy }];
 const q = (f: GrayFrame, c: Pt[]) => scoreAlignment(f, squareToQuad(c));
+
+describe("piece sides", () => {
+  /** Start-position blotches: `top` ink on the two top rows, `bottom` ink on the two bottom rows. */
+  const withPieces = (top: number, bottom: number) => {
+    const f = board();
+    for (const [r, ink] of [[0, top], [1, top], [6, bottom], [7, bottom]] as const) for (let c = 0; c < 8; c++)
+      for (let y = 20 + r * 40 + 10; y < 20 + r * 40 + 30; y++) for (let x = 80 + c * 40 + 10; x < 80 + c * 40 + 30; x++) f.data[y * 480 + x] = ink;
+    return f;
+  };
+  it("is positive with white at the bottom and flags a turned board", () => {
+    expect(pieceSides(withPieces(15, 245), corners())).toBeGreaterThan(0.25);
+    expect(piecesLookTurned(withPieces(15, 245), corners())).toBe(false);
+    expect(pieceSides(withPieces(245, 15), corners())).toBeLessThan(-0.25);
+    expect(piecesLookTurned(withPieces(245, 15), corners())).toBe(true);
+  });
+  it("says nothing for an empty board", () => { expect(piecesLookTurned(board(), corners())).toBe(false); });
+});
 
 describe("alignment score", () => {
   it("falls steadily as the grid drifts off the squares", () => {

@@ -23,6 +23,8 @@ export interface Reading {
   source: string;
   occ: Float32Array; // P(a piece is on the square)
   white: Float32Array; // P(the piece is white), meaningful where occ is high
+  /** Class probabilities per square (13 each: empty, white P N B R Q K, black P N B R Q K), when the detector reads piece types. */
+  types?: Float32Array;
   quality?: number;
   motion?: number;
   handSquares?: Uint8Array;
@@ -77,6 +79,23 @@ export function agreement(a: Reading, b: Reading): number {
   return same / 64;
 }
 
+/** Where the tracked game says every piece stands: per square 0 = empty, else 1 + (white ? 0 : 6) + piece index (P N B R Q K). */
+export type Expected = Uint8Array;
+const PIECE_ORDER = "pnbrqk";
+/** The 64 squares of a FEN (a8 first, like readings) as an `Expected` grid; null if the FEN cannot be read. */
+export function expectedFromFen(fen: string | undefined | null): Expected | null {
+  if (!fen) return null;
+  const out = new Uint8Array(64); let sq = 0;
+  for (const ch of fen.split(" ")[0]) {
+    if (ch === "/") continue;
+    if (ch >= "1" && ch <= "8") { sq += Number(ch); continue; }
+    const k = PIECE_ORDER.indexOf(ch.toLowerCase());
+    if (k < 0 || sq > 63) return null;
+    out[sq++] = 1 + k + (ch === ch.toUpperCase() ? 0 : 6);
+  }
+  return sq === 64 ? out : null;
+}
+
 export interface BlendInput { reading: Reading | null | undefined; weight: number }
 export interface BlendResult {
   reading: Reading | null;
@@ -89,13 +108,18 @@ export interface BlendResult {
 }
 
 const LIMIT = 5;
+/** How firmly the game position speaks for one square at weight 1 (log-odds, about 90%): a real change in the pictures still outvotes it. */
+const PRIOR_LOGIT = 2.2;
 /**
  * Mixes several detectors' readings square by square in the log-odds domain, each counted by its weight, so no single
  * detector can switch a square on or off alone. The first connected reading is the anchor: another reading is thrown out
  * when its piece count is not believable (over 32, or under half the anchor's), which is what a detector looking at a
  * board it was never trained on tends to give.
+ * `expected` (the tracked game position) takes part as one more, gentle voter at `priorWeight`: it knows which piece stands
+ * where, so it nudges occupancy, colour and piece type towards the game, without ever hiding a move the pictures show.
+ * Piece types from detectors that read them (`Reading.types`) are mixed the same way and come out on the blend.
  */
-export function blendReadings(inputs: BlendInput[], guard = true): BlendResult {
+export function blendReadings(inputs: BlendInput[], guard = true, expected?: Expected | null, priorWeight = 0): BlendResult {
   const used = inputs.map(() => false), why = inputs.map(() => ""), disagree = new Uint8Array(64);
   const present = inputs.map((x, i) => ({ r: x.reading, w: x.weight, i })).filter((x) => x.r);
   if (!present.length) return { reading: null, used, why, disagree };
@@ -111,19 +135,31 @@ export function blendReadings(inputs: BlendInput[], guard = true): BlendResult {
   if (guard && anchor && pieceCount(anchor.r!) > 32 && used.some((u, i) => u && i !== anchor.i)) { used[anchor.i] = false; why[anchor.i] = `sees ${anchorPieces} pieces`; }
   const parts = live.filter((x) => used[x.i]);
   if (!parts.length) return { reading: null, used, why, disagree };
-  const occ = new Float32Array(64), white = new Float32Array(64), sum = parts.reduce((a, x) => a + x.w, 0);
+  const pw = expected && priorWeight > 0 ? priorWeight : 0, typed = parts.filter((x) => x.r!.types), anyTypes = typed.length > 0 || pw > 0;
+  const occ = new Float32Array(64), white = new Float32Array(64), types = anyTypes ? new Float32Array(64 * 13) : undefined, sum = parts.reduce((a, x) => a + x.w, 0) + pw;
   for (let sq = 0; sq < 64; sq++) {
     let zo = 0, zw = 0, seen = 0, whites = 0, blacks = 0;
     for (const x of parts) {
       zo += x.w * clamp(logit(x.r!.occ[sq]), -LIMIT, LIMIT); zw += x.w * clamp(logit(x.r!.white[sq]), -LIMIT, LIMIT);
       if (x.r!.occ[sq] > 0.5) { seen++; if (x.r!.white[sq] > 0.5) whites++; else blacks++; }
     }
+    const e = pw ? expected![sq] : 0;
+    if (pw) { zo += pw * (e ? PRIOR_LOGIT : -PRIOR_LOGIT); if (e) zw += pw * (e <= 6 ? PRIOR_LOGIT : -PRIOR_LOGIT); }
     occ[sq] = sigmoid(zo / sum); white[sq] = sigmoid(zw / sum);
     if (parts.length > 1 && ((seen > 0 && seen < parts.length) || (whites > 0 && blacks > 0))) disagree[sq] = 1;
+    if (types) {
+      // piece classes: the detectors' probabilities and the game's one-hot, weighted; empty follows the blended occupancy
+      let tw = 0; const cls = new Float32Array(12);
+      for (const x of typed) { tw += x.w; for (let c = 0; c < 12; c++) cls[c] += x.w * x.r!.types![sq * 13 + 1 + c]; }
+      if (pw && e) { tw += pw; cls[e - 1] += pw; }
+      const total = cls.reduce((a, b) => a + b, 0);
+      if (tw > 0 && total > 0) for (let c = 0; c < 12; c++) types[sq * 13 + 1 + c] = (cls[c] / total) * occ[sq];
+      types[sq * 13] = 1 - occ[sq];
+    }
   }
   const first = parts.find((x) => x.r!.quality !== undefined)?.r ?? present.find((x) => x.r!.quality !== undefined)?.r;
   return {
-    reading: { cam: parts[0].r!.cam, t: parts[0].r!.t, source: "blend", occ, white, quality: first?.quality, motion: first?.motion, handSquares: first?.handSquares },
+    reading: { cam: parts[0].r!.cam, t: parts[0].r!.t, source: "blend", occ, white, quality: first?.quality, motion: first?.motion, handSquares: first?.handSquares, types },
     used, why, disagree,
   };
 }

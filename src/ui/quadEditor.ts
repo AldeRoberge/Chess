@@ -5,7 +5,7 @@ import type { GrayFrame, Pt } from "../vision/types";
 import { labelHints } from "../vision/boardLabels";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { squareToQuad } from "./quadMap";
-import { AlignmentMeter, alignColor, drawEdgeIcons, drawMatrixGround, iconLevels, readPerspective, scoreAlignment } from "./boardGuide";
+import { AlignmentMeter, alignColor, drawEdgeIcons, drawMatrixGround, iconLevels, piecesLookTurned, readPerspective, scoreAlignment } from "./boardGuide";
 import { COACH_LABEL, drawPlacementMoves, placementMoves, type PieceMove } from "./pieceCoach";
 
 export { squareToQuad };
@@ -82,7 +82,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
   opts.append(followBtn, matrixBtn); followBtn.hidden = o.grid <= 1; matrixBtn.hidden = o.grid <= 1;
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
-  const side = document.createElement("div"); side.className = "qe-side"; side.append(meterBox, autoBox, bar, opts);
+  // Shown when the grid fits but white pieces stand where black ones should: one click turns the corner order half way.
+  const turnBtn = btn("Pieces look turned: flip the corners"); turnBtn.hidden = true; setLabel(turnBtn, "Pieces look turned: flip the corners");
+  turnBtn.title = "The grid sits on the board, but the white pieces are where the black ones should be. Turn the corners half way (a8↔h1, h8↔a1).";
+  let turnVotes = 0;
+  turnBtn.onclick = () => { pts = [pts[2], pts[3], pts[0], pts[1]]; turnVotes = 0; turnBtn.hidden = true; emit(); };
+  const side = document.createElement("div"); side.className = "qe-side"; meterBox.append(turnBtn); side.append(meterBox, autoBox, bar, opts);
   box.append(head, hint, stage, side); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
@@ -163,7 +168,13 @@ export function openQuadEditor(o: QuadEditorOpts) {
     if (o.grid > 1) {
       // Read the pieces under the grid a few times a second; each icon's outline fills with how sure that piece is.
       const now = performance.now();
-      if (fr && now - levelsAt > 250) { levelsAt = now; try { levels = iconLevels(fr, pts, meter.q); } catch { levels = undefined; } }
+      if (fr && now - levelsAt > 250) {
+        levelsAt = now; try { levels = iconLevels(fr, pts, meter.q); } catch { levels = undefined; }
+        // A few reads in a row, on a grid that fits, before suggesting the flip, so a passing hand does not trigger it.
+        const board = o.names[0] === "a8" && o.names[2] === "h1";
+        turnVotes = board && meter.good && !aligner && piecesLookTurned(fr, pts) ? Math.min(turnVotes + 1, 6) : Math.max(turnVotes - 2, 0);
+        turnBtn.hidden = turnVotes < 3;
+      }
       drawEdgeIcons(ctx, P, color, fr ? levels : undefined);
       if (coach.length) drawPlacementMoves(ctx, P, coach, now);
     }

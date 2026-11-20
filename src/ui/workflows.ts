@@ -41,7 +41,8 @@ export function openWorkflowPanel(api: WorkflowApi) {
   const ai = el("div", "wf-ai");
   const aiText = el("div"); aiText.append(el("b", "", "Build your own with AI"), el("span", "", "Describe what you want and a model drafts the workflow. You review it before anything changes."));
   ai.append(aiText, btn("Start", () => { m.close(); openAiWizard(api); }, "primary"));
-  const rows = WORKFLOWS.map((w) => {
+  // the modular detection demo is the one used most: it goes first
+  const rows = [...WORKFLOWS].sort((a, b) => Number(b.id === "modular-vision") - Number(a.id === "modular-vision")).map((w) => {
     const row = el("div", "bk-row wf-row"), info = el("div", "bk-info");
     info.append(el("b", "", w.name), el("span", "wf-desc", w.description), el("span", "", `${w.graph.nodes.length} nodes · ${w.graph.edges.length} wires`));
     row.append(workflowIcon(w.id), info, btn("Load", () => { const l = withLiveCameras(w, loadSetup()); api.apply(l.graph, l.setup, `Before workflow: ${w.name}`); m.close(); }));

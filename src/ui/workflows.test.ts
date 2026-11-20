@@ -19,8 +19,8 @@ beforeEach(() => {
 describe("workflow panel", () => {
   it("lists the demos, loads one, opens a file, and Escape closes it", () => {
     openWorkflowPanel(api);
-    expect([...document.querySelectorAll(".wf-row b")].map((b) => b.textContent)).toEqual(WORKFLOWS.map((w) => w.name));
-    click("Load"); expect(applied[0].g).toBe(WORKFLOWS[0].graph); expect(applied[0].s).toBe(WORKFLOWS[0].setup); expect(document.querySelector(".bk")).toBeNull();
+    expect([...document.querySelectorAll(".wf-row b")].map((b) => b.textContent)).toEqual([...WORKFLOWS].sort((a, b) => Number(b.id === "modular-vision") - Number(a.id === "modular-vision")).map((w) => w.name));
+    click("Load"); expect(applied[0].why).toContain("Modular"); expect(document.querySelector(".bk")).toBeNull();
     openWorkflowPanel(api);
     const input = q<HTMLInputElement>(".bk input[type=file]");
     Object.defineProperty(input, "files", { value: [new File(["{}"], "w.json")] }); input.dispatchEvent(new Event("change"));

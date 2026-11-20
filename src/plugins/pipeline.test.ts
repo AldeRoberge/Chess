@@ -3,7 +3,7 @@ import { Chess } from "chess.js";
 import { VirtualTable } from "../sim/virtualTable";
 import { RIGS, rigCorners } from "../sim/rigs";
 import { node, shoot, tick } from "../test/helpers";
-import { agreement, blendReadings, pieceCount, type Reading } from "../vision/readings";
+import { agreement, blendReadings, expectedFromFen, pieceCount, type Reading } from "../vision/readings";
 import { fmtCorners } from "./shared";
 import { pieceLetter } from "./pipeline";
 import { legalLetters } from "../vision/readings";
@@ -37,6 +37,33 @@ describe("blendReadings", () => {
     const a = { ...reading(range(0, 16)), quality: 0.7, motion: 0.1, handSquares: new Uint8Array(64) };
     const r = blendReadings([{ reading: a, weight: 1 }, { reading: reading(range(0, 16)), weight: 0 }]);
     expect(r.used).toEqual([true, false]); expect(r.reading!.quality).toBe(0.7); expect(r.reading!.motion).toBe(0.1);
+  });
+});
+
+describe("blend with piece types and the game position", () => {
+  const start = [...range(0, 16), ...range(48, 64)];
+  it("reads a FEN as which piece stands where", () => {
+    const e = expectedFromFen(new Chess().fen())!;
+    expect(e[0]).toBe(1 + 3 + 6); expect(e[4]).toBe(1 + 5 + 6); expect(e[8]).toBe(1 + 6); expect(e[16]).toBe(0); expect(e[60]).toBe(1 + 5);
+    expect(expectedFromFen("nonsense")).toBeNull();
+  });
+  it("carries the neural reader's piece types and lets the game fill in a detector that has none", () => {
+    const t = new Float32Array(64 * 13); t[4 * 13 + 1 + 10] = 0.2; t[4 * 13 + 1 + 7] = 0.6; // the net thinks a black knight on e8 (it is the king)
+    const a = { ...reading(start), types: t }, b = reading(start);
+    const noGame = blendReadings([{ reading: a, weight: 1 }, { reading: b, weight: 1 }]).reading!;
+    expect(noGame.types![4 * 13 + 1 + 7]).toBeGreaterThan(noGame.types![4 * 13 + 1 + 11]);
+    const withGame = blendReadings([{ reading: a, weight: 1 }, { reading: b, weight: 1 }], true, expectedFromFen(new Chess().fen()), 1).reading!;
+    expect(withGame.types![4 * 13 + 1 + 11]).toBeGreaterThan(0.2); // the king the game knows about shows up
+    expect(blendReadings([{ reading: b, weight: 1 }]).reading!.types).toBeUndefined();
+  });
+  it("the game position nudges a doubtful square but cannot hide a real move", () => {
+    const g = expectedFromFen(new Chess().fen());
+    const doubt = reading(start); doubt.occ[20] = 0.55; // maybe a piece on e3 where the game says empty
+    const quiet = blendReadings([{ reading: doubt, weight: 1 }], true, g, 0.5).reading!;
+    expect(quiet.occ[20]).toBeLessThan(0.55);
+    const moved = reading([...range(0, 12), 20, ...range(13, 16), ...range(48, 64)]); // e2-e3 really played, clearly seen
+    const r = blendReadings([{ reading: moved, weight: 1 }], true, g, 0.3).reading!;
+    expect(r.occ[20]).toBeGreaterThan(0.5); expect(r.occ[12]).toBeLessThan(0.5);
   });
 });
 
@@ -169,5 +196,23 @@ describe("masked view nodes", () => {
     const r = reader.run({ view }, 5000)!.reading;
     expect(r).toBeTruthy(); expect(r.source).toBe("neural view");
     expect(mask.run({ flat: null })!.view).toBeNull();
+  });
+});
+
+describe("what a camera remembers", () => {
+  it("Flatten Board starts a known camera from its last corners and keeps the corners it is given", async () => {
+    const { recallCorners } = await import("../vision/cornerMemory");
+    const table = new VirtualTable(), frame = { ...shoot(table, "A"), source: "Test cam" }, mine = "10,10;400,10;400,300;10,300";
+    const first = node("vision.flatten", { cam: "A", corners: mine }); first.run({ frame });
+    expect(recallCorners("Test cam")).toBe(mine);
+    const second = node("vision.flatten", { cam: "A" }); second.run({ frame }); // fresh node with the default corners: picks up the memory
+    expect(second.params.corners).toBe(mine);
+  });
+  it("Brightness Reader keeps trying to learn the empty squares until the start position is on the board", () => {
+    const table = new VirtualTable(), frame = shoot(table, "A"), flat = node("vision.flatten", { corners: fmtCorners(rigCorners(RIGS.A)) }), bright = node("vision.brightness");
+    const f = flat.run({ frame })!.flat;
+    for (let i = 0; i < 12; i++) bright.run({ flat: { ...f, frame: { ...frame, t: i * 1200 } } }, i * 1200);
+    expect((bright.state as { calTries: number }).calTries).toBeGreaterThan(0);
+    expect((bright.state as { autoDone: boolean }).autoDone).toBe(true); // the virtual table starts from the start position
   });
 });

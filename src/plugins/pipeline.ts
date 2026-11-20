@@ -11,8 +11,9 @@ import { collectFrame } from "../vision/collect";
 import { FrameCleaner, type Cleaned } from "../vision/cleaner";
 import { cleanPool } from "../vision/cleanPool";
 import { BoardSampler, defaultSamplerConfig } from "../vision/sampler";
-import { agreement, blendReadings, legalLetters, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
+import { agreement, blendReadings, expectedFromFen, legalLetters, pieceCount, readingFromProbs, squareConf, type BlendResult, type FlatBoard, type Reading } from "../vision/readings";
 import { AutoAligner } from "../ui/autoAlign";
+import { recallCorners, rememberCorners } from "../vision/cornerMemory";
 import { extractView, VIEW_SIDE, type BoardView } from "../vision/boardView";
 import { loadViewCnn } from "../vision/viewModel";
 import type { ViewCnn } from "../vision/viewCnn";
@@ -191,7 +192,7 @@ const clean: NodeSpec<CleanState> = {
 };
 
 // ---------------------------------------------------------------- Flatten Board
-interface FlatState { frame: GrayFrame | null; of: GrayFrame | null; key: string; flat: FlatBoard | null; ms: number; why: string; sampler: { cam: string }; obs: SquareObs | null; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number }
+interface FlatState { frame: GrayFrame | null; of: GrayFrame | null; key: string; flat: FlatBoard | null; ms: number; why: string; sampler: { cam: string }; obs: SquareObs | null; watch: CalibrationWatch; aligner: AutoAligner | null; checkAt: number; fit: number; camName: string }
 const flatten: NodeSpec<FlatState> = {
   type: "vision.flatten", title: "Flatten Board", category: "Vision",
   desc: "Uses the four board corners to cut the board out of the camera picture and straighten it into one square image, with a square of margin all round. Every detector after it reads this same image.",
@@ -204,12 +205,19 @@ const flatten: NodeSpec<FlatState> = {
   ],
   previewSize: BASE,
   frameOf: (s) => s.frame,
-  init: () => ({ frame: null, of: null, key: "", flat: null, ms: 0, why: "no picture", sampler: { cam: "A" }, obs: null, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1 }),
+  init: () => ({ frame: null, of: null, key: "", flat: null, ms: 0, why: "no picture", sampler: { cam: "A" }, obs: null, watch: new CalibrationWatch(), aligner: null, checkAt: -Infinity, fit: 1, camName: "" }),
   process({ frame }, { params, state, now, setFidelity }) {
     state.frame = frame ?? null; state.sampler.cam = String(params.cam);
+    // A camera this app has seen before starts from its last corners (across workflows and reloads), unless these were already moved by hand.
+    if (frame?.source && frame.source !== state.camName) {
+      state.camName = frame.source;
+      const saved = recallCorners(frame.source);
+      if (saved && String(params.corners) === fmtCorners(rigCorners(RIGS.A)) && saved !== params.corners && parseCorners(saved)) params.corners = saved;
+    }
     if (!frame) { stopCalibration(state, now); state.flat = state.of = null; state.why = "no picture"; setFidelity(null); return { flat: null }; }
     const c = parseCorners(String(params.corners));
     if (!c) { state.flat = null; state.why = "corners are not valid"; setFidelity(null); return { flat: null }; }
+    if (state.camName && String(params.corners) !== fmtCorners(rigCorners(RIGS.A))) rememberCorners(state.camName, String(params.corners)); // every hand fit, auto find or edit is kept for next time
     const key = `${params.corners}|${params.cam}`;
     if (frame !== state.of || key !== state.key) {
       const t0 = performance.now(), sc = frameScale(frame.width, frame.height), corners = c.map((p) => ({ x: p.x * sc.sx, y: p.y * sc.sy }));
@@ -255,7 +263,7 @@ const brightness: NodeSpec<BrightState> = {
     { id: "softness", kind: "number", label: "Decision softness", min: 0.02, max: 0.2, step: 0.005, value: 0.06 },
     { id: "grid", kind: "number", label: "Sample dots per axis", min: 3, max: 10, step: 1, value: 6 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
-    { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
+    { id: "learn", kind: "bool", label: "Re-learn now (normally automatic)", value: false, action: true },
   ],
   previewSize: BASE,
   init: () => ({ sampler: new BoardSampler("A", defaultSamplerConfig()), of: null, obs: null, reading: null, flat: null, cornersKey: "", autoDone: false, calT: -Infinity, calTries: 0, settings: "", ms: 0 }),
@@ -274,10 +282,10 @@ const brightness: NodeSpec<BrightState> = {
     if (settings !== state.settings) { state.settings = settings; state.of = null; }
     const img = f.frame, started = (bus.game?.ply ?? 0) > 0;
     if (params.learn) { s.calibrateFromStart(img); state.autoDone = true; params.learn = false; state.of = null; }
-    else if (params.autoCal && !state.autoDone && (!started || !s.calibrated) && img !== state.of && img.t - state.calT >= 1000 && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= 20) {
+    else if (params.autoCal && !state.autoDone && (!started || !s.calibrated) && img !== state.of && img.t - state.calT >= (state.calTries >= 8 ? 5000 : 1000) && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= 20) {
       s.calibrateFromStart(img); state.calT = img.t; state.calTries++;
       state.of = img; state.obs = s.read(img, 1);
-      if (looksLikeStart(state.obs) || state.calTries >= 8 || (started && s.calibrated)) state.autoDone = true;
+      if (looksLikeStart(state.obs) || (started && s.calibrated)) state.autoDone = true; // otherwise keep looking, slowly, until the start position is on the board
     }
     if (img !== state.of || !state.obs) { const t0 = performance.now(); state.of = img; state.obs = s.read(img, 1); state.ms = performance.now() - t0; }
     const o = state.obs;
@@ -335,7 +343,7 @@ const neuralBoard: NodeSpec<BoardNetState> = {
         void pool.read(state.key, f.img).then((r) => { if (epoch === state.epoch) { state.inflight = 0; state.arrived = r; } });
       }
       if (!state.probs) { state.reading = null; setFidelity(null); return { reading: null }; }
-      if (state.probs !== state.readOf || T !== state.readT || f.t !== state.reading?.t) { state.reading = readingFromProbs(f.cam, f.t, "neural board", state.probs, T); state.readOf = state.probs; state.readT = T; }
+      if (state.probs !== state.readOf || T !== state.readT || f.t !== state.reading?.t) { state.reading = readingFromProbs(f.cam, f.t, "neural board", state.probs, T); if (state.types) state.reading.types = state.types; state.readOf = state.probs; state.readT = T; }
       setFidelity(meanConf(state.reading!));
       return { reading: state.reading };
     }
@@ -348,6 +356,7 @@ const neuralBoard: NodeSpec<BoardNetState> = {
     state.lastRun = now; state.shape = shape;
     state.types = state.net.classes === 13 ? state.cache!.types : null;
     state.reading = readingFromProbs(f.cam, f.t, "neural board", probs, T);
+    if (state.types) state.reading.types = state.types.slice(); // a copy: the cache keeps rewriting its own
     setFidelity(meanConf(state.reading));
     return { reading: state.reading };
   },
@@ -458,7 +467,9 @@ const neuralView: NodeSpec<ViewNetState> = {
 };
 
 // ---------------------------------------------------------------- Blend Readings
-interface BlendState { res: BlendResult | null; inputs: (Reading | null)[]; ms: number; trust: number[]; eff: number[] }
+/** The tracked game position, when the tracker is sure of it (a wrong or lost position must never pull the readings). */
+const gamePrior = () => { const g = bus.game; return g && (g.status === "synced" || g.status === "moved") ? expectedFromFen(g.fen) : null; };
+interface BlendState { res: BlendResult | null; prior: boolean; inputs: (Reading | null)[]; ms: number; trust: number[]; eff: number[] }
 const IN = ["r1", "r2", "r3", "r4"] as const;
 const trustScale = (agree: number) => Math.max(0, Math.min(1, (agree - 0.8) / 0.2)); // 80% agreement or less = no trust, 100% = full
 const blend: NodeSpec<BlendState> = {
@@ -470,11 +481,12 @@ const blend: NodeSpec<BlendState> = {
     { id: "w2", kind: "number", label: "Weight of reading 2", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "w3", kind: "number", label: "Weight of reading 3", min: 0, max: 2, step: 0.1, value: 0.6 },
     { id: "w4", kind: "number", label: "Weight of reading 4", min: 0, max: 2, step: 0.1, value: 0.6 },
+    { id: "wGame", kind: "number", label: "Weight of the game position", min: 0, max: 1, step: 0.05, value: 0.3 },
     { id: "guard", kind: "bool", label: "Ignore implausible readings", value: true },
     { id: "adapt", kind: "bool", label: "Learn which detector to trust", value: true },
   ],
   previewSize: BASE,
-  init: () => ({ res: null, inputs: [null, null, null, null], ms: 0, trust: [1, 1, 1, 1], eff: [0, 0, 0, 0] }),
+  init: () => ({ res: null, prior: false, inputs: [null, null, null, null], ms: 0, trust: [1, 1, 1, 1], eff: [0, 0, 0, 0] }),
   process(inputs, { params, state, setFidelity }) {
     state.inputs = IN.map((k) => (inputs[k] as Reading | null | undefined) ?? null);
     const t0 = performance.now();
@@ -483,7 +495,9 @@ const blend: NodeSpec<BlendState> = {
     const adapt = !!params.adapt;
     const eff = state.inputs.map((_, i) => Number(params[`w${i + 1}`]) * (adapt ? 0.2 + 0.8 * trustScale(state.trust[i]) : 1));
     state.eff = eff;
-    state.res = blendReadings(state.inputs.map((reading, i) => ({ reading, weight: eff[i] })), !!params.guard);
+    const prior = Number(params.wGame ?? 0) > 0 ? gamePrior() : null;
+    state.prior = !!prior;
+    state.res = blendReadings(state.inputs.map((reading, i) => ({ reading, weight: eff[i] })), !!params.guard, prior, Number(params.wGame ?? 0));
     const res = state.res, used = state.inputs.map((_, i) => i).filter((i) => res.used[i]);
     if (adapt && used.length >= 3) for (const i of used) {
       const rest = blendReadings(used.filter((j) => j !== i).map((j) => ({ reading: state.inputs[j], weight: eff[j] })), false).reading;
@@ -495,16 +509,17 @@ const blend: NodeSpec<BlendState> = {
     return { reading: r };
   },
   preview(ctx, w, h, s) {
-    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.res?.reading, { rings: s.res?.disagree, note: "connect at least one detector" }), () => {
+    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.res?.reading, { rings: s.res?.disagree, types: s.res?.reading?.types, note: "connect at least one detector" }), () => {
       const rows: DetailRow[] = [...counts(s.res?.reading)];
       s.inputs.forEach((r, i) => rows.push([`reading ${i + 1}`, !r ? "not connected" : s.res?.used[i] ? `${r.source}: ${pieceCount(r)} pieces, sure ${pct(meanConf(r))}, counts ${pct(s.eff[i] / (s.eff.reduce((a, b) => a + b, 0) || 1))}` : `left out: ${s.res?.why[i] || "not used"}`, !r ? undefined : s.res?.used[i] ? undefined : "#ffb347"]));
       const dis = s.res ? Array.from(s.res.disagree).filter(Boolean).length : 0;
+      rows.push(["game position", s.prior ? "counted (which piece stands where)" : "not used (no synced game yet)"], ["piece types", s.res?.reading?.types ? "mixed from the neural reader and the game" : "none available"]);
       rows.push(["disagreeing squares", s.res ? String(dis) : "—"], ["detectors agree", s.res?.reading ? pct(1 - dis / 64) : "—"]);
       return rows;
     });
   },
   hover(p, w, h, s) {
-    return squareHover(p, w, h, s.res?.reading, "Blend Readings", "Each connected detector votes with its weight, in log-odds, so none can switch a square on or off alone. An amber frame marks a square where the detectors that took part disagree.", (q) =>
+    return squareHover(p, w, h, s.res?.reading, "Blend Readings", "Each connected detector votes with its weight, in log-odds, so none can switch a square on or off alone. The tracked game position adds a gentle vote of its own, and piece types from the neural reader are carried through. An amber frame marks a square where the detectors that took part disagree.", (q) =>
       s.inputs.flatMap((r, i): TipRow[] => (r ? [{ label: `${r.source}`, value: `${r.occ[q] > 0.5 ? (r.white[q] > 0.5 ? "white" : "black") : "empty"} ${pct(squareConf(r, q))}${s.res?.used[i] ? "" : " (left out)"}`, tone: s.res?.used[i] ? undefined : "warn" }] : [])));
   },
 };

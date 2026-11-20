@@ -31,6 +31,7 @@ import { alignAllBoards } from "./ui/alignAll";
 import { AlignProgressPanel } from "./ui/alignProgress";
 import { migrateCameraBot } from "./workflows/cameraBot";
 import { splitBoardReaders } from "./workflows/splitReader";
+import { buildModularBot } from "./workflows/modular";
 import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
@@ -46,7 +47,6 @@ import { drawFrame } from "./plugins/shared";
 import type { GrayFrame } from "./vision/types";
 import { openAiWizard, openWorkflowPanel } from "./ui/workflows";
 import { openPlayNow } from "./ui/playNow";
-import { buildBotPlay } from "./setup/botPlay";
 import { KNIGHT_SVG } from "./ui/brandIcon";
 import { LogPanel, TablePanel, WorldPanel } from "./ui/panels";
 import { PerfPanel } from "./ui/perfPanel";
@@ -90,8 +90,9 @@ export function boot(root: HTMLElement): Boot {
   let setup = loadSetup();
   if (!graph.nodes.size) {
     if (!setup && !loadPrefs().draft) {
-      // First run: skip the guided setup and sit the player down against Stockfish (simulated, mouse, White). Setup stays reachable from the top bar.
-      const r = buildBotPlay(registry, { start: "me-white", presence: "simulated", elo: 1200 }, null);
+      // First run: skip the guided setup and start on the modular detection demo (one webcam, against Stockfish). Setup stays reachable from the top bar.
+      // From then on the open workflow is autosaved and restored on reload.
+      const r = buildModularBot(null);
       graph.load(r.graph); saveSetup(r.setup); setup = r.setup;
     } else buildGraphFromConfig(graph, setup ?? defaultSetup());
   }
@@ -398,7 +399,7 @@ export function boot(root: HTMLElement): Boot {
 
   // ---- undo / redo, backups, crash recovery
   /** Opening a workflow, file or backup tidies the nodes into sections first, so none overlap whatever layout it was saved with. */
-  const loadState = (g: GraphJSON) => { graph.load(migrateCameraBot(g)); editor.rebuild(); editor.organize(); save(); syncUndo(); };
+  const loadState = (g: GraphJSON) => { const m = migrateCameraBot(g); graph.load(m); editor.rebuild(); if (!m.groups?.length) editor.organize(); /* a workflow that brings its own sections keeps them */ save(); syncUndo(); };
   const stepState = (g: GraphJSON) => { graph.restore(g); editor.rebuild(); save(); dirty = true; syncUndo(); }; // in place: nothing restarts
   const undo = () => { const s = edits.undo(); if (s) stepState(s); };
   const redo = () => { const s = edits.redo(); if (s) stepState(s); };

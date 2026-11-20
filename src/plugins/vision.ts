@@ -145,7 +145,7 @@ const reader: NodeSpec<ReaderState> = {
     { id: "average", kind: "number", label: "Average frames", min: 1, max: 8, step: 1, value: 4 },
     { id: "autoCal", kind: "bool", label: "Auto-learn at start position", value: true },
     { id: "autoFind", kind: "bool", label: "Suggest auto-calibration when lost", value: true },
-    { id: "learn", kind: "bool", label: "Learn now", value: false, action: true },
+    { id: "learn", kind: "bool", label: "Re-learn now (normally automatic)", value: false, action: true },
   ],
   previewSize: READER_BASE,
   frameOf: (s) => s.frame,
@@ -220,14 +220,14 @@ const reader: NodeSpec<ReaderState> = {
     if (!state.cleaned) { setFidelity(null); return { obs: null }; } // the first picture is still being cleaned
     const img = state.cleaned!;
     if (params.learn) { span("calibrateFromStart", () => s.calibrateFromStart(img)); state.autoDone = true; params.learn = false; state.readOf = null; }
-    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && (!gameStarted() || !s.calibrated) && img !== state.readOf && img.t - state.calT >= AUTO_CAL_RETRY_MS && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
+    else if (!calibrationRuntime.active && params.autoCal && !state.autoDone && (!gameStarted() || !s.calibrated) && img !== state.readOf && img.t - state.calT >= (state.calTries >= AUTO_CAL_MAX_TRIES ? 5 * AUTO_CAL_RETRY_MS : AUTO_CAL_RETRY_MS) && !(state.obs && state.obs.motion > 0.02) && meanLuma(img) >= AUTO_CAL_MIN_LUMA) {
       // Auto-learn keeps trying until the reading looks like the start position. Learning once from the first frame locked in a
       // dark warm-up frame or the default corners for good: every square then read wrong and the game never started.
       span("calibrateFromStart", () => s.calibrateFromStart(img));
       state.calT = img.t; state.calTries++;
       state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight)));
       // Reloaded mid-game: the open ranks are enough to learn the empty squares, but the start position will not show, so learn once.
-      if (looksLikeStart(state.obs) || state.calTries >= AUTO_CAL_MAX_TRIES || (gameStarted() && s.calibrated)) state.autoDone = true;
+      if (looksLikeStart(state.obs) || (gameStarted() && s.calibrated)) state.autoDone = true; // otherwise keep looking, slowly, until the start position is on the board
     }
     if (img !== state.readOf || !state.obs) { state.readOf = img; state.lastT = img.t; state.obs = span("sample board (read)", () => s.read(img, Number(params.weight))); } // one read per camera frame
     if (state.analysis && !calibrationRuntime.active) { const f = state.analysis; span("auto-calibrate", () => autoCalibrate(state, params, f, now, !!ready)); }

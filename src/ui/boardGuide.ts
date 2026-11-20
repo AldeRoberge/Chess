@@ -484,6 +484,37 @@ export function iconLevels(f: GrayFrame, corners: Pt[], q: number): number[] {
   });
 }
 
+/**
+ * Which way round the pieces stand, judged from brightness alone: in the start position the pieces on the bottom two rows
+ * (a1–h2 as the grid has them) should be brighter than the squares under them and the ones on the top two rows darker.
+ * Returns the difference, positive when white is at the bottom (right), negative when the grid is turned half way,
+ * and 0 when no pieces can be seen. The empty middle ranks give the square brightness, so the pieces are not needed to calibrate it.
+ * It cannot tell a real turned board from a game that is not at the start, so callers only suggest, never force.
+ */
+export function pieceSides(f: GrayFrame, corners: Pt[]): number {
+  const s = new BoardSampler("guide", { ...defaultSamplerConfig(), corners });
+  s.calibrateFromStart(f);
+  const side = (from: number, to: number) => {
+    let sum = 0, n = 0;
+    for (let sq = from; sq < to; sq++) {
+      const d = s.diagnose(f, sq);
+      if (!Number.isFinite(d.crown) || !Number.isFinite(d.ref) || d.ref <= 1) continue;
+      sum += (d.crown - d.ref) / d.ref; n++;
+    }
+    return n >= 8 ? sum / n : NaN;
+  };
+  const bottom = side(48, 64), top = side(0, 16);
+  return Number.isFinite(bottom) && Number.isFinite(top) ? bottom - top : 0;
+}
+
+/** How far apart the two sides must be before the colours are called the wrong way round. */
+const SIDES_SURE = 0.25;
+
+/** True when the grid fits but the pieces stand the other way round: white where black should be. Turning the corner order by two puts it right. */
+export function piecesLookTurned(f: GrayFrame, corners: Pt[]): boolean {
+  try { return pieceSides(f, corners) < -SIDES_SURE; } catch { return false; }
+}
+
 const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔", bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚" };
 
 /** Draws the edge icons. `P` maps the unit square to canvas pixels; `ring` is the colour of the badge behind each icon. */

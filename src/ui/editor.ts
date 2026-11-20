@@ -104,6 +104,7 @@ export class NodeEditor {
       box: (id) => { const n = this.graph.nodes.get(id); if (!n) return null; const el = this.views.get(id)?.el; return { x: n.x, y: n.y, w: n.w ?? (el?.offsetWidth || NODE_W), h: n.h ?? (el?.offsetHeight || NODE_H) }; },
       place: (id) => { const n = this.graph.nodes.get(id), v = this.views.get(id); if (n && v) { v.el.style.left = n.x + "px"; v.el.style.top = n.y + "px"; if (n.w !== undefined) this.applySize(n); this.dirty = true; } },
       track: (el, e, move, end) => this.track(el, e, move, end),
+      bypass: (ids, on) => { for (const id of ids) { const n = this.graph.nodes.get(id); if (!n) continue; if (on) n.bypass = true; else delete n.bypass; this.views.get(id)?.el.classList.toggle("bypass", on); } this.dirty = true; this.onChange(); },
       changed: () => { this.dirty = true; this.onChange(); },
     });
     this.svg.classList.add("ne-wires");
@@ -151,7 +152,7 @@ export class NodeEditor {
     head.append(ico, h("span", "ne-title", spec.title));
     const fid = h("span", "ne-fid", ""), ms = h("span", "ne-ms", "");
     const byp = h("button", "ne-btn byp"); byp.innerHTML = icon("bypass", 16); byp.type = "button"; byp.setAttribute("aria-label", "Bypass"); byp.dataset.tip = "Bypass"; byp.dataset.tipBody = "Pass this node through without processing it.";
-    byp.onclick = (e) => { e.stopPropagation(); n.bypass = !n.bypass; el.classList.toggle("bypass", !!n.bypass); this.onChange(); };
+    byp.onclick = (e) => { e.stopPropagation(); n.bypass = !n.bypass; el.classList.toggle("bypass", !!n.bypass); this.layer.render(); this.onChange(); };
     const del = h("button", "ne-btn del"); del.innerHTML = icon("trash", 16); del.type = "button"; del.setAttribute("aria-label", "Delete node"); del.dataset.tip = "Delete node"; del.dataset.tipBody = "Removes the node and every wire attached to it."; del.dataset.tipTag = "destructive"; del.dataset.tipColor = "var(--bad)";
     del.onclick = (e) => { e.stopPropagation(); this.removeNode(n.id); };
     const exp = h("button", "ne-btn exp"); exp.innerHTML = icon("expand", 16); exp.type = "button"; exp.setAttribute("aria-label", "Expand"); exp.dataset.tip = "Expand"; exp.dataset.tipBody = "Toggle a larger node. Drag the bottom-right corner to resize freely.";
@@ -500,7 +501,7 @@ export class NodeEditor {
   }
   toggleBypass(id: string) {
     const n = this.graph.nodes.get(id); if (!n) return;
-    n.bypass = !n.bypass; this.views.get(id)?.el.classList.toggle("bypass", !!n.bypass); this.onChange();
+    n.bypass = !n.bypass; this.views.get(id)?.el.classList.toggle("bypass", !!n.bypass); this.layer.render(); this.onChange();
   }
 
   /** Right-click menu: a wire, a node, or the empty canvas (the "add node" palette lives under Add node…). */
@@ -512,7 +513,7 @@ export class NodeEditor {
     if (n) {
       const spec = this.spec(n), v = this.views.get(n.id), big = !!(n.w || n.h);
       return [
-        { kind: "toggle", label: "Bypass", get: () => !!n.bypass, set: (b) => { n.bypass = b; v?.el.classList.toggle("bypass", b); this.onChange(); } },
+        { kind: "toggle", label: "Bypass", get: () => !!n.bypass, set: (b) => { n.bypass = b; v?.el.classList.toggle("bypass", b); this.layer.render(); this.onChange(); } },
         { kind: "action", label: big ? "Collapse" : "Expand", run: () => { if (big) { delete n.w; delete n.h; } else { n.w = 480; n.h = 400; } this.applySize(n); this.dirty = true; this.onChange(); } },
         { kind: "action", label: "Duplicate", run: () => this.duplicate(n.id) },
         { kind: "action", label: "Reset parameters", disabled: !spec.params?.length, hint: spec.params?.length ? undefined : "This node has no parameters to reset.", run: () => { for (const p of spec.params ?? []) n.params[p.id] = p.value; this.dirty = true; this.onChange(); } },

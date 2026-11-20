@@ -124,3 +124,15 @@ describe("ai settings", () => {
   });
 });
 
+describe("modular detection demo", () => {
+  it("keeps the rule-based reader in its own section, bypassed, and the neural reader on", async () => {
+    const { modularBotGraph } = await import("./modular");
+    const { webcamSetup } = await import("../setup/config");
+    const g = modularBotGraph([webcamSetup("", "Cam", "A")], 800);
+    expect(g.nodes.find((n) => n.id === "bright1")!.bypass).toBe(true);
+    for (const id of ["neural1", "blend1", "reading1"]) expect(g.nodes.find((n) => n.id === id)!.bypass).toBeUndefined();
+    const sec = g.groups!.find((x) => x.title.startsWith("Rule-based"))!, b = g.nodes.find((n) => n.id === "bright1")!;
+    expect(b.x + 150).toBeGreaterThan(sec.x); expect(b.x + 150).toBeLessThan(sec.x + sec.w);
+    for (const id of ["neural1", "blend1", "clean1"]) { const n = g.nodes.find((x) => x.id === id)!; expect(n.x + 150 > sec.x && n.x + 150 < sec.x + sec.w).toBe(false); }
+  });
+});
