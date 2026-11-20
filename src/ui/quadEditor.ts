@@ -66,7 +66,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
   };
   const autoBox = document.createElement("div"); autoBox.className = "qe-auto"; autoBox.hidden = o.grid <= 1;
   const progRow = mkRow("Progress"), confRow = mkRow("Confidence"); autoBox.append(progRow.row, confRow.row);
-  let follow = true; const followBtn = btn("Try following camera: on");
+  let follow = false; const followBtn = btn("Try following camera: off");
   followBtn.title = "When the camera is nudged, ease the grid so it stays on the board";
   followBtn.onclick = () => { follow = !follow; setLabel(followBtn, `Try following camera: ${follow ? "on" : "off"}`); follower.unlock(); };
   let matrix = true; const matrixBtn = btn("Matrix: on");

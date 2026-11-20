@@ -126,6 +126,27 @@ describe("source.webcam", () => {
   };
   afterEach(cleanup);
 
+  it("shows Loading with a spinner and the actual pending startup operation", async () => {
+    const { gum } = setup();
+    let release!: (devices: MediaDeviceInfo[]) => void;
+    navigator.mediaDevices.enumerateDevices = vi.fn(() => new Promise<MediaDeviceInfo[]>(resolve => { release = resolve; }));
+    const n = node("source.webcam");
+    n.run({}, 0);
+    const ctx = { fillRect: vi.fn(), fillText: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), stroke: vi.fn() } as any;
+    n.spec.preview!(ctx, 240, 240, n.state, {});
+    expect(ctx.fillText.mock.calls.map((c: any[]) => c[0])).toContain("Loading");
+    expect(ctx.arc).toHaveBeenCalled();
+    expect((n.state as any).status).toBe("Enumerating video devices");
+    expect(gum).not.toHaveBeenCalled();
+    release([]); await tick();
+    expect((n.state as any).status).toBe("Waiting for first frame");
+    n.run({}, 1000);
+    expect((n.state as any).status).toBe("Captured frame 1");
+    expect((n.state as any).debug).toContain("480×360");
+    expect((n.state as any).debug).toContain("luma");
+    n.dispose();
+  });
+
   it("does nothing when offline and releases a running stream when switched off", async () => {
     setup(); const n = node("source.webcam", { fps: 30 });
     n.run({}, 0); await tick(); n.run({}, 100);

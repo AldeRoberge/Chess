@@ -123,7 +123,7 @@ const reader: NodeSpec<ReaderState> = {
   params: [
     { id: "cam", kind: "text", label: "Camera id", value: "A" },
     { id: "corners", kind: "text", label: "Board corners", value: fmtCorners(CAM_PRESETS.A), quad: { names: ["a8", "h8", "h1", "a1"], grid: 8 } },
-    { id: "follow", kind: "bool", label: "Follow camera moves", value: true },
+    { id: "follow", kind: "bool", label: "Follow camera moves", value: false },
     { id: "cnn", kind: "bool", label: "Neural square reader (beta)", value: false },
     { id: "board", kind: "bool", label: "Neural whole-board reader (beta, wins over the square reader)", value: false },
     { id: "collect", kind: "bool", label: "Save training frames (dev server only)", value: true },
