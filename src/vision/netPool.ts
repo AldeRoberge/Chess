@@ -1,6 +1,6 @@
 import type { NetReq, NetRes } from "./netWorker";
 
-export interface NetResult { probs: Float32Array; ran: boolean; ms: number }
+export interface NetResult { probs: Float32Array; ran: boolean; ms: number; types: Float32Array | null }
 
 /**
  * The worker that runs the neural board reader, so about 20 ms of arithmetic per read never stalls the page.
@@ -18,7 +18,7 @@ export class NetPool {
     if (!factory) return;
     try {
       this.worker = factory();
-      this.worker.onmessage = (e: MessageEvent<NetRes>) => { const r = e.data, cb = this.pending.get(r.id); this.pending.delete(r.id); cb?.({ probs: r.probs, ran: r.ran, ms: r.ms }); };
+      this.worker.onmessage = (e: MessageEvent<NetRes>) => { const r = e.data, cb = this.pending.get(r.id); this.pending.delete(r.id); cb?.({ probs: r.probs, ran: r.ran, ms: r.ms, types: r.types ?? null }); };
     } catch { this.worker = null; (this as { supported: boolean }).supported = false; }
   }
 

@@ -5,6 +5,7 @@ import { RIGS, rigCorners } from "../sim/rigs";
 import { node, shoot, tick } from "../test/helpers";
 import { agreement, blendReadings, pieceCount, type Reading } from "../vision/readings";
 import { fmtCorners } from "./shared";
+import { pieceLetter } from "./pipeline";
 import { NetPool } from "../vision/netPool";
 import { handle, type NetReq } from "../vision/netWorker";
 import { extractBoard } from "../vision/boardImage";
@@ -94,6 +95,7 @@ describe("detection pipeline nodes", () => {
     expect(pool.supported).toBe(true);
     const a = await pool.read("r1", img), b = await pool.read("r1", img), c = await pool.read("r2", img);
     expect(a.probs).toHaveLength(64 * 13 === a.probs.length ? 64 * 13 : 192); expect(a.ran).toBe(true); expect(b.ran).toBe(false); expect(c.ran).toBe(true); // r2 has its own cache
+    expect(a.types).toHaveLength(64 * 13); // the model reads piece types, so they come back too
     pool.forget("r1"); expect((await pool.read("r1", img)).ran).toBe(true);
     expect(new NetPool().supported).toBe(false); // jsdom has no Worker
     pool.dispose();
@@ -127,5 +129,16 @@ describe("detection pipeline nodes", () => {
     expect(() => { for (let i = 0; i < 40; i++) flat.run({ frame: { ...frame, t: i * 600 } }, i * 600); }).not.toThrow();
     flat.params.autoFind = false; flat.run({ frame }, 99999); expect(bus.calibration).toBeNull();
     bus.cameras = [];
+  });
+});
+
+describe("piece letters on the neural board reader", () => {
+  it("picks the likeliest piece of the disc's colour", () => {
+    const t = new Float32Array(64 * 13);
+    t[5 * 13 + 2] = 0.9; // white knight on square 5
+    t[5 * 13 + 11] = 0.95; // black queen there is stronger, but the disc is white
+    expect(pieceLetter(t, 5, true)).toBe("N");
+    expect(pieceLetter(t, 5, false)).toBe("Q");
+    expect(pieceLetter(new Float32Array(64 * 13), 0, true)).toBe("P");
   });
 });

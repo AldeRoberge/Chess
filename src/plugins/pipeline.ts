@@ -26,8 +26,9 @@ import { boardSquareAt, isLightSquare, markSquares, pct, tone, visualSize } from
  * The camera-to-board pipeline as separate nodes, one idea each, every one showing what it does:
  *   picture -> Clean Picture -> Flatten Board -> detectors (Brightness Reader, Neural Board Reader, Neural Square Reader)
  *           -> Blend Readings -> Camera Reading -> Multi-Camera Fusion.
- * Detectors only say whether a piece stands on a square and which colour it is. Piece types are not read: the tracker
- * works them out from the moves, so nothing here pretends to know them.
+ * Detectors say whether a piece stands on a square and which colour it is. The Neural Board Reader also shows the piece
+ * type it thinks it sees (a letter on the disc) when its model reads them; that is for watching only, the tracker still
+ * works the pieces out from the moves.
  */
 const BASE: [number, number] = [160, 160];
 const WHITE = "#fdfdfd", BLACK = "#1f1d1b";
@@ -48,7 +49,15 @@ function flatCanvas(f: FlatBoard): HTMLCanvasElement {
   return c;
 }
 
-interface PresenceOpts { flat?: FlatBoard | null; rings?: Uint8Array | null; note?: string }
+interface PresenceOpts { flat?: FlatBoard | null; rings?: Uint8Array | null; note?: string; /** Class probabilities per square (13 each: empty, white P N B R Q K, black P N B R Q K), when the detector reads piece types. */ types?: Float32Array | null }
+
+/** The most likely piece letter on a square from 13-class probabilities, given its colour (so a white-looking disc never gets a black class). */
+export function pieceLetter(types: ArrayLike<number>, sq: number, white: boolean): string {
+  const base = sq * 13 + (white ? 1 : 7);
+  let best = 0;
+  for (let k = 1; k < 6; k++) if (types[base + k] > types[base + best]) best = k;
+  return "PNBRQK"[best];
+}
 /**
  * A detector's board: the flattened picture it looked at, and on each square a disc where it thinks a piece stands
  * (white or black, fainter when less sure, with the percentage under 100%). Empty squares stay clean. Amber rings
@@ -75,6 +84,10 @@ function drawPresence(ctx: CanvasRenderingContext2D, w: number, h: number, r: Re
       ctx.fillStyle = white ? WHITE : BLACK; ctx.strokeStyle = white ? "#3b3a37" : "#e8e8e8"; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(cx, cy, s * 0.3, 0, 7); ctx.fill(); ctx.stroke();
       ctx.globalAlpha = 1;
+      if (o.types && s >= 14) { // the piece the model says it is, in the disc
+        ctx.font = `700 ${Math.max(8, s * 0.36)}px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillStyle = white ? "#1f1d1b" : "#fdfdfd"; ctx.fillText(pieceLetter(o.types, i, white), cx, cy + s * 0.02);
+      }
       if (s >= 18) {
         const t = String(Math.round(c * 100));
         ctx.font = `600 ${Math.max(7, s * 0.2)}px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
@@ -284,7 +297,7 @@ const RATE: ParamDef = { id: "maxRate", kind: "number", label: "Reads per second
 const reuse = (st: { reading: Reading | null; lastRun: number; shape: string }, f: FlatBoard, now: number, rate: number) =>
   !!st.reading && st.shape === JSON.stringify(f.corners) && now - st.lastRun < 1000 / Math.max(1, rate);
 /** The board reader's state: the network runs in a worker when the browser has one, inline otherwise (tests). */
-interface BoardNetState extends NetState<BoardCnn, BoardCache> { loaded: boolean; inflight: number; epoch: number; arrived: NetResult | null; probs: Float32Array | null; key: string; readOf: Float32Array | null; readT: number }
+interface BoardNetState extends NetState<BoardCnn, BoardCache> { loaded: boolean; inflight: number; epoch: number; arrived: NetResult | null; probs: Float32Array | null; types: Float32Array | null; key: string; readOf: Float32Array | null; readT: number }
 let boardSeq = 0;
 const neuralBoard: NodeSpec<BoardNetState> = {
   type: "vision.neuralBoard", title: "Neural Board Reader", category: "Vision",
@@ -292,17 +305,17 @@ const neuralBoard: NodeSpec<BoardNetState> = {
   inputs: [{ id: "flat", type: "flat" }], outputs: [{ id: "reading", type: "reading" }],
   params: [{ id: "temperature", kind: "number", label: "Caution (higher = less sure)", min: 1, max: 4, step: 0.25, value: 2 }, RATE],
   previewSize: BASE,
-  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "", loaded: false, inflight: 0, epoch: 0, arrived: null, probs: null, key: `neural${++boardSeq}`, readOf: null, readT: 0 }),
+  init: () => ({ net: null, cache: null, cacheOf: null, loading: false, reading: null, flat: null, ran: false, ms: 0, lastRun: -Infinity, shape: "", loaded: false, inflight: 0, epoch: 0, arrived: null, probs: null, types: null, key: `neural${++boardSeq}`, readOf: null, readT: 0 }),
   process({ flat }, { params, state, setFidelity, now }) {
     const f = flat as FlatBoard | null | undefined, T = Number(params.temperature), rate = Number(params.maxRate);
     state.flat = f ?? null;
     const pool = netPool();
     if (!pool.supported && !state.net && !state.loading) { state.loading = true; void loadBoardCnn().then((n) => { state.net = n; }).catch(() => { state.loading = false; }); } // load while there is nothing to read yet
-    if (!f) { state.reading = null; state.probs = null; state.arrived = null; state.epoch++; state.inflight = 0; setFidelity(null); return { reading: null }; }
+    if (!f) { state.reading = null; state.probs = null; state.types = null; state.arrived = null; state.epoch++; state.inflight = 0; setFidelity(null); return { reading: null }; }
     const shape = JSON.stringify(f.corners);
     if (pool.supported) {
       // an answer from the worker arrives between ticks; ask for the next one when it is time (at once if the corners moved)
-      if (state.arrived) { state.probs = state.arrived.probs; state.ran = state.arrived.ran; if (state.ran) state.ms = state.arrived.ms; state.loaded = true; state.arrived = null; }
+      if (state.arrived) { state.probs = state.arrived.probs; state.types = state.arrived.types; state.ran = state.arrived.ran; if (state.ran) state.ms = state.arrived.ms; state.loaded = true; state.arrived = null; }
       const t = performance.now();
       if (state.inflight && t - state.inflight > 3000) { state.epoch++; state.inflight = 0; } // a lost answer must never stall the reader
       if (!state.inflight && (shape !== state.shape || now - state.lastRun >= 1000 / Math.max(1, rate))) {
@@ -322,14 +335,15 @@ const neuralBoard: NodeSpec<BoardNetState> = {
     const t0 = performance.now(), probs = state.cache!.classify(f.img);
     state.ran = state.cache!.ran; if (state.ran) state.ms = performance.now() - t0;
     state.lastRun = now; state.shape = shape;
+    state.types = state.net.classes === 13 ? state.cache!.types : null;
     state.reading = readingFromProbs(f.cam, f.t, "neural board", probs, T);
     setFidelity(meanConf(state.reading));
     return { reading: state.reading };
   },
   dispose(s) { netPool().forget(s.key); },
   preview(ctx, w, h, s) {
-    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { flat: s.flat, note: s.loaded ? "no board yet" : "loading the model…" }), () => [
-      ...counts(s.reading), ["model", s.loaded ? "loaded" : "loading"], ["ran last read", s.ran ? "yes" : "no, picture unchanged"], ["last run", `${s.ms.toFixed(1)} ms`], ["where", netPool().supported ? "background worker" : "main thread"]]);
+    withDetail(ctx, w, h, BASE, (pw, ph) => drawPresence(ctx, pw, ph, s.reading, { flat: s.flat, types: s.types, note: s.loaded ? "no board yet" : "loading the model…" }), () => [
+      ...counts(s.reading), ...(s.types ? [["piece types", "read by the model (letters on the discs)"] as DetailRow] : []), ["model", s.loaded ? "loaded" : "loading"], ["ran last read", s.ran ? "yes" : "no, picture unchanged"], ["last run", `${s.ms.toFixed(1)} ms`], ["where", netPool().supported ? "background worker" : "main thread"]]);
   },
   hover(p, w, h, s) { return squareHover(p, w, h, s.reading, "Neural Board Reader", "The network sees the whole flattened board, so a tall piece leaning over its neighbour or a hand on the board is read in context. Its probabilities are tempered so a camera it has never seen cannot shout."); },
 };
