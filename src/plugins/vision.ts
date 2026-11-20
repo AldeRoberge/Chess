@@ -346,7 +346,7 @@ const fuse: NodeSpec<FuseState> = {
   hover(p, w, h, s) {
     const v = visualSize(w, h, [120, 120]);
     return boardHover(p, v.w, v.h, s.board, {
-      title: "Multi-Camera Fusion", fen: bus.game?.fen, presence: true,
+      title: "Multi-Camera Fusion", fen: bus.game?.fen,
       body: (sq) => (s.board ? `${s.obs.length} camera${s.obs.length === 1 ? "" : "s"} vote on ${sqName(sq)}: each camera's reading is weighted by its picture quality, trust and track record, then added together.` : undefined),
       extra: (sq): TipRow[] => {
         const total = s.obs.reduce((a, o) => a + camWeight(s, o), 0) || 1;
@@ -357,7 +357,7 @@ const fuse: NodeSpec<FuseState> = {
       },
     });
   },
-  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [120, 120], (pw, ph) => drawBoard(ctx, pw, ph, s.board, { presence: true }), () => [
+  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [120, 120], (pw, ph) => drawBoard(ctx, pw, ph, s.board, { fen: bus.game?.fen }), () => [
     ["cameras", String(s.board?.cams ?? 0)], ...Array.from(s.fusion.turned).filter(([, t]) => t).map(([cam]): DetailRow => [`cam ${cam}`, "turned 180° (white was on top)"]), ["fidelity", s.board ? brief(s.board.fidelity) : "—"], ["hand over", brief(s.board?.handOver)], ["settled", brief(s.board?.settled)],
     ["pieces seen", s.board ? String(Array.from(s.board.occ).filter((v) => v > 0.5).length) : "—"],
     ...(bus.cameras ?? []).map((c): DetailRow => [`cam ${c.id}`, `q ${brief(c.quality)} · rel ${brief(c.reliability)}`])]),
@@ -388,7 +388,7 @@ const stabilize: NodeSpec<StabState> = {
   hover(p, w, h, s) {
     const v = visualSize(w, h, [120, 120]), st = s.stab;
     return boardHover(p, v.w, v.h, s.out, {
-      title: "Temporal Stabilizer", fen: bus.game?.fen, presence: true,
+      title: "Temporal Stabilizer", fen: bus.game?.fen,
       body: (sq) => `${sqName(sq)} only flips when the evidence builds past ±${st.cfg.on} (and back past ${st.cfg.off}), so a one-frame glitch never changes the board.`,
       extra: (sq): TipRow[] => {
         const acc = st.accOcc[sq], lim = st.cfg.on;
@@ -405,7 +405,7 @@ const stabilize: NodeSpec<StabState> = {
   },
   preview(ctx, w, h, s) {
     withDetail(ctx, w, h, [120, 120], (pw, ph) => {
-      drawBoard(ctx, pw, ph, s.out, { presence: true });
+      drawBoard(ctx, pw, ph, s.out, { fen: bus.game?.fen });
       if (s.out) { ctx.fillStyle = s.out.handOver ? "#ff5a6e" : s.out.settled ? "#35e0b4" : "#ffb347"; ctx.fillRect(pw - 10, 2, 8, 8); }
     }, () => [["state", s.out ? (s.out.handOver ? "hand over board" : s.out.settled ? "settled" : "settling") : "no input", s.out?.handOver ? "#ff5a6e" : s.out?.settled ? "#35e0b4" : "#ffb347"],
       ["fidelity", s.out ? brief(s.out.fidelity) : "—"], ["pieces", s.out ? String(Array.from(s.out.occ).filter((v) => v > 0.5).length) : "—"],

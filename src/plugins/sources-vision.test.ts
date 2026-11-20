@@ -364,3 +364,12 @@ it("registers every source and vision node type once", () => {
   expect(new Set(types).size).toBe(types.length);
   expect(types).toEqual(expect.arrayContaining(["source.webcam", "source.synthetic", "vision.boardReader", "vision.fuse", "vision.stabilize"]));
 });
+
+describe("pieces seen without a known type (presence view)", () => {
+  it("score as sure as the camera is, not as unsure as it is of 'empty'", () => {
+    const occ = new Float32Array(64).fill(0.02), white = new Float32Array(64).fill(0.5), conf = new Float32Array(64).fill(0.96);
+    for (const i of [0, 63]) { occ[i] = 0.98; white[i] = i ? 0.97 : 0.03; }
+    const { reads } = readSquares({ occ, white, conf }, undefined, false, true);
+    expect(reads[0]).toMatchObject({ piece: null, seen: true }); expect(reads[0].score).toBeGreaterThan(0.9); expect(reads[63].score).toBeGreaterThan(0.9); expect(reads[30].score).toBeGreaterThan(0.9);
+  });
+});

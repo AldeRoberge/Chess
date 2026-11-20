@@ -43,6 +43,26 @@ if (typeof navigator !== "undefined" && typeof navigator.mediaDevices?.enumerate
   navigator.mediaDevices.addEventListener?.("devicechange", () => void refreshDevices());
 }
 
+/** Unsharp mask in place: out = in + amount × (in − 3×3 box blur). Brings back edge contrast a soft lens or video compression took away. */
+export function unsharp(g: Uint8ClampedArray, w: number, h: number, amount: number) {
+  if (w < 3 || h < 3) return;
+  const tmp = new Uint16Array(w * h); // horizontal 3-tap sums
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    tmp[r] = g[r] * 2 + g[r + 1];
+    for (let x = 1; x < w - 1; x++) tmp[r + x] = g[r + x - 1] + g[r + x] + g[r + x + 1];
+    tmp[r + w - 1] = g[r + w - 2] + g[r + w - 1] * 2;
+  }
+  const src = new Uint8ClampedArray(g); // original values, since g is rewritten as we go
+  for (let y = 0; y < h; y++) {
+    const up = (y > 0 ? y - 1 : 0) * w, mid = y * w, dn = (y < h - 1 ? y + 1 : h - 1) * w;
+    for (let x = 0; x < w; x++) {
+      const blur = (tmp[up + x] + tmp[mid + x] + tmp[dn + x]) / 9;
+      g[mid + x] = src[mid + x] + amount * (src[mid + x] - blur);
+    }
+  }
+}
+
 const webcam: NodeSpec<WebcamState> = {
   type: "source.webcam", title: "Webcam", category: "Source",
   inputs: [], outputs: [{ id: "frame", type: "frame" }],
@@ -52,6 +72,7 @@ const webcam: NodeSpec<WebcamState> = {
     { id: "channel", kind: "select", label: "Channel", options: ["luma", "red", "green", "blue"], value: "luma" },
     { id: "fps", kind: "number", label: "FPS", min: 1, max: 30, step: 1, value: 4 },
     { id: "resolution", kind: "select", label: "Capture resolution", options: Object.keys(RESOLUTIONS), value: "1280x960" },
+    { id: "sharpen", kind: "number", label: "Sharpen (0 = off)", min: 0, max: 3, step: 0.1, value: 1 },
     // Simulated faults, to test how the pipeline copes with a bad camera. All off by default.
     // Shown as a list: pick a fault from the "Add…" dropdown and it appears with its own sliders.
     { id: "ir", kind: "bool", optional: true, label: "Fake IR", value: false },
@@ -130,6 +151,8 @@ const webcam: NodeSpec<WebcamState> = {
         // Exposure: a gain on the picture; the Uint8ClampedArray store clips highlights (over) or shadows crush to black (under).
         const gain = params.over ? 1 + Number(params.overAmount) / 100 * 3 : params.under ? 1 - Number(params.underAmount) / 100 * 0.9 : 1;
         if (gain !== 1) span("apply exposure", () => { for (let i = 0; i < n; i++) g[i] = g[i] * gain; });
+        const sharp = Number(params.sharpen) || 0;
+        if (sharp > 0) span("sharpen", () => unsharp(g, tw, th, sharp));
         state.frame = { width: tw, height: th, data: g, t: now, source: state.dev };
         state.frames++;
         state.status = `Captured frame ${state.frames}`;

@@ -98,7 +98,7 @@ export function readSquares(b: { occ: ArrayLike<number>; white: ArrayLike<number
     // how likely is it that the square really holds what we show (this piece, this colour, or nothing)?
     let agree = piece ? occ : 1 - occ;
     if (piece && seen) agree = Math.min(agree, piece === piece.toUpperCase() ? white : 1 - white);
-    if (!piece && seen) agree = Math.min(agree, 0.5 + Math.abs(white - 0.5)); // unidentified piece: only occupancy/colour certainty
+    if (!piece && seen) agree = Math.min(occ, 0.5 + Math.abs(white - 0.5)); // `agree` began as P(empty), which is the opposite of what a seen piece needs // unidentified piece: only occupancy/colour certainty
     // `conf` is a margin (|2p-1|, so 70% sure of "empty" is only 0.4). For an empty square that reads as empty, P(empty) is the honest number;
     // the margin would paint a square that is probably just empty as doubtful.
     let score = !piece && !seen ? Math.max(agree, 0) : Math.min(conf, Math.max(agree, 0));
