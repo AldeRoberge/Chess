@@ -18,6 +18,29 @@ const convex = (c: Pt[]) => {
   return true;
 };
 
+/** A board fills a believable part of the picture: not a speck, and not so big that much of it hangs outside. */
+const MIN_AREA = 0.05, MAX_AREA = 1.1, MIN_INSIDE = 0.8;
+/**
+ * Guards every guess the auto-detect makes. A board is never assumed to be tiny or enormous: its area must be a sensible
+ * share of the frame, and most of the grid must lie inside the picture (a corner or two a little outside is fine).
+ */
+export function plausibleBoard(q: Pt[], f: { width: number; height: number }): boolean {
+  if (q.length !== 4 || q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return false;
+  let a2 = 0;
+  for (let i = 0; i < 4; i++) { const p = q[i], n = q[(i + 1) % 4]; a2 += p.x * n.y - n.x * p.y; }
+  const share = Math.abs(a2) / 2 / (f.width * f.height);
+  if (share < MIN_AREA || share > MAX_AREA) return false;
+  let inside = 0, total = 0;
+  const N = 12;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const u = (i + 0.5) / N, v = (j + 0.5) / N;
+    const top = { x: q[0].x + (q[1].x - q[0].x) * u, y: q[0].y + (q[1].y - q[0].y) * u }, bot = { x: q[3].x + (q[2].x - q[3].x) * u, y: q[3].y + (q[2].y - q[3].y) * u };
+    const x = top.x + (bot.x - top.x) * v, y = top.y + (bot.y - top.y) * v;
+    total++; if (x >= 0 && x <= f.width && y >= 0 && y <= f.height) inside++;
+  }
+  return inside / total >= MIN_INSIDE;
+}
+
 export interface Eval {
   /** Lower is better: distance from the real edges, a tilt penalty, a penalty for leaving the traced square lines, and a penalty for squares that show no contrast. */
   cost: number;
@@ -156,7 +179,7 @@ export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[]
   const push = (q: Pt[] | null | undefined) => {
     if (!q || q.length !== 4 || q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return;
     const sq = sideOf(q) / 8;
-    if (!(sq > 2)) return;
+    if (!(sq > 2) || !plausibleBoard(q, f)) return;
     if (out.some((c) => c.reduce((s, p, i) => s + dist(p, q[i]), 0) / 4 < sq * 0.3)) return;
     out.push(q.map((p) => ({ x: p.x, y: p.y })));
   };
@@ -236,7 +259,7 @@ export class AutoAligner implements AlignStatus {
       if (usedLabels || !this.labels.length) return;
       usedLabels = true;
       for (const q of this.labels.slice().reverse()) {
-        if (q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) || !(sideOf(q) / 8 > 2)) continue;
+        if (q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) || !(sideOf(q) / 8 > 2) || !plausibleBoard(q, f)) continue;
         if (cands.some((c) => c.reduce((t, p, i) => t + dist(p, q[i]), 0) / 4 < (sideOf(q) / 8) * 0.3)) continue;
         cands.splice(at, 0, q);
       }

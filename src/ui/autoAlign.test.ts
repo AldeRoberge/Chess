@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
 import { squareToQuad } from "./quadMap";
 import { traceSquareGuide } from "./boardGuide";
-import { AlignFollower, AutoAligner, candidateLayouts, evaluate, rememberLayout, rememberedLayouts } from "./autoAlign";
+import { AlignFollower, AutoAligner, candidateLayouts, evaluate, plausibleBoard, rememberLayout, rememberedLayouts } from "./autoAlign";
 
 /** A checkerboard seen with some perspective: the unit square is mapped through the quad `c` (a8,h8,h1,a1), a1 dark. */
 function render(c: Pt[], W = 480, H = 360): GrayFrame {
@@ -170,5 +170,22 @@ describe("AutoAligner with board labels", () => {
     a.expectLabels(Promise.reject(new Error("x")));
     for (let i = 0; i < 100 && a.step(50); i++) await Promise.resolve();
     expect(a.done).toBe(true);
+  });
+});
+
+describe("plausibleBoard", () => {
+  const f = { width: 640, height: 480 };
+  const box = (x0: number, y0: number, x1: number, y1: number): Pt[] => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  it("accepts a board of ordinary size, even with a corner a little outside", () => {
+    expect(plausibleBoard(box(120, 60, 520, 420), f)).toBe(true);
+    expect(plausibleBoard(box(-20, 30, 480, 470), f)).toBe(true);
+  });
+  it("never assumes a speck or a giant board", () => {
+    expect(plausibleBoard(box(300, 220, 340, 260), f)).toBe(false); // tiny
+    expect(plausibleBoard(box(-800, -600, 1400, 1100), f)).toBe(false); // enormous
+  });
+  it("rejects a board that is mostly out of bounds", () => {
+    expect(plausibleBoard(box(400, 100, 1000, 450), f)).toBe(false);
+    expect(plausibleBoard([{ x: NaN, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], f)).toBe(false);
   });
 });
