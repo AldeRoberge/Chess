@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { GrayFrame, Pt } from "../vision/types";
-import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, drawMatrixGround, edgeIcons, pieceSides, piecesLookTurned, readPerspective, scoreAlignment, snapLevel, traceSquareGuide } from "./boardGuide";
+import { AlignmentMeter, GOOD, alignColor, drawEdgeIcons, drawMatrixGround, edgeIcons, pieceSides, piecesLookTurned, readPerspective, scoreAlignment, snapLevel, startOrientation, traceSquareGuide } from "./boardGuide";
+import { VirtualTable } from "../sim/virtualTable";
+import { RIGS, rigCorners } from "../sim/rigs";
+import { shoot } from "../test/helpers";
+import { loadBoardCnn } from "../vision/boardModel";
 import { squareToQuad } from "./quadEditor";
 
 /** A flat checkerboard: squares of `sq` px with the board's a8 corner at (x0, y0). a1 is dark unless `flip`. */
@@ -133,5 +137,25 @@ describe("edge icons", () => {
   it("draws one badge per icon", () => {
     const c = document.createElement("canvas").getContext("2d")!, m = squareToQuad(corners()); let arcs = 0; const arc = c.arc.bind(c); c.arc = ((...a: Parameters<typeof c.arc>) => { arcs++; return arc(...a); }) as typeof c.arc;
     drawEdgeIcons(c, m, "#f90"); expect(arcs).toBe(edgeIcons().length);
+  });
+});
+
+describe("which way round the corners are (neural, start position)", () => {
+  const rot2 = (c: { x: number; y: number }[]) => [c[2], c[3], c[0], c[1]];
+  it("says right for the corners as they are, turned for the same corners turned half way, and nothing for a bare or a wrongly gridded board", async () => {
+    const net = await loadBoardCnn(), c = rigCorners(RIGS.A), table = new VirtualTable(), f = shoot(table, "A");
+    const right = startOrientation(net, f, c), turned = startOrientation(net, f, rot2(c));
+    expect(right.verdict).toBe("right"); expect(right.here).toBeGreaterThan(0.7); expect(right.here - right.turned).toBeGreaterThan(0.2);
+    expect(turned.verdict).toBe("turned"); expect(turned.turned).toBeCloseTo(right.here, 5);
+    const bare = new VirtualTable(); bare.piecesVisible = false;
+    expect(startOrientation(net, shoot(bare, "A"), c).verdict).toBe("unknown");
+    const off = c.map((p) => ({ x: p.x + 70, y: p.y + 40 }));
+    expect(startOrientation(net, f, off).verdict).not.toBe("turned");
+  });
+  it("never calls a board turned unless the other order really reads as the start position", async () => {
+    const net = await loadBoardCnn(), c = rigCorners(RIGS.A), table = new VirtualTable();
+    for (const san of ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6"]) table.game.move(san);
+    const f = shoot(table, "A");
+    for (const k of [c, rot2(c)]) { const r = startOrientation(net, f, k); expect(r.verdict === "turned" ? r.turned >= 0.7 && r.turned - r.here >= 0.2 : true).toBe(true); }
   });
 });

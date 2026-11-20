@@ -5,7 +5,9 @@ import type { GrayFrame, Pt } from "../vision/types";
 import { labelHints } from "../vision/boardLabels";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { squareToQuad } from "./quadMap";
-import { AlignmentMeter, alignColor, drawEdgeIcons, drawMatrixGround, iconLevels, piecesLookTurned, readPerspective, scoreAlignment } from "./boardGuide";
+import { AlignmentMeter, alignColor, drawDirection, drawEdgeIcons, drawMatrixGround, iconLevels, readPerspective, scoreAlignment, startOrientation, type Orientation } from "./boardGuide";
+import { BoardSampler } from "../vision/sampler";
+import { loadBoardCnn } from "../vision/boardModel";
 import { COACH_LABEL, drawPlacementMoves, placementMoves, type PieceMove } from "./pieceCoach";
 
 export { squareToQuad };
@@ -83,11 +85,12 @@ export function openQuadEditor(o: QuadEditorOpts) {
   const follower = new AlignFollower();
   let aligner: AutoAligner | null = null, doneConf = 0, progress = 0, status = "";
   // Shown when the grid fits but white pieces stand where black ones should: one click turns the corner order half way.
-  const turnBtn = btn("Pieces look turned: flip the corners"); turnBtn.hidden = true; setLabel(turnBtn, "Pieces look turned: flip the corners");
-  turnBtn.title = "The grid sits on the board, but the white pieces are where the black ones should be. Turn the corners half way (a8↔h1, h8↔a1).";
+  const turnBtn = btn("White is on the other side: flip the corners"); turnBtn.hidden = true; setLabel(turnBtn, "White is on the other side: flip the corners");
+  turnBtn.title = "Read with the corners turned half way, the board is exactly the start position; read as they are, it is not. Turn the corners half way (a8↔h1, h8↔a1).";
+  let orient: Orientation = { verdict: "unknown", here: 0, turned: 0 };
   let turnVotes = 0;
   turnBtn.onclick = () => { pts = [pts[2], pts[3], pts[0], pts[1]]; turnVotes = 0; turnBtn.hidden = true; emit(); };
-  const side = document.createElement("div"); side.className = "qe-side"; meterBox.append(turnBtn); side.append(meterBox, autoBox, bar, opts);
+  const side = document.createElement("div"); side.className = "qe-side"; const turnBox = document.createElement("div"); turnBox.append(turnBtn); side.append(meterBox, turnBox, autoBox, bar, opts);
   box.append(head, hint, stage, side); back.append(box); document.body.append(back);
 
   const ctx = cv.getContext("2d")!;
@@ -172,10 +175,16 @@ export function openQuadEditor(o: QuadEditorOpts) {
         levelsAt = now; try { levels = iconLevels(fr, pts, meter.q); } catch { levels = undefined; }
         // A few reads in a row, on a grid that fits, before suggesting the flip, so a passing hand does not trigger it.
         const board = o.names[0] === "a8" && o.names[2] === "h1";
-        turnVotes = board && meter.good && !aligner && piecesLookTurned(fr, pts) ? Math.min(turnVotes + 1, 6) : Math.max(turnVotes - 2, 0);
+        // The neural reader reads the board in both corner orders; the flip is offered only when exactly one of them is the start position, and only after a few reads in a row, so a passing hand or a game under way never triggers it.
+        const net = BoardSampler.boardNet;
+        if (!net) void loadBoardCnn();
+        orient = { verdict: "unknown", here: 0, turned: 0 };
+        if (board && net && !aligner) { try { orient = startOrientation(net, fr, pts); } catch { /* keep unknown */ } }
+        turnVotes = meter.good && orient.verdict === "turned" ? Math.min(turnVotes + 1, 6) : Math.max(turnVotes - 2, 0);
         turnBtn.hidden = turnVotes < 3;
       }
       drawEdgeIcons(ctx, P, color, fr ? levels : undefined);
+      if (o.names[0] === "a8" && o.names[2] === "h1") drawDirection(ctx, P, turnVotes >= 3 ? "turned" : orient.verdict === "right" ? "right" : "unknown");
       if (coach.length) drawPlacementMoves(ctx, P, coach, now);
     }
     if (o.grid > 1) { // rotate handle
