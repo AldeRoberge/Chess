@@ -7,3 +7,4 @@
 - [x] Replace the brightness check with the neural reader: read the board in both corner orders, offer the flip only when exactly one reads as the start position (fit >= 0.7, lead >= 0.2, three reads in a row, grid good)
 - [x] Direction arrow on the grid: BLACK -> WHITE, green when the pieces agree, amber "WHITE?" when they say the other way
 - [x] Tests, type-check, commit
+- [x] Follow-up: black pawn and white pawn icons at the two ends of the direction arrow

@@ -563,7 +563,7 @@ const GLYPH: Record<string, string> = { wp: "♙", wn: "♘", wb: "♗", wr: "�
  * white stands on the other side, a dashed amber arrow points that way as well, and the button offers the flip.
  */
 export function drawDirection(ctx: CanvasRenderingContext2D, P: (u: number, v: number) => Pt, verdict: Orientation["verdict"]) {
-  const arrow = (from: Pt, to: Pt, color: string, dash: number[], head: string, tail: string) => {
+  const arrow = (from: Pt, to: Pt, color: string, dash: number[], head: string, tail: string, headIcon = "", tailIcon = "") => {
     const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, hs = Math.min(18, len * 0.28);
     ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
     for (const [w, c] of [[6, "rgba(7,9,13,.75)"], [3, color]] as const) {
@@ -572,12 +572,20 @@ export function drawDirection(ctx: CanvasRenderingContext2D, P: (u: number, v: n
       ctx.beginPath(); ctx.moveTo(to.x, to.y); ctx.lineTo(to.x - ux * hs - uy * hs * 0.55, to.y - uy * hs + ux * hs * 0.55); ctx.lineTo(to.x - ux * hs + uy * hs * 0.55, to.y - uy * hs - ux * hs * 0.55); ctx.closePath(); w === 3 ? ctx.fill() : ctx.stroke();
     }
     ctx.font = '700 11px "IBM Plex Mono",ui-monospace,monospace'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(7,9,13,.85)"; ctx.fillStyle = color;
-    for (const [t, p, k] of [[head, to, 1], [tail, from, -1]] as const) { const x = p.x + ux * 14 * k, y = p.y + uy * 14 * k; ctx.strokeText(t, x, y); ctx.fillText(t, x, y); }
+    // a pawn of each colour marks the two ends (the word stands in until the picture has loaded)
+    const r = 13;
+    for (const [t, icon, p, k] of [[head, headIcon, to, 1], [tail, tailIcon, from, -1]] as const) {
+      const x = p.x + ux * (r + 6) * k, y = p.y + uy * (r + 6) * k, img = icon ? pieceImage(icon) : null;
+      if (img) {
+        ctx.fillStyle = "rgba(236,240,245,.94)"; ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.drawImage(img, x - r * 0.9, y - r * 0.9, r * 1.8, r * 1.8);
+      } else if (t) { ctx.fillStyle = color; ctx.strokeText(t, x, y); ctx.fillText(t, x, y); }
+    }
     ctx.restore();
   };
   const base = verdict === "right" ? "#35e07a" : "#cfd8e3";
-  arrow(P(0.5, 0.3), P(0.5, 0.7), base, [], "WHITE", "BLACK");
-  if (verdict === "turned") arrow(P(0.62, 0.7), P(0.62, 0.3), "#ff9a3c", [5, 4], "WHITE?", "");
+  arrow(P(0.5, 0.3), P(0.5, 0.7), base, [], "WHITE", "BLACK", "wp", "bp");
+  if (verdict === "turned") arrow(P(0.62, 0.7), P(0.62, 0.3), "#ff9a3c", [5, 4], "WHITE?", "", "wp", "");
 }
 
 /** Draws the edge icons. `P` maps the unit square to canvas pixels; `ring` is the colour of the badge behind each icon. */
