@@ -6,7 +6,7 @@ Input: 32x32 exposure-normalised crop of one square (src/vision/squareCrops.ts).
 Output: 3 classes - 0 empty, 1 white piece, 2 black piece.
 Batch norm is folded into the convolutions on export, so the TypeScript side is plain conv + relu + pool + dense.
 """
-import base64, json, sys, time
+import base64, json, os, sys, time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -76,8 +76,10 @@ def pack(t):
     return base64.b64encode(t.detach().cpu().numpy().astype("<f4").tobytes()).decode()
 
 
-xt, yt = load("train")
-xv, yv = load("val")
+parts = [load(name.strip()) for name in os.environ.get("TRAIN", "train").split(",")]
+xt, yt = torch.cat([x for x, _ in parts]), torch.cat([y for _, y in parts])
+del parts
+xv, yv = load(os.environ.get("VAL", "val"))
 xr, yr = load("real")
 # Fine-tune on augmented copies of the real frame. "holdout" trains on files a-d only and judges the model
 # on files e-h of the untouched frame; "all" uses every square (the shipped model), so its real score is optimistic.

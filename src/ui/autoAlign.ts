@@ -150,8 +150,8 @@ export function rememberLayout(pts: Pt[], width: number, height: number, store: 
   try { store.setItem(MEM_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
 }
 
-/** Guesses at where the board is. Each one is a reading: the corners already on screen, the checkerboard period, the perspective those square edges imply, an alignment kept from an earlier run, or, when no squares were found, the outline of the busy patch. Nothing here is a shifted copy of another guess. */
-export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[][] = []): Pt[][] {
+/** Guesses at where the board is. Each one is a reading: the corners the board's printed letters and digits imply (found by OCR), the corners already on screen, the checkerboard period, the perspective those square edges imply, an alignment kept from an earlier run, or, when no squares were found, the outline of the busy patch. Nothing here is a shifted copy of another guess. */
+export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[][] = [], labels: Pt[][] = []): Pt[][] {
   const out: Pt[][] = [];
   const push = (q: Pt[] | null | undefined) => {
     if (!q || q.length !== 4 || q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return;
@@ -162,9 +162,11 @@ export function candidateLayouts(f: GrayFrame, current: Pt[] | null, prior: Pt[]
   };
   let checker: Pt[] | null = null;
   try { checker = findCheckerCorners(f); } catch { checker = null; }
+  // the printed letters and digits are the strongest clue, so they are tried first
+  for (const q of labels) push(q);
   push(current);
   push(checker);
-  for (const seed of [current, checker]) {
+  for (const seed of [labels[0], current, checker]) {
     if (!seed) continue;
     try { push(traceSquareGuide(f, seed)?.corners); } catch { /* the picture is not readable there */ }
   }
@@ -188,11 +190,24 @@ export class AutoAligner implements AlignStatus {
   phase: AlignStatus["phase"] = "find"; progress = 0; confidence = 0; label = "Looking for the board…";
   corners: Pt[]; changed = false;
   private gen: Generator<void, void>;
+  /** Corner guesses read from the letters and digits printed round the board, and whether they are still being read. */
+  private labels: Pt[][] = []; private reading = false;
   /** `paceMs` is how long each merge step takes on screen; 0 runs it flat out (tests). */
   constructor(private f: GrayFrame, private start: Pt[] | null, private paceMs = 140, private now: () => number = () => performance.now(), private prior: Pt[][] = []) {
     this.corners = start ?? [];
     this.gen = this.run();
   }
+  /**
+   * Hands over the OCR reading of the board labels (see `labelHints`). The aligner holds off its search until it arrives
+   * (or `timeoutMs` passes) and then tries those corners first. Call before the first `step`.
+   */
+  expectLabels(p: Promise<Pt[][]>, timeoutMs = 25000) {
+    this.reading = true;
+    const stop = this.now() + timeoutMs;
+    this.labelDeadline = stop;
+    p.then((q) => { this.labels = q ?? []; }, () => { /* no labels: carry on without */ }).finally(() => { this.reading = false; });
+  }
+  private labelDeadline = 0;
   get done() { return this.phase === "done" || this.phase === "failed"; }
   /** Runs for about `budgetMs`; true while there is more to do. */
   step(budgetMs = 10) {
@@ -215,7 +230,13 @@ export class AutoAligner implements AlignStatus {
       }
     }
     this.phase = "find"; this.label = "Looking for the board…"; yield;
-    const cands = candidateLayouts(f, this.start, this.prior);
+    if (this.reading) {
+      this.label = "Reading the letters on the board…";
+      while (this.reading && this.now() < this.labelDeadline) yield;
+      this.reading = false;
+      this.label = this.labels.length ? "Found the board letters" : "Looking for the board…"; yield;
+    }
+    const cands = candidateLayouts(f, this.start, this.prior, this.labels);
     if (!cands.length) { this.phase = "failed"; this.label = "No board found. Drag the corners onto it."; return; }
     const N = cands.length, done: { pts: Pt[]; ev: Eval; guide: GridGuide | null; pieces: number }[] = [];
     this.phase = "try";
@@ -227,7 +248,7 @@ export class AutoAligner implements AlignStatus {
       const head = evaluate(f, cands[i]);
       const coarse = yield* climb(f, cands[i], head.q >= SURE && !head.flipped ? [sq * 0.1, sq * 0.05] : [sq * 0.4, sq * 0.2, sq * 0.1, sq * 0.05], 20, (p) => this.set(p));
       this.progress = 0.05 + 0.6 * ((i + 0.7) / N);
-      const turned = pickRotation(f, coarse.pts, this.start);
+      const turned = pickRotation(f, coarse.pts, this.labels[0] ?? this.start);
       this.label = "Lining up with the square edges…"; this.set(turned); yield;
       const guided = withGuide(f, turned);
       this.set(guided.corners); yield;
@@ -353,7 +374,7 @@ export function alignConcurrency(nav: { hardwareConcurrency?: number; deviceMemo
   return clamp(n, 1, MAX_PARALLEL_ALIGN);
 }
 
-export interface AlignJob { id: string; frame: GrayFrame; start: Pt[] | null; prior?: Pt[][] }
+export interface AlignJob { id: string; frame: GrayFrame; start: Pt[] | null; prior?: Pt[][]; /** OCR reading of the board labels, when one is under way. */ labels?: Promise<Pt[][]> }
 export interface AlignResult { id: string; corners: Pt[]; confidence: number; phase: AlignStatus["phase"]; label: string }
 
 /**
@@ -379,7 +400,9 @@ export class AlignBatch {
     const t0 = this.now();
     while (this.live.length < this.allowed && this.waiting.length) {
       const job = this.waiting.shift()!;
-      this.live.push({ job, a: new AutoAligner(job.frame, job.start, this.paceMs, this.now, job.prior ?? []) });
+      const a = new AutoAligner(job.frame, job.start, this.paceMs, this.now, job.prior ?? []);
+      if (job.labels) a.expectLabels(job.labels);
+      this.live.push({ job, a });
     }
     const slice = Math.max(1, budgetMs / Math.max(1, this.live.length));
     for (const l of this.live) l.a.step(slice);

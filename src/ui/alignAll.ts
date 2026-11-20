@@ -2,6 +2,7 @@ import type { Graph } from "../core/graph";
 import { fmtCorners, frameScale, parseCorners } from "../plugins/shared";
 import type { GrayFrame, Pt } from "../vision/types";
 import { findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
+import { labelHints } from "../vision/boardLabels";
 import { AlignBatch, type AlignJob, rememberedLayouts } from "./autoAlign";
 
 const isBoardQuad = (names: string[] | undefined) => names?.length === 4 && names[0] === "a8" && names[1] === "h8" && names[2] === "h1" && names[3] === "a1";
@@ -19,7 +20,7 @@ export function alignAllBoards(graph: Graph, onProgress?: (done: number, total: 
     let seed: Pt[] | null = null;
     try { const q = findCheckerCorners(fr); seed = q ? orientBoardCorners(fr, q) : null; } catch { seed = null; }
     const own = stored ? stored.map((pt) => ({ x: pt.x * sc.sx, y: pt.y * sc.sy })) : null;
-    jobs.push({ id: n.id, frame: fr, start: seed ?? own, prior: rememberedLayouts(fr.width, fr.height) });
+    jobs.push({ id: n.id, frame: fr, start: seed ?? own, prior: rememberedLayouts(fr.width, fr.height), labels: labelHints(fr) });
     target.set(n.id, { id: p.id, ...sc });
   }
   if (!jobs.length) return Promise.resolve({ total: 0, aligned: 0 });

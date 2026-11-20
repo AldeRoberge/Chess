@@ -2,6 +2,7 @@ import { withIcon, setLabel, setPressed } from "./icons";
 import { drawFrame, fmtCorners, parseCorners } from "../plugins/shared";
 import { findBoardCorners, findCheckerCorners, orientBoardCorners } from "../vision/findBoard";
 import type { GrayFrame, Pt } from "../vision/types";
+import { labelHints } from "../vision/boardLabels";
 import { AlignFollower, AutoAligner, rememberLayout, rememberedLayouts } from "./autoAlign";
 import { squareToQuad } from "./quadMap";
 import { AlignmentMeter, alignColor, drawEdgeIcons, drawMatrixGround, iconLevels, readPerspective, scoreAlignment } from "./boardGuide";
@@ -203,7 +204,7 @@ export function openQuadEditor(o: QuadEditorOpts) {
       try { const q = findCheckerCorners(fr); seed = q ? orientBoardCorners(fr, q) : null; } catch { seed = null; }
       follower.unlock(); progress = 0; doneConf = 0;
       rememberLayout(pts, fr.width, fr.height);
-      aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); setLabel(auto, "Stop");
+      aligner = new AutoAligner(fr, seed ?? pts, 140, undefined, rememberedLayouts(fr.width, fr.height)); aligner.expectLabels(labelHints(fr)); setLabel(auto, "Stop");
       return;
     }
     legacyAuto();

@@ -101,7 +101,7 @@ def pack(t):
 _parts = [load(n) for n in os.environ.get("TRAIN", "train").split(",")]   # e.g. TRAIN=train,train2
 xt, yt = torch.cat([p[0] for p in _parts]), torch.cat([p[1] for p in _parts])
 del _parts
-xv, yv = load("val")
+xv, yv = load(os.environ.get("VAL", "val"))
 xr, yr = load("real")
 if REAL != "none":
     xa, ya = load("realaug")
