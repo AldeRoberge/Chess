@@ -28,6 +28,7 @@ import { SetupWizard } from "./ui/wizard";
 import { NodeEditor } from "./ui/editor";
 import { alignAllBoards } from "./ui/alignAll";
 import { AlignProgressPanel } from "./ui/alignProgress";
+import { migrateCameraBot } from "./workflows/cameraBot";
 import { alignConcurrency } from "./ui/autoAlign";
 import { editorTips } from "./ui/editorTips";
 import { installTooltips } from "./ui/tooltip";
@@ -76,12 +77,12 @@ export function boot(root: HTMLElement): Boot {
   const crashed = openSession();
   let recovered: Backup | null = null;
   let savedRaw: string | null = null; try { savedRaw = localStorage.getItem(KEY); } catch { /* storage blocked */ }
-  try { if (savedRaw) graph.load(JSON.parse(savedRaw) as GraphJSON); } catch {
+  try { if (savedRaw) graph.load(migrateCameraBot(JSON.parse(savedRaw) as GraphJSON)); } catch {
     // Unreadable save: keep a copy for forensics, then fall back to the newest backup.
     try { localStorage.setItem("cx.graph.corrupt.v1", savedRaw ?? ""); } catch { /* storage full */ }
     for (const id of [...graph.nodes.keys()]) graph.removeNode(id);
     recovered = listBackups()[0] ?? null;
-    if (recovered) try { graph.load(recovered.graph); } catch { recovered = null; for (const id of [...graph.nodes.keys()]) graph.removeNode(id); }
+    if (recovered) try { graph.load(migrateCameraBot(recovered.graph)); } catch { recovered = null; for (const id of [...graph.nodes.keys()]) graph.removeNode(id); }
   }
   void loadServerKeys(); // which API keys the site worker holds (see worker/index.ts)
   let setup = loadSetup();
@@ -393,7 +394,7 @@ export function boot(root: HTMLElement): Boot {
   document.getElementById("export")!.onclick = doExport;
 
   // ---- undo / redo, backups, crash recovery
-  const loadState = (g: GraphJSON) => { graph.load(g); editor.rebuild(); save(); syncUndo(); };
+  const loadState = (g: GraphJSON) => { graph.load(migrateCameraBot(g)); editor.rebuild(); save(); syncUndo(); };
   const stepState = (g: GraphJSON) => { graph.restore(g); editor.rebuild(); save(); dirty = true; syncUndo(); }; // in place: nothing restarts
   const undo = () => { const s = edits.undo(); if (s) stepState(s); };
   const redo = () => { const s = edits.redo(); if (s) stepState(s); };

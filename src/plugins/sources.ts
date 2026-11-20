@@ -8,7 +8,8 @@ import { drawFrame, withDetail } from "./shared";
 import { frameHover } from "./hover";
 import { openStream } from "../setup/devices";
 
-interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string }
+interface WebcamState { video: HTMLVideoElement | null; canvas: HTMLCanvasElement | null; stream: MediaStream | null; starting: boolean; last: number; frame: GrayFrame | null; err: string; frozenUntil: number; res: string; status: string; debug: string; frames: number }
+const webcamStatus = (s: WebcamState) => s.err ? "Error" : s.starting || (s.stream && !s.frame) ? "Loading" : s.frame ? "Live" : "Offline";
 /** Capture sizes. The picture is kept at this size (or the camera's own size when that is smaller). The board reader averages it down to 480×360 to sample the squares. */
 const RESOLUTIONS: Record<string, [number, number]> = { "640x480": [640, 480], "960x720": [960, 720], "1280x960": [1280, 960] };
 
@@ -50,34 +51,43 @@ const webcam: NodeSpec<WebcamState> = {
     { id: "freezePct", kind: "number", group: "freeze", label: "Freeze chance %", min: 0, max: 100, step: 5, value: 10 },
     { id: "freezeMs", kind: "number", group: "freeze", label: "Freeze length (ms)", min: 100, max: 5000, step: 100, value: 1500 },
   ],
-  previewSize: [160, 120],
-  init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "", frozenUntil: 0, res: "" }),
+  previewSize: [240, 240],
+  init: () => ({ video: null, canvas: null, stream: null, starting: false, last: 0, frame: null, err: "", frozenUntil: 0, res: "", status: "Waiting for first tick", debug: "Camera has not been requested yet", frames: 0 }),
   process(_i, { params, state, now, setFidelity, span }) {
     const stop = () => { state.stream?.getTracks().forEach((t) => t.stop()); state.stream = null; state.video = null; state.frame = null; };
-    if (!params.online) { if (state.stream) stop(); setFidelity(null); return { frame: null }; }
+    if (!params.online) { if (state.stream) stop(); state.status = "Camera disabled"; state.debug = "Online is off; no frames requested"; setFidelity(null); return { frame: null }; }
+    if (!navigator.mediaDevices) { state.err = "Camera API unavailable (requires HTTPS or localhost)"; state.status = "Cannot open camera"; state.debug = state.err; }
     const [capW, capH] = RESOLUTIONS[String(params.resolution)] ?? RESOLUTIONS["640x480"];
     if (state.stream && state.res !== String(params.resolution)) stop(); // a new capture size reopens the camera
     if (!state.stream && !state.starting && navigator.mediaDevices) {
       state.starting = true;
+      state.status = "Enumerating video devices";
+      state.debug = "Awaiting navigator.mediaDevices.enumerateDevices()";
       void (async () => {
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const want = String(params.device);
           const dev = want ? devices.find((d) => d.kind === "videoinput" && (d.deviceId === want || d.label.toLowerCase().includes(want.toLowerCase()))) : undefined;
+          state.status = "Requesting camera stream";
+          state.debug = `${devices.filter(d => d.kind === "videoinput").length} cameras; ${dev?.label || dev?.deviceId || "default device"}; ${capW}×${capH}. Awaiting getUserMedia (permission/device open; 6s timeout)`;
           const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: capW, height: capH } });
+          state.status = "Starting video playback";
+          state.debug = "Stream acquired; attaching srcObject and awaiting video.play()";
           const v = document.createElement("video"); v.srcObject = stream; v.muted = true; await v.play();
           void refreshDevices(); // names are only known once the camera is allowed
           state.stream = stream; state.video = v; state.res = String(params.resolution); state.canvas = document.createElement("canvas"); state.err = "";
-          stream.getVideoTracks()[0].onended = () => stop(); // unplugged -> camera simply goes offline
-        } catch (e) { state.err = String(e); }
+          state.status = "Waiting for first frame";
+          state.debug = `Video playback started; capture scheduled at ${params.fps} FPS`;
+          stream.getVideoTracks()[0].onended = () => { stop(); state.status = "Camera track ended"; state.debug = "Device unplugged or stream ended; will attempt to reopen"; };
+        } catch (e) { state.err = String(e); state.status = "Camera startup failed"; state.debug = state.err; }
         state.starting = false;
       })();
     }
     if (state.video && now - state.last >= 1000 / Number(params.fps)) {
       state.last = now;
-      if (now < state.frozenUntil) { /* frozen: the camera keeps the last picture */ }
-      else if (params.freeze && Math.random() * 100 < Number(params.freezePct)) { state.frozenUntil = now + Number(params.freezeMs); }
-      else if (params.drop && Math.random() * 100 < Number(params.dropPct)) { /* dropped: this frame never arrives, the last one stays */ }
+      if (now < state.frozenUntil) { state.status = "Simulated freeze"; state.debug = `Holding last frame for ${Math.ceil(state.frozenUntil - now)} ms`; }
+      else if (params.freeze && Math.random() * 100 < Number(params.freezePct)) { state.frozenUntil = now + Number(params.freezeMs); state.status = "Simulated freeze"; state.debug = `Holding last frame for ${params.freezeMs} ms`; }
+      else if (params.drop && Math.random() * 100 < Number(params.dropPct)) { state.status = "Simulated dropped frame"; state.debug = "Capture skipped; retaining previous frame"; }
       else {
         const video = state.video!, canvas = state.canvas!;
         // Keep the camera's real pixels. Only shrink when the camera is larger than the chosen capture size, and do not stretch a smaller one up.
@@ -102,16 +112,38 @@ const webcam: NodeSpec<WebcamState> = {
         const gain = params.over ? 1 + Number(params.overAmount) / 100 * 3 : params.under ? 1 - Number(params.underAmount) / 100 * 0.9 : 1;
         if (gain !== 1) span("apply exposure", () => { for (let i = 0; i < n; i++) g[i] = g[i] * gain; });
         state.frame = { width: tw, height: th, data: g, t: now };
+        state.frames++;
+        state.status = `Captured frame ${state.frames}`;
+        state.debug = `${vw}×${vh} video → ${tw}×${th} pixels → ${ch}; gain ${gain.toFixed(2)}; ${params.fps} FPS target; t=${Math.round(now)} ms`;
       }
     }
     setFidelity(state.frame ? 1 : 0);
     return { frame: state.frame };
   },
   dispose(s) { s.stream?.getTracks().forEach((t) => t.stop()); },
-  hover: (p, w, h, s) => frameHover(p, w, h, [160, 120], s.frame, "Webcam", [{ label: "Status", value: s.err ? "error" : s.frame ? "live" : "offline", tone: s.err ? "bad" : s.frame ? "ok" : "warn" }, ...(s.err ? [{ label: "Error", value: s.err, tone: "bad" as const }] : [])]),
-  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [160, 120], (pw, ph) => drawFrame(ctx, pw, ph, s.frame, s.err ? "no camera" : "offline"), () => [
-    ["status", s.err ? "error" : s.frame ? "live" : "offline", s.err ? "#ff5a6e" : undefined], ["error", s.err || "none"],
-    ["resolution", s.frame ? `${s.frame.width}×${s.frame.height}` : "—"], ["frame t", s.frame ? `${Math.round(s.frame.t)} ms` : "—"]]),
+  hover: (p, w, h, s) => frameHover(p, w, h, [240, 240], s.frame, "Webcam", [
+    { label: "Status", value: webcamStatus(s), tone: s.err ? "bad" : s.frame ? "ok" : "warn" },
+    { label: "Operation", value: s.status }, { label: "Debug", value: s.debug },
+    ...(s.err ? [{ label: "Error", value: s.err, tone: "bad" as const }] : []),
+  ]),
+  preview: (ctx, w, h, s) => withDetail(ctx, w, h, [240, 240], (pw, ph) => {
+    const imageH = Math.max(30, ph - 88), status = webcamStatus(s);
+    drawFrame(ctx, pw, imageH, s.frame, status);
+    if (status === "Loading") {
+      const x = pw / 2, y = imageH / 2 - 24, angle = performance.now() / 180;
+      ctx.beginPath(); ctx.strokeStyle = "#35e0b4"; ctx.lineWidth = 2;
+      ctx.arc(x, y, 9, angle, angle + Math.PI * 1.5); ctx.stroke();
+    }
+    ctx.fillStyle = "#07090d"; ctx.fillRect(0, imageH, pw, ph - imageH);
+    ctx.fillStyle = s.err ? "#ff5a6e" : "#b9c6e4";
+    ctx.font = "10px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    // Keep the operation and full diagnostics visible below the picture at normal node size.
+    const chars = Math.max(8, Math.floor((pw - 12) / 6));
+    const lines = [s.status, s.debug].flatMap(text => text.match(new RegExp(`.{1,${chars}}`, "g")) ?? []);
+    lines.slice(0, 7).forEach((line, i) => ctx.fillText(line, 6, imageH + 4 + i * 12));
+  }, () => [
+    ["status", webcamStatus(s), s.err ? "#ff5a6e" : undefined], ["operation", s.status], ["debug", s.debug], ["error", s.err || "none"],
+    ["resolution", s.frame ? `${s.frame.width}×${s.frame.height}` : "—"], ["frames", String(s.frames)], ["frame t", s.frame ? `${Math.round(s.frame.t)} ms` : "—"]]),
 };
 
 interface SynthState { frame: GrayFrame | null; last: number; seed: number; key: string; lum: Float32Array | null; inflight: boolean; epoch: number }

@@ -31,8 +31,8 @@ export const WORKFLOWS: (WorkflowFile & { id: string })[] = [
  * A live workflow ships wired to one webcam. When the saved setup has two or more enabled webcams, give it a second one:
  * the first keeps its source and board reader, the second is a copy of them (own device and corners) feeding the fuser and people tracker.
  */
-export function withLiveCameras(w: WorkflowFile, saved: SetupConfig | null): { graph: GraphJSON; setup: SetupConfig | null } {
-  if (w.graph.nodes.some(n => n.type === "game.cameraBot")) return buildCameraBot(saved);
+export function withLiveCameras(w: WorkflowFile & { id?: string }, saved: SetupConfig | null): { graph: GraphJSON; setup: SetupConfig | null } {
+  if (w.id === "camera-bot") return buildCameraBot(saved);
   const cams = (saved?.cameras ?? []).filter((c) => c.kind === "webcam" && c.online).slice(0, 2);
   const src = w.graph.nodes.find((n) => n.type === "source.webcam"), rd = src && w.graph.nodes.find((n) => n.type === "vision.boardReader" && w.graph.edges.some((e) => e.from.node === src.id && e.to.node === n.id));
   if (cams.length < 2 || !src || !rd || w.graph.nodes.filter((n) => n.type === "source.webcam").length !== 1) return { graph: w.graph, setup: w.setup };

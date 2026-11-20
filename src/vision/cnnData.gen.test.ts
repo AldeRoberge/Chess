@@ -18,7 +18,10 @@ import type { GrayFrame } from "./types";
  */
 // CNN_BOARD=1 cuts the whole board into one flattened image per sample (boardImage.ts) instead of 64 square crops
 const BOARD = !!process.env.CNN_BOARD, cut = BOARD ? extractBoard : extractCrops, UNIT = BOARD ? BOARD_SIDE * BOARD_SIDE : 64 * CROP * CROP, PRE = BOARD ? "ml/data/board-" : "ml/data/";
-const label = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : p.color === "w" ? 1 : 2));
+const label3 = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : p.color === "w" ? 1 : 2));
+// whole-board samples carry the piece type too: 0 empty, 1-6 white p n b r q k, 7-12 black p n b r q k (colour = 1 + (class > 6))
+const label13 = (g: Chess) => g.board().flat().map((p) => (!p ? 0 : (p.color === "w" ? 1 : 7) + "pnbrqk".indexOf(p.type)));
+const label = BOARD ? label13 : label3;
 
 function randomGame(rand: () => number): Chess {
   const g = new Chess();
