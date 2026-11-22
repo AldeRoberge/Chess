@@ -13,26 +13,37 @@ export interface FindOpts {
   blurScale?: number;
 }
 
+// Scratch buffers for the per-frame search. They only grow, never leave this module, and every value a caller gets back
+// is a fresh array. The searches are synchronous and do not call each other, so one set is shared by both finders.
+let gBuf: Float32Array = new Float32Array(0), magBuf: Float32Array = new Float32Array(0), tmpBuf: Float32Array = new Float32Array(0), busyBuf: Float32Array = new Float32Array(0);
+let maskBuf: Uint8Array = new Uint8Array(0), seenBuf: Uint8Array = new Uint8Array(0);
+const floats = (buf: Float32Array, n: number) => (buf.length >= n ? buf : new Float32Array(n));
+const bytes = (buf: Uint8Array, n: number) => (buf.length >= n ? buf : new Uint8Array(n));
+
 export function findBoardCorners(f: GrayFrame, opts: FindOpts = {}): Pt[] | null {
   const { width: w, height: h, data } = f;
   if (w < 16 || h < 16) return null;
   // Work on at most ~160 px wide so the cost is flat whatever the camera resolves.
-  const k = Math.max(1, Math.floor(w / 160)), sw = Math.floor(w / k), sh = Math.floor(h / k);
-  const g = new Float32Array(sw * sh);
+  const k = Math.max(1, Math.floor(w / 160)), sw = Math.floor(w / k), sh = Math.floor(h / k), n = sw * sh;
+  gBuf = floats(gBuf, n); const g = gBuf.subarray(0, n);
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
     let s = 0; for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) s += data[(y * k + j) * w + x * k + i];
     g[y * sw + x] = s / (k * k);
   }
-  const mag = new Float32Array(sw * sh);
+  magBuf = floats(magBuf, n); const mag = magBuf.subarray(0, n); mag.fill(0); // the border is never written, so it must read as zero
   for (let y = 1; y < sh - 1; y++) for (let x = 1; x < sw - 1; x++) {
     const gx = g[y * sw + x + 1] - g[y * sw + x - 1], gy = g[(y + 1) * sw + x] - g[(y - 1) * sw + x];
     mag[y * sw + x] = Math.hypot(gx, gy);
   }
   const r = Math.max(opts.blurScale ? 1 : 2, Math.round((sw / 40) * (opts.blurScale ?? 1)));
-  const busy = boxBlur(boxBlur(mag, sw, sh, r), sw, sh, r);
+  tmpBuf = floats(tmpBuf, n); busyBuf = floats(busyBuf, n);
+  const tmp = tmpBuf.subarray(0, n), busy = busyBuf.subarray(0, n);
+  boxBlurInto(mag, sw, sh, r, busy, tmp);
+  boxBlurInto(busy, sw, sh, r, busy, tmp); // in place: the first pass only reads its source
   const t = otsu(busy);
   if (t == null) return null;
-  const mask = new Uint8Array(sw * sh); for (let i = 0; i < mask.length; i++) mask[i] = busy[i] > t * (opts.tScale ?? 1) ? 1 : 0;
+  maskBuf = bytes(maskBuf, n); const mask = maskBuf.subarray(0, n);
+  for (let i = 0; i < n; i++) mask[i] = busy[i] > t * (opts.tScale ?? 1) ? 1 : 0;
   const blob = biggestBlob(mask, sw, sh);
   if (!blob || blob.length < sw * sh * 0.04 || blob.length > sw * sh * 0.95) return null;
   const hull = convexHull(blob.map((i) => ({ x: i % sw, y: Math.floor(i / sw) })));
@@ -45,8 +56,8 @@ export function findBoardCorners(f: GrayFrame, opts: FindOpts = {}): Pt[] | null
   return area > w * h * 0.03 ? out : null;
 }
 
-function boxBlur(src: Float32Array, w: number, h: number, r: number): Float32Array {
-  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+/** Separable box blur into `out`, using `tmp` for the row pass. `out` may be `src`: the row pass reads all of `src` first. */
+function boxBlurInto(src: Float32Array, w: number, h: number, r: number, out: Float32Array, tmp: Float32Array): void {
   for (let y = 0; y < h; y++) {
     let s = 0, n = 0;
     for (let x = 0; x < Math.min(w, r); x++) { s += src[y * w + x]; n++; }
@@ -65,7 +76,6 @@ function boxBlur(src: Float32Array, w: number, h: number, r: number): Float32Arr
       out[y * w + x] = s / n;
     }
   }
-  return out;
 }
 
 function otsu(v: Float32Array): number | null {
@@ -84,7 +94,8 @@ function otsu(v: Float32Array): number | null {
 }
 
 function biggestBlob(mask: Uint8Array, w: number, h: number): number[] | null {
-  const seen = new Uint8Array(w * h); let best: number[] | null = null;
+  seenBuf = bytes(seenBuf, w * h); const seen = seenBuf.subarray(0, w * h); seen.fill(0);
+  let best: number[] | null = null;
   for (let s = 0; s < mask.length; s++) {
     if (!mask[s] || seen[s]) continue;
     const comp: number[] = [], stack = [s]; seen[s] = 1;
@@ -114,8 +125,8 @@ const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, 
 export function findCheckerCorners(f: GrayFrame): Pt[] | null {
   const { width: w, height: h, data } = f;
   if (w < 16 || h < 16) return null;
-  const k = Math.max(1, Math.floor(w / 220)), sw = Math.floor(w / k), sh = Math.floor(h / k);
-  const g = new Float32Array(sw * sh);
+  const k = Math.max(1, Math.floor(w / 220)), sw = Math.floor(w / k), sh = Math.floor(h / k), n = sw * sh;
+  gBuf = floats(gBuf, n); const g = gBuf.subarray(0, n);
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
     let s = 0; for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) s += data[(y * k + j) * w + x * k + i];
     g[y * sw + x] = s / (k * k);
@@ -224,20 +235,23 @@ function edgeAlternates(data: Uint8ClampedArray, w: number, h: number, q: Pt[], 
 function edgeFlips(data: Uint8ClampedArray, w: number, h: number, q: Pt[], edge: number, minRun: number, gap: number, mid: number, off: number): { levels: number; flips: number } {
   const a = q[edge], b = q[(edge + 1) % 4];
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, nx = dy / len, ny = -dx / len;
-  const levels: number[] = []; let runPx = 0, anchor = NaN;
+  // Counts the kept runs and the sign flips between consecutive ones as they close. No closure and no array here:
+  // this runs thousands of times per search, and captured variables would live on the heap.
   // Only clearly dark or clearly light runs count: mid-grey table grain alternates too, but never that far from the middle.
-  const close = () => { if (runPx >= minRun && Math.abs(anchor - mid) >= gap * 0.75) levels.push(anchor); };
+  const lift = gap * 0.75;
+  let levels = 0, flips = 0, prev = NaN, runPx = 0, anchor = NaN;
   for (let dist = len * 0.08; dist < len * 0.92; dist += 2) {
     const t = dist / len, x = Math.round(a.x + dx * t + nx * off), y = Math.round(a.y + dy * t + ny * off);
     if (x < 0 || y < 0 || x >= w || y >= h) continue;
     const v = data[y * w + x];
     if (Number.isNaN(anchor) || Math.abs(v - anchor) <= gap) { if (Number.isNaN(anchor)) anchor = v; runPx += 2; }
-    else { close(); anchor = v; runPx = 2; }
+    else {
+      if (runPx >= minRun && Math.abs(anchor - mid) >= lift) { if (levels && (anchor - mid) * (prev - mid) < 0) flips++; prev = anchor; levels++; }
+      anchor = v; runPx = 2;
+    }
   }
-  close();
-  let flips = 0;
-  for (let i = 1; i < levels.length; i++) if ((levels[i] - mid) * (levels[i - 1] - mid) < 0) flips++;
-  return { levels: levels.length, flips };
+  if (runPx >= minRun && Math.abs(anchor - mid) >= lift) { if (levels && (anchor - mid) * (prev - mid) < 0) flips++; prev = anchor; levels++; }
+  return { levels, flips };
 }
 
 /** Moves one corner of a quad `d` px along the outward normal of `edge`. */
@@ -349,11 +363,13 @@ function fitCheckerGrid(f: GrayFrame, initial: Pt[], period: number): Pt[] {
   const score = (q: Pt[]) => {
     if (!clockwise(q) || q.some((p) => p.x < 0 || p.y < 0 || p.x >= f.width || p.y >= f.height)) return -Infinity;
     let contrast = 0, noise = 0;
+    // Four corners of each square, read one by one (same arithmetic as summing an array of them, without the arrays).
     for (let row = 0; row < 8; row++) for (let col = 0; col < 8; col++) {
-      const v = [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]].map(([x, y]) => at(f, q, (col + x) / 8, (row + y) / 8));
-      const mean = v.reduce((s, n) => s + n, 0) / 4;
+      const v0 = at(f, q, (col + 0.2) / 8, (row + 0.2) / 8), v1 = at(f, q, (col + 0.8) / 8, (row + 0.2) / 8);
+      const v2 = at(f, q, (col + 0.8) / 8, (row + 0.8) / 8), v3 = at(f, q, (col + 0.2) / 8, (row + 0.8) / 8);
+      const mean = (v0 + v1 + v2 + v3) / 4;
       contrast += ((row + col) % 2 ? -1 : 1) * mean;
-      noise += v.reduce((s, n) => s + Math.abs(n - mean), 0) / 4;
+      noise += (Math.abs(v0 - mean) + Math.abs(v1 - mean) + Math.abs(v2 - mean) + Math.abs(v3 - mean)) / 4;
     }
     return Math.abs(contrast) - noise * 0.5;
   };

@@ -14,10 +14,23 @@ export interface EnhanceConfig {
 
 export const noEnhance = (): EnhanceConfig => ({ denoise: "none", sharpen: 0, sharpenRadius: 2, flat: 0, average: 1 });
 
+/** Scratch for the blur's row pass. Module-private and only grown: no caller ever holds it. */
+let blurTmp: Float32Array = new Float32Array(0);
+/** Scratch for the frame sum in averageFrames. Module-private; the returned frame always gets its own data. */
+let sumBuf: Float32Array = new Float32Array(0);
+
 /** Separable box blur with clamped edges. */
 export function boxBlur(src: Float32Array, w: number, h: number, r: number): Float32Array {
   if (r < 1) return src;
-  const tmp = new Float32Array(w * h), out = new Float32Array(w * h), n = 2 * r + 1;
+  const out = new Float32Array(w * h);
+  if (blurTmp.length < w * h) blurTmp = new Float32Array(w * h);
+  boxBlurInto(src, w, h, r, out, blurTmp);
+  return out;
+}
+
+/** The box blur written into `out`, using `tmp` for the row pass. `out` may be `src`: the row pass reads all of `src` first. */
+function boxBlurInto(src: Float32Array, w: number, h: number, r: number, out: Float32Array, tmp: Float32Array): void {
+  const n = 2 * r + 1;
   for (let y = 0; y < h; y++) {
     const row = y * w;
     let acc = 0;
@@ -35,14 +48,17 @@ export function boxBlur(src: Float32Array, w: number, h: number, r: number): Flo
       acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
     }
   }
-  return out;
 }
 
-/** Three box passes approximate a gaussian of this radius. */
+/** Three box passes approximate a gaussian of this radius. The passes after the first run in place: only the result is kept. */
 export function gaussBlur(src: Float32Array, w: number, h: number, r: number): Float32Array {
   if (r < 1) return src;
-  const rr = Math.max(1, Math.round(r / 1.7));
-  return boxBlur(boxBlur(boxBlur(src, w, h, rr), w, h, rr), w, h, rr);
+  const rr = Math.max(1, Math.round(r / 1.7)), out = new Float32Array(w * h);
+  if (blurTmp.length < w * h) blurTmp = new Float32Array(w * h);
+  boxBlurInto(src, w, h, rr, out, blurTmp);
+  boxBlurInto(out, w, h, rr, out, blurTmp);
+  boxBlurInto(out, w, h, rr, out, blurTmp);
+  return out;
 }
 
 /** 3x3 median via the classic 19-exchange network (a plain sort of 9 per pixel is several times slower). */
@@ -90,7 +106,9 @@ function medianInto(src: ArrayLike<number>, w: number, h: number, out: { [i: num
 
 /** Average several frames of the same still board; the noise drops by sqrt(n). */
 export function averageFrames(frames: GrayFrame[]): GrayFrame {
-  const f = frames[0], n = f.data.length, acc = new Float32Array(n);
+  const f = frames[0], n = f.data.length;
+  if (sumBuf.length < n) sumBuf = new Float32Array(n);
+  const acc = sumBuf.subarray(0, n).fill(0);
   for (const fr of frames) for (let i = 0; i < n; i++) acc[i] += fr.data[i];
   const data = new Uint8ClampedArray(n);
   for (let i = 0; i < n; i++) data[i] = acc[i] / frames.length;
@@ -147,19 +165,17 @@ export function enhance(f: GrayFrame, c: EnhanceConfig): GrayFrame {
   if (c.denoise === "box") cur = boxBlur(cur, w, h, 1);
   else if (c.denoise === "gauss") cur = gaussBlur(cur, w, h, 2);
   else if (c.denoise === "median") cur = median3(cur, w, h);
+  // `cur` is this function's own buffer, and each pixel only reads its own value, so the two passes below update it in place.
   if (c.sharpen > 0) {
-    const blur = gaussBlur(cur, w, h, c.sharpenRadius), out = new Float32Array(cur.length);
-    for (let i = 0; i < cur.length; i++) out[i] = cur[i] + c.sharpen * (cur[i] - blur[i]);
-    cur = out;
+    const blur = gaussBlur(cur, w, h, c.sharpenRadius);
+    for (let i = 0; i < cur.length; i++) cur[i] = cur[i] + c.sharpen * (cur[i] - blur[i]);
   }
   if (c.flat > 0) {
     const bg = gaussBlur(cur, w, h, c.flat);
     let mean = 0;
     for (let i = 0; i < cur.length; i++) mean += cur[i];
     mean /= cur.length;
-    const out = new Float32Array(cur.length);
-    for (let i = 0; i < cur.length; i++) out[i] = (cur[i] / Math.max(20, bg[i])) * mean;
-    cur = out;
+    for (let i = 0; i < cur.length; i++) cur[i] = (cur[i] / Math.max(20, bg[i])) * mean;
   }
   const data = new Uint8ClampedArray(cur.length);
   for (let i = 0; i < cur.length; i++) data[i] = cur[i];

@@ -23,6 +23,7 @@ export class SquareCnn {
   private bufA = new Float32Array(4096);
   private bufB = new Float32Array(4096);
   private padded = new Float32Array(4096);
+  private lg = new Float32Array(3);
 
   constructor(json: CnnJson) {
     if (json.crop !== CROP) throw new Error(`model was trained for ${json.crop}px crops, not ${CROP}`);
@@ -55,7 +56,7 @@ export class SquareCnn {
 
   /** P(empty), P(white), P(black) for every square of a board, in the order extractCrops gives them. */
   classify(crops: Float32Array, out = new Float32Array(64 * 3)): Float32Array {
-    const lg = new Float32Array(3);
+    const lg = this.lg;
     for (let sq = 0; sq < 64; sq++) {
       this.logits(crops, sq * CROP * CROP, lg);
       const m = Math.max(lg[0], lg[1], lg[2]);

@@ -13,11 +13,15 @@ export interface CenterSeed { corners: Pt[]; center: Pt; side: number; angle: nu
 const ANGLES = 6; // the pattern repeats every quarter turn, so a quarter turn in 6 steps (15 degrees) is plenty
 const MIN_SCORE = 14; // grey levels of difference between the light and the dark pair
 
+/** Scratch for the downsampled picture. Module-private and only grown; the search never returns it. */
+let gBuf: Float32Array = new Float32Array(0);
+
 export function findCenterSeed(f: GrayFrame): CenterSeed | null {
   const { width: w, height: h, data } = f;
   if (w < 32 || h < 32) return null;
-  const k = Math.max(1, Math.floor(w / 200)), sw = Math.floor(w / k), sh = Math.floor(h / k);
-  const g = new Float32Array(sw * sh);
+  const k = Math.max(1, Math.floor(w / 200)), sw = Math.floor(w / k), sh = Math.floor(h / k), n = sw * sh;
+  if (gBuf.length < n) gBuf = new Float32Array(n);
+  const g = gBuf.subarray(0, n);
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
     let s = 0; for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) s += data[(y * k + j) * w + x * k + i];
     g[y * sw + x] = s / (k * k);

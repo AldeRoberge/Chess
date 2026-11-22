@@ -25,12 +25,16 @@ export class BoardCnn {
   private bufA: Float32Array;
   private bufB: Float32Array;
   private padded: Float32Array;
+  /** Scratch for classify(): the logits and one square's exponentials, reused every call (classify never hands them out). */
+  private lgBuf: Float32Array<ArrayBuffer>;
+  private expBuf: Float32Array<ArrayBuffer>;
   /** Output classes per square: 13 (empty + 6 piece types x 2 colours) or 3 (empty, white, black) for an older model. */
   readonly classes: number;
 
   constructor(json: BoardCnnJson) {
     if (json.side !== BOARD_SIDE) throw new Error(`model was trained for ${json.side}px boards, not ${BOARD_SIDE}`);
     this.classes = json.classes ?? 3;
+    this.lgBuf = new Float32Array(this.classes * 64); this.expBuf = new Float32Array(this.classes);
     this.layers = json.layers.map((l) => ({ k: l.k, cin: l.in, cout: l.out, stride: l.stride, relu: l.relu, w: floats(l.w), b: floats(l.b) }));
     let side = BOARD_SIDE, act = BOARD_SIDE * BOARD_SIDE, pad = 0;
     for (const L of this.layers) {
@@ -64,7 +68,7 @@ export class BoardCnn {
    * `classes` probabilities per square (square-major) so the piece type can be read as well.
    */
   classify(board: Float32Array, out = new Float32Array(64 * 3), types?: Float32Array): Float32Array {
-    const lg = this.logits(board), n = this.classes, e = new Float32Array(n);
+    const lg = this.logits(board, this.lgBuf), n = this.classes, e = this.expBuf;
     for (let sq = 0; sq < 64; sq++) {
       let m = -Infinity; for (let c = 0; c < n; c++) m = Math.max(m, lg[c * 64 + sq]);
       let z = 0; for (let c = 0; c < n; c++) { e[c] = Math.exp(lg[c * 64 + sq] - m); z += e[c]; }

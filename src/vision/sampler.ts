@@ -75,6 +75,10 @@ export class BoardSampler {
   private key = "";
   private crownPts: Pt[][] = [];
   private rimPts: Pt[][] = [];
+  /** Per-square samples of one patch, reused by medianAt and statsAt. */
+  private samples = new Float64Array(64);
+  /** Per-square readings of the current frame, reused by squares(). */
+  private squareBuf = { crown: new Float32Array(64), rim: new Float32Array(64), spread: new Float32Array(64), lo: new Float32Array(64), hi: new Float32Array(64) };
 
   constructor(public cam: string, public cfg: SamplerConfig = defaultSamplerConfig()) {}
 
@@ -87,6 +91,7 @@ export class BoardSampler {
     this.H = boardToImage(this.cfg.corners);
     this.lean();
     const { grid, patch } = this.cfg;
+    if (this.samples.length < grid * grid) this.samples = new Float64Array(grid * grid);
     this.crownPts = [];
     this.rimPts = [];
     for (let sq = 0; sq < 64; sq++) {
@@ -133,20 +138,31 @@ export class BoardSampler {
     return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + e * tx * ty;
   }
 
+  /**
+   * Sorts the first n samples of the scratch buffer in place and returns it. The tail is pushed past them with
+   * Infinity, so the native numeric sort does the work and no per-square array is allocated.
+   */
+  private sortSamples(n: number): Float64Array {
+    const a = this.samples;
+    a.fill(Infinity, n);
+    a.sort();
+    return a;
+  }
+
   /** Median of the unclipped samples. 255 means the patch is blown out; NaN means it isn't on the image. */
   private medianAt(frame: GrayFrame, pts: Pt[]): number {
-    const vals: number[] = [];
-    let sat = 0;
+    const vals = this.samples;
+    let n = 0, sat = 0;
     for (const p of pts) {
       const v = this.pixel(frame, p.x, p.y);
       if (v === null) continue;
       if (v >= SAT) { sat++; continue; }
-      vals.push(v);
+      vals[n++] = v;
     }
-    if (vals.length * 2 < pts.length) return sat * 2 >= pts.length ? 255 : NaN;
-    vals.sort((a, b) => a - b);
-    const m = vals.length >> 1;
-    return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2;
+    if (n * 2 < pts.length) return sat * 2 >= pts.length ? 255 : NaN;
+    const s = this.sortSamples(n);
+    const m = n >> 1;
+    return n % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   }
 
   /** Median brightness of each square's centre patch (what the hover and the tests read). */
@@ -159,29 +175,35 @@ export class BoardSampler {
 
   /** Std-dev and the dark / bright ends of the unclipped samples. An empty square is flat; any piece (even white on white) has shading and edges. */
   private statsAt(frame: GrayFrame, pts: Pt[]): { spread: number; lo: number; hi: number } {
-    const vals: number[] = [];
+    const vals = this.samples;
+    let n = 0;
     for (const p of pts) {
       const v = this.pixel(frame, p.x, p.y);
       if (v === null || v >= SAT) continue;
-      vals.push(v);
+      vals[n++] = v;
     }
-    if (vals.length < 4) return { spread: NaN, lo: NaN, hi: NaN };
-    const n = vals.length, m = vals.reduce((a, v) => a + v, 0) / n;
-    const sd = Math.sqrt(vals.reduce((a, v) => a + (v - m) * (v - m), 0) / n);
-    vals.sort((x, y) => x - y);
-    return { spread: sd, lo: vals[Math.floor(n * 0.15)], hi: vals[Math.min(n - 1, Math.floor(n * 0.85))] };
+    if (n < 4) return { spread: NaN, lo: NaN, hi: NaN };
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += vals[i];
+    const m = sum / n;
+    let sq2 = 0;
+    for (let i = 0; i < n; i++) sq2 += (vals[i] - m) * (vals[i] - m);
+    const sd = Math.sqrt(sq2 / n);
+    const s = this.sortSamples(n);
+    return { spread: sd, lo: s[Math.floor(n * 0.15)], hi: s[Math.min(n - 1, Math.floor(n * 0.85))] };
   }
 
   private squares(frame: GrayFrame): { crown: Float32Array; rim: Float32Array; spread: Float32Array; lo: Float32Array; hi: Float32Array } {
     this.prepare();
-    const crown = new Float32Array(64), rim = new Float32Array(64), spread = new Float32Array(64), lo = new Float32Array(64), hi = new Float32Array(64);
+    // Scratch reused every frame: the callers only read these within the call.
+    const { crown, rim, spread, lo, hi } = this.squareBuf;
     for (let sq = 0; sq < 64; sq++) {
       crown[sq] = this.medianAt(frame, this.crownPts[sq]);
       rim[sq] = this.medianAt(frame, this.rimPts[sq]);
       const st = this.statsAt(frame, this.crownPts[sq]);
       spread[sq] = st.spread; lo[sq] = st.lo; hi[sq] = st.hi;
     }
-    return { crown, rim, spread, lo, hi };
+    return this.squareBuf;
   }
 
   /**
