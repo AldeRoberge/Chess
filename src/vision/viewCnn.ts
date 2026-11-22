@@ -16,6 +16,7 @@ export class ViewCnn {
   private bufA: Float32Array;
   private bufB: Float32Array;
   private padded: Float32Array;
+  private lgBuf = new Float32Array(3 * 64);
 
   constructor(json: ViewCnnJson) {
     if (json.side !== VIEW_SIDE) throw new Error(`model was trained for ${json.side}px views, not ${VIEW_SIDE}`);
@@ -54,7 +55,7 @@ export class ViewCnn {
 
   /** P(empty), P(white), P(black) for every square in `sqName` order (a8 first). */
   classify(view: Float32Array, out = new Float32Array(64 * 3)): Float32Array {
-    const lg = this.logits(view);
+    const lg = this.logits(view, this.lgBuf);
     for (let sq = 0; sq < 64; sq++) {
       const a = lg[sq], b = lg[64 + sq], c = lg[128 + sq], m = Math.max(a, b, c), ea = Math.exp(a - m), eb = Math.exp(b - m), ec = Math.exp(c - m), z = ea + eb + ec;
       out[sq * 3] = ea / z; out[sq * 3 + 1] = eb / z; out[sq * 3 + 2] = ec / z;
