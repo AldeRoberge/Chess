@@ -43,17 +43,21 @@ if (typeof navigator !== "undefined" && typeof navigator.mediaDevices?.enumerate
   navigator.mediaDevices.addEventListener?.("devicechange", () => void refreshDevices());
 }
 
+// Scratch buffers for unsharp: internal only (never handed out), so they can be reused from frame to frame.
+let sharpTmp = new Uint16Array(0), sharpSrc = new Uint8ClampedArray(0);
 /** Unsharp mask in place: out = in + amount × (in − 3×3 box blur). Brings back edge contrast a soft lens or video compression took away. */
 export function unsharp(g: Uint8ClampedArray, w: number, h: number, amount: number) {
   if (w < 3 || h < 3) return;
-  const tmp = new Uint16Array(w * h); // horizontal 3-tap sums
+  if (sharpTmp.length < w * h) sharpTmp = new Uint16Array(w * h);
+  if (sharpSrc.length < g.length) sharpSrc = new Uint8ClampedArray(g.length);
+  const tmp = sharpTmp; // horizontal 3-tap sums
   for (let y = 0; y < h; y++) {
     const r = y * w;
     tmp[r] = g[r] * 2 + g[r + 1];
     for (let x = 1; x < w - 1; x++) tmp[r + x] = g[r + x - 1] + g[r + x] + g[r + x + 1];
     tmp[r + w - 1] = g[r + w - 2] + g[r + w - 1] * 2;
   }
-  const src = new Uint8ClampedArray(g); // original values, since g is rewritten as we go
+  const src = sharpSrc; src.set(g); // original values, since g is rewritten as we go
   for (let y = 0; y < h; y++) {
     const up = (y > 0 ? y - 1 : 0) * w, mid = y * w, dn = (y < h - 1 ? y + 1 : h - 1) * w;
     for (let x = 0; x < w; x++) {
@@ -61,6 +65,14 @@ export function unsharp(g: Uint8ClampedArray, w: number, h: number, amount: numb
       g[mid + x] = src[mid + x] + amount * (src[mid + x] - blur);
     }
   }
+}
+
+/** Grayscale of an RGBA picture into `g`, with the exposure gain applied in the same pass. Every value is stored (rounded and clamped) exactly as the separate two-pass version stored it, so the output is identical. */
+export function toGray(px: Uint8ClampedArray, g: Uint8ClampedArray, ch: string, gain: number) {
+  const n = g.length, k = ch === "red" ? 0 : ch === "green" ? 1 : ch === "blue" ? 2 : -1; // channel chosen once, not per pixel
+  if (k >= 0) { for (let i = 0; i < n; i++) g[i] = px[i * 4 + k] * gain; return; } // a whole-number channel: one store, same as store-then-scale
+  if (gain === 1) { for (let i = 0; i < n; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114; return; }
+  for (let i = 0; i < n; i++) { g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114; g[i] = g[i] * gain; } // luma rounds first, then scales, as before
 }
 
 const webcam: NodeSpec<WebcamState> = {
@@ -138,19 +150,12 @@ const webcam: NodeSpec<WebcamState> = {
         const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
         ctx.imageSmoothingEnabled = tw !== vw || th !== vh;
         const px = span("grab frame (read pixels)", () => { ctx.drawImage(video, 0, 0, tw, th); return ctx.getImageData(0, 0, tw, th).data; });
-        const g = new Uint8ClampedArray(tw * th);
+        const g = new Uint8ClampedArray(tw * th); // a fresh buffer per frame: consumers such as the auto-aligner keep frames across ticks
         // Fake IR reads the red plane (how IR often lands in a colour camera) and beats the channel menu; black and white forces brightness.
         const ch = params.ir ? "red" : params.bw ? "luma" : String(params.channel);
-        const n = g.length; // channel chosen once, not per pixel
-        span("to grayscale", () => {
-          if (ch === "red") for (let i = 0; i < n; i++) g[i] = px[i * 4];
-          else if (ch === "green") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 1];
-          else if (ch === "blue") for (let i = 0; i < n; i++) g[i] = px[i * 4 + 2];
-          else for (let i = 0; i < n; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
-        });
         // Exposure: a gain on the picture; the Uint8ClampedArray store clips highlights (over) or shadows crush to black (under).
         const gain = params.over ? 1 + Number(params.overAmount) / 100 * 3 : params.under ? 1 - Number(params.underAmount) / 100 * 0.9 : 1;
-        if (gain !== 1) span("apply exposure", () => { for (let i = 0; i < n; i++) g[i] = g[i] * gain; });
+        span("to grayscale", () => toGray(px, g, ch, gain));
         const sharp = Number(params.sharpen) || 0;
         if (sharp > 0) span("sharpen", () => unsharp(g, tw, th, sharp));
         state.frame = { width: tw, height: th, data: g, t: now, source: state.dev };
