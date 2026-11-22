@@ -26,8 +26,8 @@ export class BoardCnn {
   private bufB: Float32Array;
   private padded: Float32Array;
   /** Scratch for classify(): the logits and one square's exponentials, reused every call (classify never hands them out). */
-  private lgBuf: Float32Array;
-  private expBuf: Float32Array;
+  private lgBuf: Float32Array<ArrayBuffer>;
+  private expBuf: Float32Array<ArrayBuffer>;
   /** Output classes per square: 13 (empty + 6 piece types x 2 colours) or 3 (empty, white, black) for an older model. */
   readonly classes: number;
 
