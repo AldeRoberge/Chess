@@ -88,10 +88,11 @@ export class SceneRenderer {
       const haze = (2 - l) * 0.12;
       const lit = mix([shade * 0.55, shade * 0.95, shade * 0.75], [120, 150, 190], haze);
       const dark = lit.map((v) => v * 0.6);
+      const litCss = rgb(lit), darkCss = rgb(dark); // one colour string per layer, not per tier
       for (const tr of this.trees[l]) {
         const sway = Math.sin(t * (0.6 + s.wind) + tr.x * 9) * s.wind * 6;
         const bx = tr.x * w, by = h * (0.78 + l * 0.05), th = tr.h * h * 1.4, tw = tr.w * w;
-        this.spruce(ctx, bx, by, th, tw, sway, lit, dark, snowy);
+        this.spruce(ctx, bx, by, th, tw, sway, litCss, darkCss, snowy);
         if (s.decor.includes("christmas") && l === 2) {
           for (const li of tr.lights) {
             const on = Math.sin(t * 3 + li.a * 20 + li.c) > -0.2;
@@ -117,11 +118,11 @@ export class SceneRenderer {
    * A conifer: a short trunk, three stacked tiers that get narrower toward the top, each split into a lit
    * side and a shaded side, with snow on the upper edge of every tier when it is winter.
    */
-  private spruce(ctx: CanvasRenderingContext2D, bx: number, by: number, th: number, tw: number, sway: number, lit: number[], dark: number[], snowy: boolean) {
+  private spruce(ctx: CanvasRenderingContext2D, bx: number, by: number, th: number, tw: number, sway: number, litCss: string, darkCss: string, snowy: boolean) {
     // ground shadow
     ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.beginPath(); ctx.ellipse(bx, by + th * 0.02, tw * 1.3, tw * 0.28, 0, 0, 7); ctx.fill();
     // trunk
-    ctx.fillStyle = rgb(dark); ctx.fillRect(bx - tw * 0.1, by - th * 0.1, tw * 0.2, th * 0.12);
+    ctx.fillStyle = darkCss; ctx.fillRect(bx - tw * 0.1, by - th * 0.1, tw * 0.2, th * 0.12);
     const tiers = 3, step = th * 0.3, tierH = th * 0.36;
     for (let i = 0; i < tiers; i++) {
       const yb = by - th * 0.02 - i * step;               // tier base
@@ -129,8 +130,8 @@ export class SceneRenderer {
       const hw = tw * (1 - i * 0.26);                        // half width
       const ax = bx + sway * (1 - i * 0.25);                 // branches sway more toward the top
       // lit side (left) and shaded side (right)
-      ctx.fillStyle = rgb(lit); ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(bx - hw, yb); ctx.lineTo(ax, yb); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = rgb(dark); ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(ax, yb); ctx.lineTo(bx + hw, yb); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = litCss; ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(bx - hw, yb); ctx.lineTo(ax, yb); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = darkCss; ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(ax, yb); ctx.lineTo(bx + hw, yb); ctx.closePath(); ctx.fill();
       if (snowy) { // snow settles on the upper part of each tier
         const f = 0.4, sy = ya + (yb - ya) * f; // snow reaches 40% down the tier
         const xl = ax + (bx - hw - ax) * f, xr = ax + (bx + hw - ax) * f;

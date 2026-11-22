@@ -18,6 +18,13 @@ import { pieceGeometry } from "./pieces";
 import { projectableSurfaces, surfaceMesh } from "./surfaces";
 import { fxEngine } from "../fx/engine";
 
+/** Releases the GPU buffers and material of a scene object that is being removed (its textures are kept: they are shared). */
+function freeObject(o: THREE.Object3D) {
+  const m = o as THREE.Mesh;
+  m.geometry?.dispose();
+  for (const mat of Array.isArray(m.material) ? m.material : [m.material]) mat?.dispose();
+}
+
 const CAM_KEY = "chess.worldCamera";
 const DEFAULT_CAM = { pos: [0.4, 1.6, 0.75] as [number, number, number], target: [0, TABLE_Y, 0] as [number, number, number] };
 
@@ -45,6 +52,10 @@ export class WorldView {
   private arms = new THREE.Group();
   private armGeo = new Map<string, THREE.CapsuleGeometry>();
   private armKey = "";
+  private peopleKey = "";
+  private peopleLine = new THREE.LineBasicMaterial({ color: 0x4dffb8 });
+  private peopleDot = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  private peopleSphere = new THREE.SphereGeometry(0.02, 6, 6);
   /** skinned Oculus hands (same meshes as Hexalt) that replace the palm and finger capsules once the GLBs load */
   private hands = new THREE.Group();
   private handRigs: HandRig[] = [];
@@ -106,7 +117,7 @@ export class WorldView {
 
   setMapping(cfg: MappingConfig) {
     this.cfg = cfg;
-    this.room.clear(); this.frusta.clear();
+    for (const g of [this.room, this.frusta]) { for (const o of g.children) freeObject(o); g.clear(); }
     const mat = new THREE.MeshBasicMaterial({ map: this.contentTex, side: THREE.DoubleSide, transparent: true, opacity: this.showProjection ? 0.95 : 0 });
     for (const s of projectableSurfaces(cfg.surfaces)) { const m = surfaceMesh(s, mat); this.room.add(m); }
     const colors = [0xff6b6b, 0x6bd0ff, 0xb8ff6b, 0xffd36b];
@@ -153,7 +164,7 @@ export class WorldView {
    * lit patch where it lands. Corner rays are intersected with the table top, so an angled projector shows its keystone shape.
    */
   private buildBeams() {
-    for (const c of [...this.beams.children]) { this.beams.remove(c); (c as THREE.Mesh).geometry?.dispose(); }
+    for (const c of [...this.beams.children]) { this.beams.remove(c); freeObject(c); }
     this.beamMats = [];
     const colors = [0xff6b6b, 0x6bd0ff, 0xb8ff6b, 0xffd36b];
     this.cfg.projectors.forEach((p, i) => {
@@ -258,14 +269,18 @@ export class WorldView {
     });
   }
 
+  /** Skeletons are rebuilt only when a joint moves; the joint sphere, bone and dot materials are shared and never recreated. */
   private syncPeople() {
+    const key = bus.poses.map((p) => p.joints.map((j) => (j ? j.join(",") : "-")).join(";")).join("|");
+    if (key === this.peopleKey) return;
+    this.peopleKey = key;
+    for (const o of this.people.children) if (o instanceof THREE.LineSegments) o.geometry.dispose(); // bone geometry is per frame; joint spheres share one
     this.people.clear();
-    const mat = new THREE.LineBasicMaterial({ color: 0x4dffb8 }), dot = new THREE.MeshBasicMaterial({ color: 0xffffff });
     for (const p of bus.poses) {
       const pts: THREE.Vector3[] = [];
       for (const [a, b] of BONES) { const ja = p.joints[a], jb = p.joints[b]; if (ja && jb) pts.push(new THREE.Vector3(...ja), new THREE.Vector3(...jb)); }
-      this.people.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), mat));
-      for (const j of p.joints) if (j) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), dot); s.position.set(...j); this.people.add(s); }
+      this.people.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), this.peopleLine));
+      for (const j of p.joints) if (j) { const s = new THREE.Mesh(this.peopleSphere, this.peopleDot); s.position.set(...j); this.people.add(s); }
     }
   }
 

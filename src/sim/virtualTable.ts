@@ -288,9 +288,11 @@ export class VirtualTable {
 
   tick(now: number) {
     this.clock = now;
-    const due = this.queue.filter((q) => q.at <= now);
-    this.queue = this.queue.filter((q) => q.at > now);
-    due.forEach((q) => q.fn());
+    if (this.queue.some((q) => q.at <= now)) { // most ticks have nothing due: skip the two filter allocations
+      const due = this.queue.filter((q) => q.at <= now);
+      this.queue = this.queue.filter((q) => q.at > now);
+      due.forEach((q) => q.fn());
+    }
     this.moveArms(now);
   }
 

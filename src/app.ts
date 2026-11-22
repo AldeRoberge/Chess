@@ -544,6 +544,7 @@ export function boot(root: HTMLElement): Boot {
     else showPerfToast(host, tip, (a) => perfActions[a](), { onMute });
   };
   let hudBarHtml = "", hudMenuHtml = "";
+  let calShown: { el: Element | null; on: boolean } = { el: null, on: false };
   // ---- phone remote: publishes the game to the relay in the dev server and plays the moves a phone sends
   const camFrames = () => [...graph.nodes.values()].flatMap((n) => {
     if (n.type !== "vision.boardReader" && n.type !== "vision.flatten") return [];
@@ -621,7 +622,10 @@ export function boot(root: HTMLElement): Boot {
     calWin.render(bus.calibration);
     if (!document.body.classList.contains("simple")) { const t0 = performance.now(); profiler.span("editor", () => editor.frame(now)); editorMs = ema(editorMs, performance.now() - t0); } else editorMs = 0; // a hidden editor paints nothing
     if (calibrationDialog.open) drawCalibration();
-    setPressed(document.getElementById("calibrate")!, !!calibrate.view);
+    { // the toggle's pressed state is written only when it changes (or its element was replaced), not every frame
+      const calEl = document.getElementById("calibrate")!, calOn = !!calibrate.view;
+      if (calEl !== calShown.el || calOn !== calShown.on) { calShown = { el: calEl, on: calOn }; setPressed(calEl, calOn); }
+    }
     wiz?.frame(now);
     assistant.frame(now); // keeps watching for things worth mentioning, whichever tab is open
     const viewT0 = performance.now();

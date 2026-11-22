@@ -183,11 +183,13 @@ const sunburst: EffectDef = {
   draw(g) {
     const { ctx } = g, n = Math.max(6, Math.round(g.count * 4)), R = g.reach * g.px * ease(clamp01(g.life * 2)), al = Math.sin(Math.PI * Math.min(1, g.life * 1.1)) * g.intensity;
     if (R < 1) return;
+    // every ray shares the same gradient (same centre, radius and colours), so it is made once per frame
+    const gr = ctx.createRadialGradient(g.cx, g.cy, 0, g.cx, g.cy, R);
+    gr.addColorStop(0, hot(g.rgb, al * 0.9, 0.6)); gr.addColorStop(1, col(g.rgb, 0));
+    ctx.fillStyle = gr;
     for (let i = 0; i < n; i++) {
       const a = (i * Math.PI * 2) / n + g.age * 0.7, w = (Math.PI / n) * 0.55;
-      const gr = ctx.createRadialGradient(g.cx, g.cy, 0, g.cx, g.cy, R);
-      gr.addColorStop(0, hot(g.rgb, al * 0.9, 0.6)); gr.addColorStop(1, col(g.rgb, 0));
-      ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(g.cx, g.cy);
+      ctx.beginPath(); ctx.moveTo(g.cx, g.cy);
       ctx.lineTo(g.cx + Math.cos(a - w) * R, g.cy + Math.sin(a - w) * R); ctx.lineTo(g.cx + Math.cos(a + w) * R, g.cy + Math.sin(a + w) * R); ctx.closePath(); ctx.fill();
     }
     glow(g, g.px * 1.1, al);

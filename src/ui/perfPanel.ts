@@ -362,7 +362,7 @@ export class PerfPanel {
     const dpr = window.devicePixelRatio || 1, w = c.clientWidth || 600;
     const bw = Math.round(w * dpr), bh = Math.round(cssH * dpr);
     if (c.width !== bw || c.height !== bh) { c.width = bw; c.height = bh; }
-    c.style.height = cssH + "px";
+    if (c.style.height !== cssH + "px") c.style.height = cssH + "px"; // the glide repaints every frame; skip a no-op style write
     const g = c.getContext("2d")!; g.setTransform(dpr, 0, 0, dpr, 0, 0);
     return { g, w, h: cssH };
   }
@@ -468,8 +468,10 @@ export class PerfPanel {
     const label = this.mode === "window" ? `${this.frames().length} frames merged · widths are total time` : this.selected !== null ? `frame ${this.selected + 1} of ${this.frames().length} (pinned)` : "slowest captured frame";
     const span = this.total || 1, zoom = 1 / this.view.w;
     const range = zoom > 1.001 ? ` · ×${zoom >= 10 ? zoom.toFixed(0) : zoom.toFixed(1)} · ${ms(this.view.a * span)} – ${ms((this.view.a + this.view.w) * span)}` : " · wheel to zoom, drag to pan, click a box to focus";
-    this.crumbText.textContent = label + range;
-    this.crumbPath.textContent = this.focusPath ? ` › ${this.focusPath.split("/").join(" › ")}` : "";
+    // Called on every glide frame: write each text only when it changed.
+    const text = label + range, path = this.focusPath ? ` › ${this.focusPath.split("/").join(" › ")}` : "";
+    if (this.crumbText.textContent !== text) this.crumbText.textContent = text;
+    if (this.crumbPath.textContent !== path) this.crumbPath.textContent = path;
   }
 
   private pick(e: MouseEvent) {

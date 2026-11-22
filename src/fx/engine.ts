@@ -32,8 +32,12 @@ export class FxEngine {
   clear() { this.items.length = 0; }
 
   draw(ctx: CanvasRenderingContext2D, px: number, now: number) {
-    this.items = this.items.filter((i) => now < i.t0 + i.dur * 1000);
-    if (!this.items.length) return;
+    // drop the finished items in place (no new array every frame)
+    const items = this.items;
+    let kept = 0;
+    for (let n = 0; n < items.length; n++) if (now < items[n].t0 + items[n].dur * 1000) items[kept++] = items[n];
+    items.length = kept;
+    if (!kept) return;
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     for (const i of this.items) {

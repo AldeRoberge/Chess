@@ -152,10 +152,10 @@ export function openQuadEditor(o: QuadEditorOpts) {
   };
   const paint = () => {
     if (closed) return;
-    drawFrame(ctx, W, H, o.frame(), "no camera frame yet — connect a camera to this node");
+    const fr = o.frame(); // one read per repaint: the picture is drawn and measured from the same frame
+    drawFrame(ctx, W, H, fr, "no camera frame yet — connect a camera to this node");
     const m = squareToQuad(pts), P = (u: number, v: number) => { const p = m(u, v); return { x: p.x * sx, y: p.y * sy }; };
     // How well the grid sits on the squares decides its colour: orange while it is off, green once it fits.
-    const fr = o.frame();
     if (o.grid > 1 && fr) meter.feed(scoreAlignment(fr, m));
     // Pieces off their home squares are a placement problem. Say so, and don't blame the square colours for it.
     const nowCoach = performance.now();

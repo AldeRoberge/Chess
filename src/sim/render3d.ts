@@ -47,9 +47,12 @@ export function renderLuminance(scene: Scene3D, o: RenderOptions): Float32Array 
   const lum = new Float32Array(W * H);
   const cam = cameraBasis(o.rig, W, H);
   const [ox, oy, oz] = o.rig.pos;
+  // one shared buffer: every caller uses the direction before asking for the next pixel's, so no per-pixel array is allocated
+  const dirBuf: [number, number, number] = [0, 0, 0];
   const dirAt = (x: number, y: number): [number, number, number] => {
     const dx = x - W / 2, dy = y - H / 2;
-    return [cam.f[0] * cam.fl + cam.r[0] * dx - cam.u[0] * dy, cam.f[1] * cam.fl + cam.r[1] * dx - cam.u[1] * dy, cam.f[2] * cam.fl + cam.r[2] * dx - cam.u[2] * dy];
+    dirBuf[0] = cam.f[0] * cam.fl + cam.r[0] * dx - cam.u[0] * dy; dirBuf[1] = cam.f[1] * cam.fl + cam.r[1] * dx - cam.u[1] * dy; dirBuf[2] = cam.f[2] * cam.fl + cam.r[2] * dx - cam.u[2] * dy;
+    return dirBuf;
   };
 
   const caps = scene.capsules ?? [];
