@@ -24,7 +24,11 @@ export class History<T> {
 
   /** Returns true when a new state was recorded. */
   record(state: T, now = Date.now(), key = ""): boolean {
-    const s = JSON.stringify(state);
+    return this.recordSerialized(JSON.stringify(state), now, key);
+  }
+
+  /** `record` for a caller that already holds `JSON.stringify(state)`, so the snapshot is serialised only once. */
+  recordSerialized(s: string, now = Date.now(), key = ""): boolean {
     if (s === this.cur) return false;
     const fold = key === this.lastKey && now - this.lastAt < this.window && this.past.length > 0;
     if (!fold) { this.past.push(this.cur); if (this.past.length > this.limit) this.past.shift(); }

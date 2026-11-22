@@ -96,7 +96,11 @@ export function boot(root: HTMLElement): Boot {
       graph.load(r.graph); saveSetup(r.setup); setup = r.setup;
     } else buildGraphFromConfig(graph, setup ?? defaultSetup());
   }
-  const save = (json: GraphJSON = graph.toJSON()) => { try { localStorage.setItem(KEY, JSON.stringify(json)); } catch { /* quota */ } };
+  /** The serialised patch last written to KEY by this tab. Equal text is not written again; another tab's write clears it (see the storage listener). */
+  let lastWritten: string | null = null;
+  const saveRaw = (raw: string) => { if (raw === lastWritten) return; try { localStorage.setItem(KEY, raw); lastWritten = raw; } catch { /* quota */ } };
+  window.addEventListener("storage", (e) => { if (e.key === KEY || e.key === null) lastWritten = null; });
+  const save = (json: GraphJSON = graph.toJSON()) => saveRaw(JSON.stringify(json));
   const edits = new History<GraphJSON>(graph.toJSON());
   let dirty = false;
   const sig = () => `${graph.nodes.size}:${graph.edges.length}:${graph.groups.length}`;
@@ -124,7 +128,8 @@ export function boot(root: HTMLElement): Boot {
   const editChips = (): Hud[] => {
     const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
     const t = Date.now();
-    if (t - storedAt > 2000) { storedAt = t; stored = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i)!; stored += k.length + (localStorage.getItem(k)?.length ?? 0); } } catch { /* storage unavailable */ } }
+    /* A full read of every stored value (backups included), so it runs rarely: the chip is a rough gauge. */
+    if (t - storedAt > 10000) { storedAt = t; stored = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i)!; stored += k.length + (localStorage.getItem(k)?.length ?? 0); } } catch { /* storage unavailable */ } }
     const out: Hud[] = [
       { tone: "", html: `<span class="chip" data-tip="Actions" data-tip-body="Edits to the workflow this session. A drag counts once." data-tip-rows="Recorded:${edits.actions}|Nodes:${graph.nodes.size}|Wires:${graph.edges.length}">${chipIcons.actions(edits.actions)}${edits.actions} actions</span>` },
       { tone: chipTone.workflow(edits.patchChars / 1024), html: `<span class="chip${chipTone.workflow(edits.patchChars / 1024)}" data-tip="Workflow size" data-tip-body="Size of the node graph as saved JSON." data-tip-rows="Workflow:${kb(edits.patchChars)}|Nodes:${graph.nodes.size}|Wires:${graph.edges.length}|Unsaved backup:${dirty ? "yes" : "no"}">${chipIcons.workflow(edits.patchChars / 1024)}workflow ${kb(edits.patchChars)}</span>` },
@@ -135,7 +140,7 @@ export function boot(root: HTMLElement): Boot {
     return out;
   };
   /** Every edit: autosave, remember an undo step, mark the workflow as changed since the last backup. */
-  const persist = () => { const json = graph.toJSON(); save(json); dirty = true; edits.record(json, Date.now(), sig()); syncUndo(); }; // one snapshot shared by autosave and undo
+  const persist = () => { const raw = JSON.stringify(graph.toJSON()); saveRaw(raw); dirty = true; edits.recordSerialized(raw, Date.now(), sig()); syncUndo(); }; // one serialised snapshot shared by autosave and undo
 
   const app = root;
   app.innerHTML = `
