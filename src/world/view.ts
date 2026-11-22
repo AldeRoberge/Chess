@@ -336,7 +336,7 @@ export class WorldView {
     const dt = this.lastDraw ? Math.min(0.1, (now - this.lastDraw) / 1000) : 0.016;
     if (bus.scene && this.showProjection) { this.scr.draw(this.cctx, this.content.width, this.content.height, bus.scene, now, dt); this.contentTex.needsUpdate = true; }
     this.lastDraw = now;
-    if (now - this.lastOverlay > 66) { this.lastOverlay = now; drawTableOverlay(this.octx, 48, 3, { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile }, now / 1000); this.overlayTex.needsUpdate = true; this.projDirty = true; }
+    if (now - this.lastOverlay > 66) { this.lastOverlay = now; drawTableOverlay(this.octx, 48, 3, { game: bus.game, director: bus.director, hint: bus.engineHint, insight: bus.insight, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile }, now / 1000); this.overlayTex.needsUpdate = true; this.projDirty = true; }
     this.frusta.visible = this.showFrusta;
     // the table projection: only when a projector is installed to throw it
     const lit = this.cfg.projectors.length > 0 && this.showProjection;

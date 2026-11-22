@@ -1,15 +1,23 @@
 import { extraPhrases } from "./extraPhrases";
 import type { ExperienceEvent } from "../core/events";
+import { Coach, type Speaker } from "./coach";
+import type { CoachLevel } from "./coachSettings";
 
 export type Lang = "fr" | "en";
 export const LANGS: Lang[] = ["fr", "en"];
 
 export interface NarrationLine {
-  speaker: "A" | "B";
+  /** A and B are the commentators, C is the AI opponent. */
+  speaker: Speaker;
   name: string;
   text: string;
   t: number;
   priority: number; // 0 chatter .. 3 critical
+  /** Squares to light on the board while this is said, and what they show ("fork", "Sicilian Defence"). */
+  squares?: string[];
+  label?: string;
+  /** Coach and opponent lines are written to teach: an AI rewrite passes them through untouched. */
+  tag?: "coach" | "opponent";
 }
 
 /** Every sentence the built-in narrator can say, per language. */
@@ -213,6 +221,12 @@ export interface NarratorConfig {
   seed: number;
   minGapMs: number; // do not talk over ourselves
   lang?: Lang; // missing = French
+  /** Explanations and trivia (missing = off). */
+  level?: CoachLevel;
+  /** The AI opponent's colour while a game against it runs, whether it talks, and its name. */
+  opponent?: "w" | "b" | null;
+  opponentTalks?: boolean;
+  opponentName?: string;
 }
 export const defaultNarratorConfig = (): NarratorConfig => ({ voices: 2, names: ["Jean", "Margot"], seed: Math.floor(Math.random() * 0x7fffffff), minGapMs: 900, lang: "fr" });
 
@@ -224,7 +238,13 @@ export class Narrator {
   private n = 0;
   private lastT = -1e9;
   private lastLow = -1e9;
-  constructor(public cfg: NarratorConfig = defaultNarratorConfig()) {}
+  private coach: Coach;
+  private oppT = -1;
+  constructor(public cfg: NarratorConfig = defaultNarratorConfig()) { this.coach = new Coach(this.coachCfg(), cfg.seed); }
+  private coachCfg() {
+    const c = this.cfg;
+    return { level: c.level ?? "off", lang: c.lang ?? "fr", opponent: c.opponent ?? null, opponentTalks: c.opponentTalks ?? false, names: { A: c.names[0], C: c.opponentName ?? "Vega" } };
+  }
 
   private get p(): Phrases { return PHRASES[this.cfg.lang ?? "fr"] ?? FR; }
 
@@ -244,15 +264,21 @@ export class Narrator {
     this.recent.push(s); if (this.recent.length > 24) this.recent.shift();
     return s;
   }
-  private line(speaker: "A" | "B", text: string, t: number, priority: number): NarrationLine {
+  private line(speaker: Speaker, text: string, t: number, priority: number): NarrationLine {
+    if (speaker === "C") return { speaker, name: this.cfg.opponentName ?? "Vega", text, t, priority };
     const s = this.cfg.voices === 1 ? "A" : speaker;
     return { speaker: s, name: this.cfg.names[s === "A" ? 0 : 1], text, t, priority };
   }
 
   handle(events: ExperienceEvent[]): NarrationLine[] {
     const out: NarrationLine[] = [];
+    this.coach.cfg = this.coachCfg();
     for (const e of events) {
-      const lines = this.describe(e);
+      let lines = this.describe(e);
+      const extra = this.coach.react(e).filter((c) => c.speaker !== "C" || c.priority >= 3 || e.t !== this.oppT).map((c): NarrationLine => ({ ...this.line(c.speaker, c.text, e.t, c.priority), ...(c.squares ? { squares: c.squares, label: c.label } : {}), tag: c.tag }));
+      if (extra.some((l) => l.speaker === "C")) this.oppT = e.t; // the opponent says one thing per move, not one per event
+      if (extra.length) lines = [...lines.filter((l) => l.priority > 0), ...extra]; // a lesson replaces the small talk
+      lines = lines.slice(0, 4);
       for (const l of lines) {
         if (l.priority < 2 && l.t !== this.lastLow && l.t - this.lastLow < 2500) continue; // chatter throttle (lines of one event may pair up)
         if (l.priority < 3 && l.t - this.lastT < this.cfg.minGapMs && out.length === 0 && l.t !== this.lastT) continue;

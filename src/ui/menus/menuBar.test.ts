@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { installMenuBar, MENUS } from "./menuBar";
+import { coachSettings, setCoachSettings } from "../../narrator/coachSettings";
 
 describe("menuBar", () => {
   it("starts with File and clicks the matching button", () => {
@@ -21,5 +22,19 @@ describe("menuBar", () => {
     const edit = bar.querySelectorAll<HTMLElement>(".mb-item")[1];
     edit.querySelector<HTMLElement>(".mb-title")!.click();
     expect(edit.querySelector<HTMLButtonElement>('button[data-for="undo"]')!.disabled).toBe(true);
+  });
+
+  it("View shows the commentary level and cycles it on click", () => {
+    setCoachSettings({ level: "expert", opponentTalks: true });
+    document.body.innerHTML = '<div id="h"></div>';
+    const { bar } = installMenuBar(document.getElementById("h")!);
+    const view = [...bar.querySelectorAll<HTMLElement>(".mb-item")].find((w) => w.querySelector(".mb-title")!.textContent === "View")!;
+    view.querySelector<HTMLElement>(".mb-title")!.click();
+    const row = [...view.querySelectorAll<HTMLButtonElement>("button[role=menuitem]")].find((b) => b.textContent!.startsWith("Commentary"))!;
+    expect(row.textContent).toBe("Commentary: Expert");
+    row.click(); expect(coachSettings().level).toBe("off");
+    view.querySelector<HTMLElement>(".mb-title")!.click();
+    expect(row.textContent).toBe("Commentary: Off");
+    setCoachSettings({ level: "intermediate" });
   });
 });

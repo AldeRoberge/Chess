@@ -1,5 +1,7 @@
+import { COACH_LEVELS, coachSettings, setCoachSettings } from "../../narrator/coachSettings";
 /** Windows-style menu bar (File, Edit, View, Tools). Every row drives an existing ribbon button by id, so behavior stays in one place. */
-type Row = { label: string; id?: string; keys?: string; danger?: boolean; run?: () => void } | "-";
+/** A label can be a function: it is re-read each time the menu opens (for rows that show a setting's current value). */
+type Row = { label: string | (() => string); id?: string; keys?: string; danger?: boolean; run?: () => void } | "-";
 export type MenuDef = { name: string; rows: Row[] };
 
 export const MENUS: MenuDef[] = [
@@ -31,6 +33,9 @@ export const MENUS: MenuDef[] = [
     { label: "Node timings", id: "heat" },
     "-",
     { label: "Light / dark", id: "mode" },
+    "-",
+    { label: () => `Commentary: ${COACH_LEVELS.find((l) => l.value === coachSettings().level)?.label ?? "Off"}`, run: cycleCoachLevel },
+    { label: () => `AI opponent talks: ${coachSettings().opponentTalks ? "on" : "off"}`, run: () => setCoachSettings({ opponentTalks: !coachSettings().opponentTalks }) },
   ] },
   { name: "Tools", rows: [
     { label: "Play now against bot", id: "playnow" },
@@ -45,15 +50,23 @@ export const MENUS: MenuDef[] = [
   ] },
 ];
 
+/** Off → Beginner → … → Expert → Off. */
+export function cycleCoachLevel() {
+  const i = COACH_LEVELS.findIndex((l) => l.value === coachSettings().level);
+  setCoachSettings({ level: COACH_LEVELS[(i + 1) % COACH_LEVELS.length].value });
+}
+
 /** Builds the bar into `host`. Hover switches menus once one is open, like Windows. */
 export function installMenuBar(host: HTMLElement, defs: MenuDef[] = MENUS) {
   const bar = document.createElement("div");
   bar.className = "menubar"; bar.setAttribute("role", "menubar");
   let open: HTMLElement | null = null;
+  const live: [HTMLElement, () => string][] = [];
   const closeAll = () => { open = null; for (const w of bar.querySelectorAll<HTMLElement>(".mb-item")) { w.classList.remove("open"); w.querySelector("button")!.setAttribute("aria-expanded", "false"); w.querySelector<HTMLElement>(".mb-drop")!.hidden = true; } };
   const show = (w: HTMLElement) => {
     closeAll(); open = w; w.classList.add("open"); w.querySelector("button")!.setAttribute("aria-expanded", "true");
     const drop = w.querySelector<HTMLElement>(".mb-drop")!; drop.hidden = false;
+    for (const [span, f] of live) span.textContent = f();
     for (const b of drop.querySelectorAll<HTMLButtonElement>("button[data-for]")) b.disabled = !!(document.getElementById(b.dataset.for!) as HTMLButtonElement | null)?.disabled || !document.getElementById(b.dataset.for!);
   };
   for (const d of defs) {
@@ -65,7 +78,8 @@ export function installMenuBar(host: HTMLElement, defs: MenuDef[] = MENUS) {
       const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitem");
       if (r.id) b.dataset.for = r.id;
       if (r.danger) b.classList.add("danger");
-      const l = document.createElement("span"); l.textContent = r.label; b.append(l);
+      const l = document.createElement("span"); l.textContent = typeof r.label === "function" ? r.label() : r.label; b.append(l);
+      if (typeof r.label === "function") live.push([l, r.label]);
       if (r.keys) { const k = document.createElement("kbd"); k.textContent = r.keys; b.append(k); }
       b.onclick = () => { closeAll(); if (r.run) r.run(); else if (r.id) document.getElementById(r.id)?.click(); };
       drop.append(b);

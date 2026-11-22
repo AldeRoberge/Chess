@@ -2,6 +2,7 @@ import { BOARD_THEMES, boardTheme, setBoardTheme } from "../boardThemes";
 import { PIECE_SETS, pieceColors, pieceSet, setPieceColors, setPieceSet } from "../pieceSets";
 import type { CtxItem } from "../contextMenu";
 import { joinGroups } from "../contextMenu";
+import { COACH_LEVELS, coachSettings, setCoachSettings } from "../../narrator/coachSettings";
 import { PRESETS, resetViewSettings, setDisplay, setQuality, setRender, viewSettings } from "../viewSettings";
 
 /** A radio-style submenu: the current option is marked, picking one applies it and closes the menu. */
@@ -46,6 +47,14 @@ export function displayItems(): CtxItem[] {
   ];
 }
 
+/** How much the commentators explain, and whether the AI opponent talks. Saved in the browser. */
+export function commentaryItems(): CtxItem[] {
+  return [
+    radioMenu("Level", COACH_LEVELS.map((l) => ({ value: l.value, label: `${l.label} · ${l.hint}` })), () => coachSettings().level, (v) => setCoachSettings({ level: v })),
+    { kind: "toggle", label: "AI opponent talks", get: () => coachSettings().opponentTalks, set: (v) => setCoachSettings({ opponentTalks: v }) },
+  ];
+}
+
 /** Everything a game preview can change, grouped as submenus; `extra` rows go first. */
 export function viewMenu(extra: CtxItem[] = [], opts: { world?: boolean } = {}): CtxItem[] {
   return joinGroups([
@@ -53,6 +62,7 @@ export function viewMenu(extra: CtxItem[] = [], opts: { world?: boolean } = {}):
     [
       { kind: "submenu", label: "Style", items: styleItems },
       { kind: "submenu", label: "Performance & resolution", items: renderItems },
+      { kind: "submenu", label: "Commentary", items: commentaryItems },
       { kind: "submenu", label: "Display", items: () => (opts.world ? [...displayItems(), { kind: "toggle" as const, label: "Projector frusta", get: () => viewSettings().display.frusta, set: (v: boolean) => setDisplay({ frusta: v }) }] : displayItems()) },
     ],
     [{ kind: "action", label: "Reset view settings", run: resetViewSettings }],

@@ -18,6 +18,8 @@ export interface OverlayInput {
   pieces?: PieceOverlay | null;
   /** Board effects to paint in light on top (the output page keeps its own engine). */
   fx?: { draw(ctx: CanvasRenderingContext2D, px: number, now: number): void } | null;
+  /** Squares the commentary is explaining ("this is known as a fork …"), and the name to write beside them. */
+  insight?: { squares: string[]; label: string } | null;
   /** Turn the 8×8 around (Black at the bottom). Menu buttons and clocks stay in table space. */
   flip?: boolean;
 }
@@ -61,6 +63,22 @@ export function drawTableOverlay(ctx: CanvasRenderingContext2D, px: number, marg
     const col = o.reconcile ? "255,70,90" : o.hint ? "255,190,60" : "90,200,255", glow = 0.55 + 0.25 * Math.sin(t * (o.reconcile ? 8 : 3));
     ctx.save(); ctx.strokeStyle = `rgba(${col},${glow})`; ctx.lineWidth = px * 0.12; ctx.shadowColor = `rgba(${col},.9)`; ctx.shadowBlur = px * 0.3;
     ctx.strokeRect(-px * 0.08, -px * 0.08, px * 8.16, px * 8.16); ctx.restore();
+  }
+
+  if (o.insight?.squares.length) { // a named idea: soft violet fill, a breathing outline, and its name on the first square
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+    if (under) for (const s of o.insight.squares) fill(s, `rgba(190,120,255,${0.22 + 0.18 * pulse})`);
+    if (over) {
+      ctx.save(); ctx.strokeStyle = `rgba(210,160,255,${0.6 + 0.35 * pulse})`; ctx.lineWidth = px * 0.06;
+      for (const s of o.insight.squares) { const p = sq(s); ctx.strokeRect(p.x + px * 0.06, p.y + px * 0.06, px * 0.88, px * 0.88); }
+      if (o.insight.label) {
+        const p = sq(o.insight.squares[0]), fs = px * 0.22; ctx.font = `600 ${fs}px system-ui`;
+        const w = ctx.measureText(o.insight.label).width + fs, x = Math.max(0, Math.min(8 * px - w, p.x + px / 2 - w / 2)), y = p.y < px ? p.y + px + 2 : p.y - fs * 1.6;
+        ctx.fillStyle = "rgba(20,10,40,.85)"; ctx.fillRect(x, y, w, fs * 1.5);
+        ctx.fillStyle = "#e8d6ff"; ctx.textBaseline = "middle"; ctx.fillText(o.insight.label, x + fs / 2, y + fs * 0.75);
+      }
+      ctx.restore();
+    }
   }
 
   if (over) o.fx?.draw(ctx, px, t * 1000);

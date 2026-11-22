@@ -1,6 +1,7 @@
 /** Speech output for narration lines: browser speechSynthesis or ElevenLabs text-to-speech. */
 import { mixer } from "../scene/mixer";
 import { effectiveKey, vendorFetch } from "../net/vendorFetch";
+import type { Speaker } from "./coach";
 
 export interface VoiceSettings {
   provider: "browser" | "elevenlabs";
@@ -10,14 +11,22 @@ export interface VoiceSettings {
   /** Browser voice name (substring match, case-insensitive) per speaker; empty = automatic French voice. */
   browserA: string;
   browserB: string;
+  /** The AI opponent's browser voice; empty = automatic (a third, lower voice). */
+  browserC?: string;
   /** ElevenLabs */
   apiKey: string;
   voiceIdA: string;
   voiceIdB: string;
+  /** The AI opponent's ElevenLabs voice. */
+  voiceIdC?: string;
   model: string;
 }
 
-export const ELEVENLABS_DEFAULTS = { voiceIdA: "pNInz6obpgDQGcFmaJgB", voiceIdB: "21m00Tcm4TlvDq8ikWAM", model: "eleven_multilingual_v2" };
+export const ELEVENLABS_DEFAULTS = { voiceIdA: "pNInz6obpgDQGcFmaJgB", voiceIdB: "21m00Tcm4TlvDq8ikWAM", voiceIdC: "ErXwobaYiN019PkySvjV", model: "eleven_multilingual_v2" };
+
+/** The ElevenLabs voice for a speaker, with its default when the setting is empty. */
+const elevenId = (who: Speaker, s: VoiceSettings) =>
+  (who === "A" ? s.voiceIdA : who === "B" ? s.voiceIdB : s.voiceIdC ?? "").trim() || (who === "A" ? ELEVENLABS_DEFAULTS.voiceIdA : who === "B" ? ELEVENLABS_DEFAULTS.voiceIdB : ELEVENLABS_DEFAULTS.voiceIdC);
 
 let current: HTMLAudioElement | null = null;
 let chain: Promise<void> = Promise.resolve();
@@ -30,18 +39,18 @@ export function stopSpeaking() {
   chain = Promise.resolve();
 }
 
-function speakBrowser(text: string, who: "A" | "B", s: VoiceSettings) {
+function speakBrowser(text: string, who: Speaker, s: VoiceSettings) {
   if (typeof speechSynthesis === "undefined") return;
   const u = new SpeechSynthesisUtterance(text);
   const code = s.lang === "en" ? "en" : "fr";
   u.lang = code === "en" ? "en-US" : "fr-FR"; u.volume = s.volume;
-  u.pitch = who === "A" ? 0.85 : 1.25; u.rate = who === "A" ? 1.05 : 0.98;
+  u.pitch = who === "A" ? 0.85 : who === "B" ? 1.25 : 0.7; u.rate = who === "A" ? 1.05 : who === "B" ? 0.98 : 0.95;
   const all = speechSynthesis.getVoices();
-  const want = (who === "A" ? s.browserA : s.browserB).trim().toLowerCase();
+  const want = (who === "A" ? s.browserA : who === "B" ? s.browserB : s.browserC ?? "").trim().toLowerCase();
   const local = all.filter((v) => v.lang.startsWith(code));
   const named = want ? all.find((v) => v.name.toLowerCase().includes(want)) : undefined;
   if (named) { u.voice = named; u.lang = named.lang; }
-  else if (local.length) u.voice = local[who === "A" ? 0 : Math.min(1, local.length - 1)];
+  else if (local.length) u.voice = local[Math.min(who === "A" ? 0 : who === "B" ? 1 : 2, local.length - 1)];
   speechSynthesis.speak(u);
 }
 
@@ -68,16 +77,16 @@ export async function fetchElevenVoices(apiKey: string, doFetch: typeof fetch = 
 export const elevenVoiceLabel = (v: ElevenVoice) => (v.category ? `${v.name} · ${v.category}` : v.name);
 
 /** Plays one line through ElevenLabs and resolves when it ends; rejects on any failure (no browser fallback), so a setup test can report it. */
-export async function previewEleven(text: string, who: "A" | "B", s: VoiceSettings): Promise<void> {
-  const id = (who === "A" ? s.voiceIdA : s.voiceIdB).trim() || (who === "A" ? ELEVENLABS_DEFAULTS.voiceIdA : ELEVENLABS_DEFAULTS.voiceIdB);
+export async function previewEleven(text: string, who: Speaker, s: VoiceSettings): Promise<void> {
+  const id = elevenId(who, s);
   const blob = await fetchEleven(text, id, s);
   stopSpeaking();
   const url = URL.createObjectURL(blob), a = new Audio(url); a.volume = s.volume; current = a;
   try { await new Promise<void>((res, rej) => { a.onended = () => res(); a.onerror = () => rej(new Error("playback failed")); a.play().catch(rej); }); } finally { URL.revokeObjectURL(url); }
 }
 
-function speakEleven(text: string, who: "A" | "B", s: VoiceSettings) {
-  const id = (who === "A" ? s.voiceIdA : s.voiceIdB).trim() || (who === "A" ? ELEVENLABS_DEFAULTS.voiceIdA : ELEVENLABS_DEFAULTS.voiceIdB);
+function speakEleven(text: string, who: Speaker, s: VoiceSettings) {
+  const id = elevenId(who, s);
   const my = epoch;
   const pending = fetchEleven(text, id, s); // fetch now so queued lines are ready when their turn comes
   pending.catch(() => {});
@@ -100,7 +109,7 @@ export interface TtsProvider {
   id: VoiceSettings["provider"];
   /** Label shown in the "Voice engine" dropdown. */
   label: string;
-  speak(text: string, who: "A" | "B", s: VoiceSettings): void;
+  speak(text: string, who: Speaker, s: VoiceSettings): void;
 }
 
 export const BROWSER_PROVIDER: TtsProvider = {
@@ -121,7 +130,7 @@ export const ELEVENLABS_PROVIDER: TtsProvider = {
 
 export const TTS_PROVIDERS: TtsProvider[] = [BROWSER_PROVIDER, ELEVENLABS_PROVIDER];
 
-export function speak(text: string, who: "A" | "B", s: VoiceSettings, interrupt = false) {
+export function speak(text: string, who: Speaker, s: VoiceSettings, interrupt = false) {
   if (interrupt) stopSpeaking();
   const p = TTS_PROVIDERS.find((x) => x.id === s.provider) ?? BROWSER_PROVIDER;
   // the mixer's narration bus (and master, and mute) scales the voice level

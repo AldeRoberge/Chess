@@ -22,6 +22,8 @@ export const bus = {
   lines: [] as NarrationLine[],
   events: [] as ExperienceEvent[],
   engineHint: null as { from: string; to: string } | null,
+  /** Squares the commentary is explaining right now ("this is known as a fork …"), lit on the board until `until` (ms). */
+  insight: null as { squares: string[]; label: string; until: number } | null,
   /** Which colour the bot plays while a game against it runs (drives where its body sits); null otherwise. */
   botColor: null as "w" | "b" | null,
   /** The human put a piece where the online bot did not play it: the bot's move and the wrong square, until it is put right. */

@@ -446,7 +446,7 @@ export class TablePanel {
     if (live && this.sel !== null) { const v = visSq(this.sel); c.fillStyle = th.hi; c.fillRect((v % 8) * px, Math.floor(v / 8) * px, px, px); }
     if (this.cursor !== null) { const v = visSq(this.cursor); c.strokeStyle = "rgba(255,228,92,.95)"; c.lineWidth = 2; c.strokeRect((v % 8) * px + 2, Math.floor(v / 8) * px + 2, px - 4, px - 4); }
     c.restore();
-    const ov = { game: bus.game, director: bus.director, hint: bus.engineHint, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints, flip: disp.flip };
+    const ov = { game: bus.game, director: bus.director, hint: bus.engineHint, insight: bus.insight, clock: bus.clockView, pieces: bus.pieceView, outline: bus.outline, reconcile: bus.reconcile, lastMove: disp.lastMove, hints: disp.hints, flip: disp.flip };
     drawTableOverlay(c, px, m, ov, now / 1000, false, "under"); // square tints sit under the pieces
     c.save(); c.translate(m * px, m * px);
     c.font = `700 ${px * 0.28}px Arial, sans-serif`; c.textBaseline = "top"; c.textAlign = "left"; c.lineWidth = Math.max(2, px * 0.06); c.strokeStyle = "rgba(0,0,0,.75)"; c.fillStyle = "#f7f4ee";
@@ -626,7 +626,7 @@ export class LogPanel {
     }
     if (e.classList.contains("ln")) {
       const l = bus.lines.find((x) => String(x.t) === e.dataset.t && x.speaker === e.dataset.who);
-      return l ? { title: l.name, tag: `voice ${l.speaker}`, color: l.speaker === "A" ? "#7fd4ff" : "#ffb86b", body: l.text, rows: [{ label: "Priority", value: `${l.priority} / 3`, bar: l.priority / 3 }, { label: "Said at", value: `${Math.round(l.t / 1000)} s` }] } : null;
+      return l ? { title: l.name, tag: l.speaker === "C" ? "AI opponent" : `voice ${l.speaker}`, color: l.speaker === "A" ? "#7fd4ff" : l.speaker === "B" ? "#ffb86b" : "#b6f37a", body: l.text, rows: [{ label: "Priority", value: `${l.priority} / 3`, bar: l.priority / 3 }, { label: "Said at", value: `${Math.round(l.t / 1000)} s` }] } : null;
     }
     if (e.classList.contains("evt")) {
       const v = bus.events.find((x) => String(x.t) === e.dataset.t && x.type === e.dataset.type);

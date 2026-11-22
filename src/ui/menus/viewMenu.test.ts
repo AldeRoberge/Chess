@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { displayItems, radioMenu, renderItems, styleItems, viewMenu } from "./viewMenu";
+import { commentaryItems, displayItems, radioMenu, renderItems, styleItems, viewMenu } from "./viewMenu";
+import { coachSettings, setCoachSettings } from "../../narrator/coachSettings";
 import type { CtxItem } from "../contextMenu";
 import { resetViewSettings, setDisplay, setRender, viewSettings } from "../viewSettings";
 
@@ -19,9 +20,21 @@ describe("viewMenu", () => {
     expect(value).toBe("b");
   });
 
+  it("commentary submenu sets the level and the opponent's voice, and saves them", () => {
+    const items = commentaryItems();
+    const level = items[0] as Extract<CtxItem, { kind: "submenu" }>;
+    const rows = (typeof level.items === "function" ? level.items() : level.items) as { label: string; run(): void }[];
+    rows.find((r) => r.label.includes("Expert"))!.run();
+    expect(coachSettings().level).toBe("expert");
+    expect(JSON.parse(localStorage.getItem("chess.coach")!).level).toBe("expert");
+    const talk = items[1] as Extract<CtxItem, { kind: "toggle" }>;
+    talk.set(false); expect(coachSettings().opponentTalks).toBe(false);
+    setCoachSettings({ level: "intermediate", opponentTalks: true });
+  });
+
   it("lists the style, performance and display submenus and a reset row", () => {
     const top = viewMenu();
-    expect(labels(top.filter((i) => i.kind !== "separator"))).toEqual(["Style", "Performance & resolution", "Display", "Reset view settings"]);
+    expect(labels(top.filter((i) => i.kind !== "separator"))).toEqual(["Style", "Performance & resolution", "Commentary", "Display", "Reset view settings"]);
   });
 
   it("puts extra rows first and adds projector frusta only for the world view", () => {
