@@ -15,7 +15,7 @@ describe("chevrons", () => {
   });
   it("marches: the chevrons are drawn at different spots as time passes", () => {
     const c = ctx(), seen: string[] = [];
-    const orig = c.translate.bind(c); c.translate = ((x: number, y: number) => { seen.push(`${Math.round(x)},${Math.round(y)}`); return orig(x, y); }) as any;
+    const orig = c.moveTo.bind(c); c.moveTo = ((x: number, y: number) => { seen.push(`${Math.round(x)},${Math.round(y)}`); return orig(x, y); }) as any;
     drawChevrons(c, { x: 0, y: 0 }, { x: 400, y: 0 }, 44, 0); const a = seen.splice(0).join("|");
     drawChevrons(c, { x: 0, y: 0 }, { x: 400, y: 0 }, 44, 0.3); const b = seen.join("|");
     expect(a).not.toBe(b);

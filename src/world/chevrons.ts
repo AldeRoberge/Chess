@@ -24,13 +24,18 @@ export function drawChevrons(ctx: CanvasRenderingContext2D, a: P2, b: P2, unit: 
   const span = len - margin * 2;
   if (span > gap * 0.5) {
     const phase = (t * 1.2) % 1;
+    // the chevron's corners are computed directly (same geometry as translate + rotate, without a save/restore per chevron)
+    const cs = Math.cos(ang), sn = Math.sin(ang), hx = size * 0.6;
     for (let d = margin + phase * gap; d < len - margin; d += gap) {
       const k = (d - margin) / span; // fade in at the source, out at the target
       const alpha = Math.sin(Math.min(1, Math.max(0, k)) * Math.PI) * 0.9 + 0.1;
-      ctx.save(); ctx.translate(a.x + ux * d, a.y + uy * d); ctx.rotate(ang);
+      const ox = a.x + ux * d, oy = a.y + uy * d;
       ctx.strokeStyle = `rgba(${color},${alpha})`;
-      ctx.beginPath(); ctx.moveTo(-size * 0.6, -size); ctx.lineTo(size * 0.6, 0); ctx.lineTo(-size * 0.6, size); ctx.stroke();
-      ctx.restore();
+      ctx.beginPath();
+      ctx.moveTo(ox - hx * cs + size * sn, oy - hx * sn - size * cs);
+      ctx.lineTo(ox + hx * cs, oy + hx * sn);
+      ctx.lineTo(ox - hx * cs - size * sn, oy - hx * sn + size * cs);
+      ctx.stroke();
     }
   }
   ctx.restore();

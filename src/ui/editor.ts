@@ -559,7 +559,9 @@ export class NodeEditor {
       return left < width && top < height && left + (el?.offsetWidth || n.w || NODE_W) * k > 0 && top + (el?.offsetHeight || n.h || NODE_H) * k > 0;
     });
     if (width && height && inBounds) this.resetDismissed = false;
-    this.resetButton.hidden = this.resetControls.hidden = !width || !height || inBounds || this.resetDismissed;
+    const hide = !width || !height || inBounds || this.resetDismissed; // written only on change: this runs every frame
+    if (this.resetButton.hidden !== hide) this.resetButton.hidden = hide;
+    if (this.resetControls.hidden !== hide) this.resetControls.hidden = hide;
   }
 
   private applyView() { if (this.viewRaf) { cancelAnimationFrame(this.viewRaf); this.viewRaf = 0; } this.world.style.transform = `translate(${this.view.x}px,${this.view.y}px) scale(${this.view.k})`; this.updateResetButton(); }

@@ -15,11 +15,13 @@ export function startOutputPage(index: number) {
   let scene = initialSceneState();
   const fx = new FxEngine(); // this window paints its own copy of the table effects
   let overlay: any = { game: null, director: null, hint: null };
+  let renderOverlay: any = { ...overlay, fx }; // rebuilt when the overlay changes, not every frame
   let calibCmd: any = null;
+  let calibShown: boolean | null = null;
   const ch = openChannel();
   ch.onmessage = (e: MessageEvent<OutMsg>) => {
     const m = e.data;
-    if (m.type === "state") { scene = m.scene; overlay = m.overlay; for (const c of m.fx ?? []) fx.spawn(c, performance.now()); }
+    if (m.type === "state") { scene = m.scene; overlay = m.overlay; renderOverlay = { ...overlay, fx }; for (const c of m.fx ?? []) fx.spawn(c, performance.now()); }
     else if (m.type === "calib") {
       if (m.cmd.head != null && m.cmd.head !== index) return;
       calibCmd = m.cmd.kind === "end" ? null : m.cmd;
@@ -35,7 +37,7 @@ export function startOutputPage(index: number) {
   document.addEventListener("dblclick", () => void document.documentElement.requestFullscreen?.());
   const loop = (t: number) => {
     if (calibCmd) {
-      calib.style.display = "block";
+      if (calibShown !== true) { calib.style.display = "block"; calibShown = true; }
       const c = calib.getContext("2d")!, w = calib.width, h = calib.height;
       if (calibCmd.kind === "grid") {
         const n = 8, cw = w / n, ch = h / n;
@@ -44,7 +46,7 @@ export function startOutputPage(index: number) {
         c.fillStyle = calibCmd.kind === "white" ? "#fff" : "#000"; c.fillRect(0, 0, w, h);
         if (calibCmd.kind === "dot") { c.fillStyle = "#fff"; c.beginPath(); c.arc(calibCmd.x * (w / 1280), calibCmd.y * (h / 720), Math.max(6, w / 120), 0, 7); c.fill(); }
       }
-    } else { calib.style.display = "none"; out.render(scene, { ...overlay, fx }, t); }
+    } else { if (calibShown !== false) { calib.style.display = "none"; calibShown = false; } out.render(scene, renderOverlay, t); }
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
