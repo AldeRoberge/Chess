@@ -176,12 +176,6 @@ export function boot(root: HTMLElement): Boot {
   const tips = installTooltips().add(editorTips(graph));
   // ---- menu bar: File / Edit / View / Tools (click to open, hover to switch, arrows, Escape, outside click)
   initMenuBar(app.querySelector<HTMLElement>(".mb")!);
-  const moreBtn = document.getElementById("more")!, moreMenu = moreBtn.parentElement!.querySelector<HTMLElement>(".rmenu")!;
-  const setMenu = (open: boolean) => { moreMenu.hidden = !open; moreBtn.setAttribute("aria-expanded", String(open)); };
-  moreBtn.onclick = (e) => { e.stopPropagation(); setMenu(moreMenu.hidden === true); };
-  moreMenu.addEventListener("click", () => setMenu(false));
-  document.addEventListener("click", () => setMenu(false));
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
   const prefs = loadPrefs();
   // ---- resizable inspector: width lives in a CSS variable, saved to prefs
   const mainEl = root.querySelector("main") as HTMLElement, handle = document.getElementById("resize")!;
