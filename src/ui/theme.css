@@ -81,7 +81,7 @@ select:hover{border-color:var(--line-hi);background-color:var(--ink-3)}
 select option{background:var(--ink-1);color:var(--text)}
 
 /* Splash screen. Total 3s (SPLASH_MS): the whole splash, blur included, fades over the last 0.6s. */
-.splash { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: color-mix(in srgb, var(--ink-0, #0b0d10) 40%, transparent); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); color: var(--text, #e8e8e8); animation: splash-out .6s ease-in 2.4s forwards; }
+.splash { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: var(--ink-0, #02060d); color: var(--text, #e8e8e8); animation: splash-out .6s ease-in 2.4s forwards; }
 /* Subsequent runs are the same length. */
 .splash-fast { animation: splash-out .6s ease-in 2.4s forwards; }
 .splash-fast .splash-knight { animation: splash-in .25s ease-out both, splash-tilt .8s ease-in-out .25s both; }

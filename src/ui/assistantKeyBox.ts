@@ -22,9 +22,9 @@ export class KeyBox {
     key.type = "password"; key.placeholder = "OpenAI API key (sk-...)"; key.autocomplete = "off"; key.value = s.apiKey; key.setAttribute("aria-label", "OpenAI API key");
     model.value = s.model; model.setAttribute("aria-label", "Model"); model.placeholder = AI_DEFAULT_MODEL;
     rem.type = "checkbox"; rem.checked = s.remember; save.type = "button"; withIcon(save, "save");
-    const keep = el("label", "chk"); keep.append(rem, el("span", "", "Remember the key in this browser (stored unencrypted)"));
+    const keep = el("label", "chk"); keep.append(rem, el("span", "", "Remember key on this device"));
     save.onclick = () => { saveAiSettings({ apiKey: key.value, model: model.value.trim() || AI_DEFAULT_MODEL, remember: rem.checked }); this.root.classList.remove("open"); this.sync(); };
-    this.root.replaceChildren(el("p", "", "Messages go to OpenAI. The assistant never sees API keys, and never sets them."), key, model, keep, save);
+    this.root.replaceChildren(el("p", "", "Your messages are sent to OpenAI."), key, model, keep, save);
     this.sync();
     // The form is built before the worker says which keys it holds: once it does, close the form if the server has one.
     void loadServerKeys().then(() => {

@@ -46,7 +46,7 @@ export class AssistantPanel {
     const head = el("div", "as-head"), clear = button("Clear", "ghost", () => this.session.clear()), cfg = button("Key", "ghost", () => this.keys.toggle());
     clear.title = "Start a new conversation"; cfg.title = "OpenAI API key and model";
     head.append(el("b", "", "Assistant"), this.pills, clear, cfg);
-    this.input.rows = 2; this.input.placeholder = "Reply here. Say next to continue, or ask anything.  (Enter sends, Shift+Enter = new line)";
+    this.input.rows = 2; this.input.placeholder = "Ask anything, or say next";
     this.input.setAttribute("aria-label", "Message to the assistant");
     this.input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.submit(); } };
     this.send.type = "button"; this.send.onclick = () => (this.session.busy ? this.session.stop() : this.submit());

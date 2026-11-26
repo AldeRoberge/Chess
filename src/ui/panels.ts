@@ -535,7 +535,7 @@ export class WorldPanel {
       { kind: "action", label: "Default room", run: () => { this.cfg = defaultMapping(); this.apply(); } },
     ], { world: true }));
     this.renderRig(rig);
-    this.status.textContent = "Auto-calibrate needs the projector output window open, and a Webcam node set to Online.";
+    this.status.textContent = "Auto-calibrate needs the output window open and a webcam online.";
     this.ch.onmessage = (e: MessageEvent<InMsg>) => { if (e.data.type === "size") this.projSize.set(e.data.index, { w: e.data.w, h: e.data.h }); };
   }
 

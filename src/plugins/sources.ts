@@ -115,17 +115,18 @@ const webcam: NodeSpec<WebcamState> = {
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const want = String(params.device);
-          const dev = pickDevice(state, devices, want);
-          if (want && !dev) throw new Error(`Camera "${want}" not found; not falling back to another camera`);
+          const generic = /^(default|any|auto)\b/i.test(want) || /^default (web)?cam/i.test(want);
+          const dev = generic ? undefined : pickDevice(state, devices, want);
+          if (want && !generic && !dev) throw new Error(`Camera "${want}" not found; not falling back to another camera`);
           if (dev) claimed.set(state, dev.deviceId); else claimed.delete(state);
           state.wantDev = want;
           state.dev = dev?.label || (want && !/^[0-9a-f]{20,}$/i.test(want) ? want : "") || "default camera";
           state.status = "Requesting camera stream";
           state.debug = `${devices.filter(d => d.kind === "videoinput").length} cameras; ${dev?.label || dev?.deviceId || "default device"}; ${capW}×${capH}. Awaiting getUserMedia (permission/device open; 6s timeout)`;
-          const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : {}), width: capW, height: capH } });
+          const stream = await openStream({ video: { ...(dev ? { deviceId: { exact: dev.deviceId } } : { facingMode: { ideal: "environment" } }), width: capW, height: capH } });
           state.status = "Starting video playback";
           state.debug = "Stream acquired; attaching srcObject and awaiting video.play()";
-          const v = document.createElement("video"); v.srcObject = stream; v.muted = true; await v.play();
+          const v = document.createElement("video"); v.setAttribute("playsinline", ""); v.playsInline = true; v.srcObject = stream; v.muted = true; await v.play();
           void refreshDevices(); // names are only known once the camera is allowed
           state.stream = stream; state.video = v; state.res = String(params.resolution); state.canvas = document.createElement("canvas"); state.err = "";
           state.status = "Waiting for first frame";

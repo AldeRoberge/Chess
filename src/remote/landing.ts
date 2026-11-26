@@ -28,19 +28,19 @@ export function mountJoinLanding(root: HTMLElement, deps: LandingDeps) {
   const page = el("div", "rm rm-land");
   const f = el("form", "rm-join"); f.noValidate = true;
   const logo = el("span", "rm-land-ic"); logo.innerHTML = withIcon(el("span"), "phone", 40).innerHTML; logo.setAttribute("aria-hidden", "true");
-  const h = el("h1", "", "Join the game"), p = el("p", "rm-lead", "Type the code shown on the computer.");
+  const h = el("h1", "", "Chess XP"), p = el("p", "rm-lead", "Or join a game running on a computer:");
   const i = el("input"); i.type = "text"; i.inputMode = "numeric"; i.pattern = "[0-9]*"; i.autocomplete = "one-time-code"; i.maxLength = 8;
-  i.placeholder = "• • • •"; i.setAttribute("aria-label", "Join code");
+  i.placeholder = "Join code"; i.setAttribute("aria-label", "Join code");
   const err = el("p", "rm-err"); err.setAttribute("role", "alert");
-  const join = withIcon(el("button", "rm-btn primary", "Join"), "arrow", 20); join.type = "submit";
-  const app = withIcon(el("button", "rm-btn rm-land-app", "Open the full app"), "board", 18); app.type = "button";
-  const keepL = el("label", "rm-land-keep"), keep = el("input"); keep.type = "checkbox"; keepL.append(keep, " Always open the full app on this device");
-  f.append(logo, h, p, i, err, join, app, keepL);
+  const join = withIcon(el("button", "rm-btn", "Join"), "arrow", 20); join.type = "submit";
+  const app = withIcon(el("button", "rm-btn primary rm-land-app", "Play with this camera"), "board", 20); app.type = "button";
+  const keepL = el("label", "rm-land-keep"), keep = el("input"); keep.type = "checkbox"; keepL.append(keep, " Skip this screen next time");
+  f.append(logo, h, app, p, i, err, join, keepL);
   page.append(f); root.replaceChildren(page);
 
   const submit = () => {
     const code = i.value.replace(/\s+/g, "");
-    if (!code) { err.textContent = "Type the code from the computer."; i.focus(); return; }
+    if (!code) { err.textContent = "Enter the code."; i.focus(); return; }
     teardown(); deps.onJoin(code);
   };
   const teardown = () => { page.remove(); document.body.classList.remove("remote"); };

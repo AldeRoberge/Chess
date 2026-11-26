@@ -5,9 +5,9 @@
 
 ## Tasks
 - [x] Rebase the menu-bar commit onto latest main (approved by the user)
-- [ ] Reproduce each issue at iPhone size
-- [ ] Fix the top gradient and menu stacking
-- [ ] Add a loading state so reopening never shows a blank black screen
-- [ ] Make the app work on a lone iPhone with its camera
-- [ ] Trim redundant, verbose or useless text
-- [ ] Type-check, test, commit and push to main
+- [x] Reproduce each issue at iPhone size
+- [x] Fix the top gradient and menu stacking
+- [x] Add a loading state so reopening never shows a blank black screen
+- [x] Make the app work on a lone iPhone with its camera
+- [x] Trim redundant, verbose or useless text
+- [x] Type-check, test, commit and push to main

@@ -87,7 +87,7 @@ export function openAiWizard(api: WorkflowApi) {
       try { review(await session.ask(ask.value.trim())); } catch (e) { status.textContent = (e as Error).message; go.disabled = false; }
     }, "primary");
     const field = (label: string, input: HTMLElement) => { const l = el("label", "wf-field"); l.append(el("span", "", label), input); return l; };
-    const keep = el("label", "chk"); keep.append(remember, el("span", "", "Remember the key in this browser (stored unencrypted)"));
+    const keep = el("label", "chk"); keep.append(remember, el("span", "", "Remember key on this device"));
     m.body.append(
       el("p", "bk-note", onServer
         ? "The Cloudflare worker already has an OpenAI key, so this page does not ask for one. Key-like settings in your workflow are never sent."
